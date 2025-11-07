@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Dashboard from './components/Dashboard';
 import './App.css';
 
 const API_URL = 'http://localhost:8000';
@@ -106,20 +107,7 @@ function App() {
   };
 
   if (user) {
-    return (
-      <div className="container">
-        <div className="card">
-          <h1>Welcome back, {user.full_name}!</h1>
-          <div className="user-info">
-            <p><strong>Email:</strong> {user.email}</p>
-            <p><strong>Admin Status:</strong> {user.is_admin ? '✓ Admin' : 'User'}</p>
-          </div>
-          <button onClick={handleLogout} className="btn btn-secondary">
-            Logout
-          </button>
-        </div>
-      </div>
-    );
+    return <Dashboard user={user} onLogout={handleLogout} />;
   }
 
   return (

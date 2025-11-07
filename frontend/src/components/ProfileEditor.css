@@ -1,0 +1,277 @@
+.editor-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+}
+
+.editor-header h2 {
+  margin: 0 0 0.5rem 0;
+  color: #2d3748;
+  font-size: 1.75rem;
+}
+
+.editor-subtitle {
+  color: #718096;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.btn-refresh {
+  padding: 0.625rem 1.25rem;
+  background: white;
+  color: #667eea;
+  border: 1px solid #667eea;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.btn-refresh:hover {
+  background: #667eea;
+  color: white;
+}
+
+.sections-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.section-card {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.section-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 1rem 1.25rem;
+  text-align: left;
+}
+
+.section-toggle h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.arrow {
+  transition: transform 0.2s;
+  font-size: 0.8rem;
+}
+
+.arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.section-type {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-delete-small {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-right: 0.75rem;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.btn-delete-small:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.section-content {
+  padding: 1.5rem;
+}
+
+.section-text {
+  margin-bottom: 1.5rem;
+}
+
+.section-text p {
+  color: #4a5568;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.entries-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.entry-card {
+  background: #f7fafc;
+  border-radius: 8px;
+  padding: 1.25rem;
+  border-left: 3px solid #667eea;
+}
+
+.entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.entry-title-group {
+  flex: 1;
+}
+
+.entry-card h4 {
+  margin: 0 0 0.25rem 0;
+  color: #2d3748;
+  font-size: 1.1rem;
+}
+
+.entry-subtitle {
+  color: #718096;
+  font-size: 0.95rem;
+}
+
+.entry-meta {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  color: #718096;
+}
+
+.entry-description {
+  color: #4a5568;
+  line-height: 1.6;
+  margin: 0.75rem 0;
+}
+
+.items-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0 0;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  gap: 0.75rem;
+}
+
+.item-content {
+  flex: 1;
+  color: #4a5568;
+  line-height: 1.5;
+  position: relative;
+  padding-left: 1.25rem;
+}
+
+.item-content::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #667eea;
+  font-weight: bold;
+}
+
+.btn-delete-tiny {
+  background: #e2e8f0;
+  border: none;
+  color: #718096;
+  font-size: 1.2rem;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.btn-delete-tiny:hover {
+  background: #fc8181;
+  color: white;
+}
+
+.editor-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  color: #718096;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.editor-empty {
+  text-align: center;
+  padding: 3rem;
+  color: #718096;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.editor-empty h3 {
+  color: #4a5568;
+  margin-bottom: 0.5rem;
+}
+
+.editor-empty p {
+  margin: 0.5rem 0;
+}

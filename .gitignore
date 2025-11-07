@@ -33,4 +33,7 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
+# Uploads
+backend/uploads/
+
 .clau*
