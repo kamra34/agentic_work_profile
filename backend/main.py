@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
@@ -33,7 +33,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, unique=True, index=True, nullable=False)
+    full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_admin = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -41,11 +41,25 @@ class User(Base):
 # Pydantic schemas
 class UserRegister(BaseModel):
     email: EmailStr
-    username: str
+    full_name: str
     password: str
 
+    @validator('password')
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        if len(v.encode('utf-8')) > 72:
+            raise ValueError('Password is too long (max 72 bytes)')
+        return v
+
+    @validator('full_name')
+    def validate_full_name(cls, v):
+        if len(v.strip()) < 2:
+            raise ValueError('Full name must be at least 2 characters long')
+        return v.strip()
+
 class UserLogin(BaseModel):
-    username: str
+    email: EmailStr
     password: str
 
 class Token(BaseModel):
@@ -55,7 +69,7 @@ class Token(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
-    username: str
+    full_name: str
     is_admin: bool
 
     class Config:
@@ -107,13 +121,13 @@ async def get_current_user(
     try:
         token = credentials.credentials
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
     return user
@@ -132,14 +146,12 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     # Check if user exists
     if db.query(User).filter(User.email == user_data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    if db.query(User).filter(User.username == user_data.username).first():
-        raise HTTPException(status_code=400, detail="Username already taken")
 
     # Create new user
     hashed_password = get_password_hash(user_data.password)
     db_user = User(
         email=user_data.email,
-        username=user_data.username,
+        full_name=user_data.full_name,
         hashed_password=hashed_password,
         is_admin=True  # Default to True as requested
     )
@@ -151,15 +163,15 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 @app.post("/api/login", response_model=Token)
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == user_data.username).first()
+    user = db.query(User).filter(User.email == user_data.email).first()
     if not user or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/api/me", response_model=UserResponse)

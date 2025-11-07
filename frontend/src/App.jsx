@@ -6,7 +6,7 @@ const API_URL = 'http://localhost:8000';
 function App() {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
-    username: '',
+    full_name: '',
     email: '',
     password: ''
   });
@@ -48,7 +48,7 @@ function App() {
     try {
       const endpoint = isLogin ? '/api/login' : '/api/register';
       const body = isLogin
-        ? { username: formData.username, password: formData.password }
+        ? { email: formData.email, password: formData.password }
         : formData;
 
       const response = await fetch(`${API_URL}${endpoint}`, {
@@ -62,7 +62,19 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Something went wrong');
+        // Handle validation errors from Pydantic
+        if (data.detail && Array.isArray(data.detail)) {
+          // Pydantic validation error format
+          const errorMessages = data.detail.map(err => {
+            const field = err.loc[err.loc.length - 1];
+            return `${field}: ${err.msg}`;
+          }).join(', ');
+          throw new Error(errorMessages);
+        } else if (typeof data.detail === 'string') {
+          throw new Error(data.detail);
+        } else {
+          throw new Error('Something went wrong');
+        }
       }
 
       if (isLogin) {
@@ -70,7 +82,7 @@ function App() {
         await fetchCurrentUser(data.access_token);
       } else {
         setIsLogin(true);
-        setFormData({ username: '', email: '', password: '' });
+        setFormData({ full_name: '', email: '', password: '' });
         setError('Registration successful! Please login.');
       }
     } catch (err) {
@@ -83,7 +95,7 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('token');
     setUser(null);
-    setFormData({ username: '', email: '', password: '' });
+    setFormData({ full_name: '', email: '', password: '' });
   };
 
   const handleChange = (e) => {
@@ -97,9 +109,8 @@ function App() {
     return (
       <div className="container">
         <div className="card">
-          <h1>Welcome back!</h1>
+          <h1>Welcome back, {user.full_name}!</h1>
           <div className="user-info">
-            <p><strong>Username:</strong> {user.username}</p>
             <p><strong>Email:</strong> {user.email}</p>
             <p><strong>Admin Status:</strong> {user.is_admin ? '✓ Admin' : 'User'}</p>
           </div>
@@ -126,33 +137,33 @@ function App() {
         )}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="username">Username</label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              value={formData.username}
-              onChange={handleChange}
-              required
-              autoComplete="username"
-            />
-          </div>
-
           {!isLogin && (
             <div className="form-group">
-              <label htmlFor="email">Email</label>
+              <label htmlFor="full_name">Full Name</label>
               <input
-                type="email"
-                id="email"
-                name="email"
-                value={formData.email}
+                type="text"
+                id="full_name"
+                name="full_name"
+                value={formData.full_name}
                 onChange={handleChange}
                 required
-                autoComplete="email"
+                autoComplete="name"
               />
             </div>
           )}
+
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              autoComplete="email"
+            />
+          </div>
 
           <div className="form-group">
             <label htmlFor="password">Password</label>
@@ -163,8 +174,15 @@ function App() {
               value={formData.password}
               onChange={handleChange}
               required
+              minLength={6}
+              maxLength={72}
               autoComplete={isLogin ? 'current-password' : 'new-password'}
             />
+            {!isLogin && (
+              <small style={{ color: '#718096', fontSize: '0.85rem', marginTop: '0.25rem', display: 'block' }}>
+                Password must be 6-72 characters long
+              </small>
+            )}
           </div>
 
           <button type="submit" className="btn btn-primary" disabled={loading}>
@@ -178,7 +196,7 @@ function App() {
             onClick={() => {
               setIsLogin(!isLogin);
               setError('');
-              setFormData({ username: '', email: '', password: '' });
+              setFormData({ full_name: '', email: '', password: '' });
             }}
             className="link-btn"
           >
