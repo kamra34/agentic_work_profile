@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import ProfileUpload from './ProfileUpload';
 import ProfileEditor from './ProfileEditor';
+import LinkedInImport from './LinkedInImport';
 import './Dashboard.css';
 
 function Dashboard({ user, onLogout }) {
@@ -31,6 +32,13 @@ function Dashboard({ user, onLogout }) {
             Upload CV
           </button>
           <button
+            className={`sidebar-item ${activeTab === 'linkedin' ? 'active' : ''}`}
+            onClick={() => setActiveTab('linkedin')}
+          >
+            <span className="icon">💼</span>
+            Import LinkedIn
+          </button>
+          <button
             className={`sidebar-item ${activeTab === 'editor' ? 'active' : ''}`}
             onClick={() => setActiveTab('editor')}
           >
@@ -44,6 +52,13 @@ function Dashboard({ user, onLogout }) {
             <ProfileUpload
               onUploadSuccess={(newProfile) => {
                 setProfile(newProfile);
+                setActiveTab('editor');
+              }}
+            />
+          )}
+          {activeTab === 'linkedin' && (
+            <LinkedInImport
+              onImportSuccess={() => {
                 setActiveTab('editor');
               }}
             />

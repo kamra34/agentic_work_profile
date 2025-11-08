@@ -28,6 +28,7 @@ class Profile(Base):
     file_path = Column(String, nullable=False)  # Path to stored CV file
     file_type = Column(String, nullable=False)  # pdf or docx
     openai_model = Column(String, default="gpt-4o")  # Model used for extraction
+    linkedin_url = Column(String, nullable=True)  # LinkedIn profile URL
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -48,6 +49,7 @@ class Section(Base):
     section_type = Column(String, nullable=False)  # summary, work_experience, education, skills, etc.
     content = Column(Text, nullable=True)  # For simple sections like Summary (no entries needed)
     order = Column(Integer, default=0)  # For ordering sections
+    source = Column(String, nullable=True)  # e.g., "source: CV-resume.pdf" or "source: LinkedIn"
     page_reference = Column(JSON, nullable=True)  # {"page": 1, "coordinates": {...}} for PDF highlighting
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -72,6 +74,7 @@ class SectionEntry(Base):
     location = Column(String, nullable=True)
     description = Column(Text, nullable=True)  # Brief description
     order = Column(Integer, default=0)
+    source = Column(String, nullable=True)  # e.g., "CV: resume.pdf" or "LinkedIn"
     page_reference = Column(JSON, nullable=True)
     extra_data = Column(JSON, nullable=True)  # Extra fields like company, degree_type, etc.
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -92,6 +95,7 @@ class SectionItem(Base):
     entry_id = Column(Integer, ForeignKey("section_entries.id", ondelete="CASCADE"), nullable=False)
     content = Column(Text, nullable=False)
     order = Column(Integer, default=0)
+    source = Column(String, nullable=True)  # e.g., "CV: resume.pdf" or "LinkedIn"
     page_reference = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

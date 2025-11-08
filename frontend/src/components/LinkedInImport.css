@@ -1,0 +1,110 @@
+.linkedin-import {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.linkedin-instructions {
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 2rem 0;
+}
+
+.linkedin-instructions h3 {
+  margin: 0 0 1rem 0;
+  color: #2d3748;
+  font-size: 1.1rem;
+}
+
+.linkedin-instructions ol {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+  color: #4a5568;
+  line-height: 1.8;
+}
+
+.linkedin-instructions .note {
+  margin: 1rem 0 0 0;
+  padding: 1rem;
+  background: #edf2f7;
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+  color: #4a5568;
+  font-size: 0.9rem;
+}
+
+.linkedin-form {
+  background: white;
+  border-radius: 10px;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.linkedin-textarea {
+  width: 100%;
+  padding: 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.2s;
+  min-height: 300px;
+}
+
+.linkedin-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.linkedin-textarea::placeholder {
+  color: #a0aec0;
+}
+
+.btn-import {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  margin-top: 1rem;
+}
+
+.btn-import:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+.btn-import:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-import:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.alert {
+  padding: 1rem;
+  border-radius: 6px;
+  margin: 1rem 0;
+}
+
+.alert-error {
+  background: #fed7d7;
+  color: #c53030;
+  border: 1px solid #fc8181;
+}
+
+.alert-success {
+  background: #c6f6d5;
+  color: #22543d;
+  border: 1px solid #68d391;
+}

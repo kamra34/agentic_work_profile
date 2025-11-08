@@ -43,6 +43,7 @@ class UserResponse(BaseModel):
 class SectionItemBase(BaseModel):
     content: str
     order: Optional[int] = 0
+    source: Optional[str] = None
 
 class SectionItemCreate(SectionItemBase):
     pass
@@ -50,6 +51,7 @@ class SectionItemCreate(SectionItemBase):
 class SectionItemUpdate(BaseModel):
     content: Optional[str] = None
     order: Optional[int] = None
+    source: Optional[str] = None
 
 class SectionItemResponse(SectionItemBase):
     id: int
@@ -68,6 +70,7 @@ class SectionEntryBase(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     order: Optional[int] = 0
+    source: Optional[str] = None
     extra_data: Optional[Dict[str, Any]] = None
 
 class SectionEntryCreate(SectionEntryBase):
@@ -81,6 +84,7 @@ class SectionEntryUpdate(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     order: Optional[int] = None
+    source: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
 class SectionEntryResponse(SectionEntryBase):
@@ -98,6 +102,7 @@ class SectionBase(BaseModel):
     section_type: str
     content: Optional[str] = None
     order: Optional[int] = 0
+    source: Optional[str] = None
 
 class SectionCreate(SectionBase):
     entries: Optional[List[SectionEntryCreate]] = []
@@ -107,6 +112,7 @@ class SectionUpdate(BaseModel):
     section_type: Optional[str] = None
     content: Optional[str] = None
     order: Optional[int] = None
+    source: Optional[str] = None
 
 class SectionResponse(SectionBase):
     id: int
@@ -130,6 +136,7 @@ class ProfileResponse(ProfileBase):
     user_id: int
     file_path: str
     file_type: str
+    linkedin_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     sections: List[SectionResponse] = []
@@ -140,3 +147,11 @@ class ProfileResponse(ProfileBase):
 class ProfileUploadResponse(BaseModel):
     profile: ProfileResponse
     message: str
+
+class LinkedInRequest(BaseModel):
+    linkedin_url: str
+
+class LinkedInProcessResponse(BaseModel):
+    message: str
+    sections_added: int
+    items_added: int

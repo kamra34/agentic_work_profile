@@ -19,10 +19,12 @@ from schemas import (
     ProfileResponse, ProfileUploadResponse,
     SectionResponse, SectionCreate, SectionUpdate,
     SectionEntryResponse, SectionEntryCreate, SectionEntryUpdate,
-    SectionItemResponse, SectionItemCreate, SectionItemUpdate
+    SectionItemResponse, SectionItemCreate, SectionItemUpdate,
+    LinkedInRequest, LinkedInProcessResponse
 )
 from file_utils import extract_text_from_file
 from openai_service import parse_cv_with_openai
+from linkedin_service import parse_linkedin_text_with_openai
 
 load_dotenv()
 
@@ -201,7 +203,8 @@ async def upload_profile(
                 title=section_data.get("title"),
                 section_type=section_data.get("section_type"),
                 content=section_data.get("content"),
-                order=idx
+                order=idx,
+                source=f"source: CV-{file.filename}"
             )
             db.add(db_section)
             db.flush()
@@ -217,6 +220,7 @@ async def upload_profile(
                     location=entry_data.get("location"),
                     description=entry_data.get("description"),
                     order=entry_idx,
+                    source=f"source: CV-{file.filename}",
                     extra_data=entry_data.get("extra_data")
                 )
                 db.add(db_entry)
@@ -227,7 +231,8 @@ async def upload_profile(
                     db_item = SectionItem(
                         entry_id=db_entry.id,
                         content=item_content,
-                        order=item_idx
+                        order=item_idx,
+                        source=f"source: CV-{file.filename}"
                     )
                     db.add(db_item)
 
@@ -290,6 +295,122 @@ def get_profile_file(
 
     return FileResponse(profile.file_path, filename=profile.original_filename)
 
+@app.post("/api/profile/linkedin", response_model=LinkedInProcessResponse)
+async def process_linkedin(
+    linkedin_data: LinkedInRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Process LinkedIn profile text and merge with existing profile"""
+
+    # Get existing profile
+    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Please upload your CV first before adding LinkedIn data")
+
+    # Parse LinkedIn data with OpenAI
+    try:
+        # Extract the actual LinkedIn profile text from the URL field
+        # In the frontend, users will paste their LinkedIn profile content
+        linkedin_text = linkedin_data.linkedin_url
+
+        parsed_data = parse_linkedin_text_with_openai(linkedin_text, profile.openai_model)
+
+        sections_added = 0
+        items_added = 0
+
+        # Process each section from LinkedIn
+        for section_data in parsed_data.get("sections", []):
+            section_title = section_data.get("title", "")
+            section_type = section_data.get("section_type", "other")
+
+            # Find if a similar section already exists
+            existing_section = None
+            for sec in profile.sections:
+                # Match by title (case-insensitive) or section_type
+                if (sec.title.lower() == section_title.lower() or
+                    sec.section_type.lower() == section_type.lower()):
+                    existing_section = sec
+                    break
+
+            if not existing_section:
+                # Create new section
+                db_section = Section(
+                    profile_id=profile.id,
+                    title=section_title,
+                    section_type=section_type,
+                    content=section_data.get("content"),
+                    order=len(profile.sections),
+                    source="source: LinkedIn"
+                )
+                db.add(db_section)
+                db.flush()
+                sections_added += 1
+            else:
+                db_section = existing_section
+
+            # Process entries
+            for entry_data in section_data.get("entries", []):
+                entry_title = entry_data.get("title", "")
+
+                # Check if entry already exists
+                existing_entry = None
+                for entry in db_section.entries:
+                    if entry.title.lower() == entry_title.lower():
+                        existing_entry = entry
+                        break
+
+                if not existing_entry:
+                    # Create new entry
+                    db_entry = SectionEntry(
+                        section_id=db_section.id,
+                        title=entry_title,
+                        subtitle=entry_data.get("subtitle"),
+                        start_date=entry_data.get("start_date"),
+                        end_date=entry_data.get("end_date"),
+                        location=entry_data.get("location"),
+                        description=entry_data.get("description"),
+                        order=len(db_section.entries),
+                        source="source: LinkedIn"
+                    )
+                    db.add(db_entry)
+                    db.flush()
+                else:
+                    db_entry = existing_entry
+
+                # Process items
+                for item_content in entry_data.get("items", []):
+                    # Check if this item already exists
+                    item_exists = any(
+                        item.content.lower() == item_content.lower()
+                        for item in db_entry.items
+                    )
+
+                    if not item_exists:
+                        db_item = SectionItem(
+                            entry_id=db_entry.id,
+                            content=item_content,
+                            order=len(db_entry.items),
+                            source="source: LinkedIn"
+                        )
+                        db.add(db_item)
+                        items_added += 1
+
+        # Update profile with LinkedIn URL
+        profile.linkedin_url = linkedin_data.linkedin_url[:500]  # Store first 500 chars as reference
+
+        db.commit()
+
+        return LinkedInProcessResponse(
+            message=f"Successfully processed LinkedIn data",
+            sections_added=sections_added,
+            items_added=items_added
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error processing LinkedIn data: {str(e)}")
+
 # ==================== SECTION ENDPOINTS ====================
 
 @app.post("/api/profile/sections", response_model=SectionResponse)
@@ -308,7 +429,8 @@ def create_section(
         title=section_data.title,
         section_type=section_data.section_type,
         content=section_data.content,
-        order=section_data.order
+        order=section_data.order,
+        source=section_data.source or "source: Manual Entry"
     )
     db.add(db_section)
     db.commit()
@@ -384,6 +506,7 @@ def create_entry(
         location=entry_data.location,
         description=entry_data.description,
         order=entry_data.order,
+        source=entry_data.source or "source: Manual Entry",
         extra_data=entry_data.extra_data
     )
     db.add(db_entry)
@@ -394,7 +517,8 @@ def create_entry(
         db_item = SectionItem(
             entry_id=db_entry.id,
             content=item.content,
-            order=item.order if item.order is not None else idx
+            order=item.order if item.order is not None else idx,
+            source=item.source or "source: Manual Entry"
         )
         db.add(db_item)
 
@@ -465,7 +589,8 @@ def create_item(
     db_item = SectionItem(
         entry_id=entry.id,
         content=item_data.content,
-        order=item_data.order
+        order=item_data.order,
+        source=item_data.source or "source: Manual Entry"
     )
     db.add(db_item)
     db.commit()
