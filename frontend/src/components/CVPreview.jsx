@@ -202,10 +202,16 @@ function CVPreview({ profile, onSectionClick }) {
     >
       <h3 className="cv-section-title">Education</h3>
       <div className="cv-section-content">
-        {educationSection.entries && educationSection.entries.length > 0 ? (
-          educationSection.entries.map(edu => (
+        {educationSection.entries && educationSection.entries.filter(e => !e.parent_entry_id).length > 0 ? (
+          educationSection.entries.filter(e => !e.parent_entry_id).map(edu => (
             <div key={edu.id} className="cv-education">
-              <div className="cv-edu-header">
+              <div
+                className="cv-edu-header"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  onSectionClick && onSectionClick({ section: educationSection, target: 'entry', entryId: edu.id });
+                }}
+              >
                 <div className="cv-edu-title-line">
                   <strong className="cv-edu-degree">{edu.title}</strong>
                   <span className="cv-edu-location">{edu.location}</span>
@@ -217,10 +223,43 @@ function CVPreview({ profile, onSectionClick }) {
                   </span>
                 </div>
               </div>
+
+              {/* Description */}
+              {edu.description && (
+                <div className="cv-job-description">• {edu.description}</div>
+              )}
+
+              {/* Direct bullets (not in groups) */}
               {edu.items && edu.items.length > 0 && (
                 <div className="cv-edu-bullets">
                   {edu.items.map(item => (
                     <div key={item.id} className="cv-bullet">• {item.content}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Bullet Groups */}
+              {edu.sub_entries && edu.sub_entries.length > 0 && (
+                <div className="cv-bullet-groups">
+                  {edu.sub_entries.map(group => (
+                    <div key={group.id} className="cv-bullet-group">
+                      <div
+                        className="cv-bullet-group-title"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          onSectionClick && onSectionClick({ section: educationSection, target: 'subentry', entryId: edu.id, subEntryId: group.id });
+                        }}
+                      >
+                        • {group.title}
+                      </div>
+                      {group.items && group.items.length > 0 && (
+                        <div className="cv-bullet-group-items">
+                          {group.items.map(item => (
+                            <div key={item.id} className="cv-bullet-sub">– {item.content}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

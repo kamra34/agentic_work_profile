@@ -7,7 +7,7 @@ const API_URL = 'http://localhost:8000';
 const SECTION_TYPES = [
   { value: 'summary', label: 'Summary', icon: '📝', maxNesting: 0 },
   { value: 'work_experience', label: 'Work Experience', icon: '💼', maxNesting: 2 },
-  { value: 'education', label: 'Education', icon: '🎓', maxNesting: 1 },
+  { value: 'education', label: 'Education', icon: '🎓', maxNesting: 2 },
   { value: 'skills', label: 'Skills', icon: '⚡', maxNesting: 1 },
   { value: 'projects', label: 'Projects', icon: '🚀', maxNesting: 1 },
   { value: 'certifications', label: 'Certifications', icon: '📜', maxNesting: 1 },
@@ -1010,9 +1010,9 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
   const [editingItemId, setEditingItemId] = useState(null);
   const [editingItemContent, setEditingItemContent] = useState('');
 
-  // For work experience: level 0 = job, level 1 = bullet group
-  const canHaveBulletGroups = sectionType === 'work_experience' && level === 0;
-  const isBulletGroup = level === 1 && sectionType === 'work_experience';
+  // For work experience and education: level 0 = job/degree, level 1 = bullet group
+  const canHaveBulletGroups = (sectionType === 'work_experience' || sectionType === 'education') && level === 0;
+  const isBulletGroup = level === 1 && (sectionType === 'work_experience' || sectionType === 'education');
 
   const deleteEntry = async () => {
     if (!confirm('Delete this entry?')) return;
@@ -1316,7 +1316,11 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
                 <div className="add-bullet-group-form">
                   <input
                     type="text"
-                    placeholder="Group title (e.g., 'Technical Leadership')..."
+                    placeholder={
+                      sectionType === 'education'
+                        ? "Group title (e.g., 'Coursework', 'Research')..."
+                        : "Group title (e.g., 'Technical Leadership')..."
+                    }
                     autoFocus
                     onKeyPress={(e) => {
                       if (e.key === 'Enter' && e.target.value.trim()) {
@@ -1338,7 +1342,11 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
                 </button>
               )}
               <p className="help-text">
-                💡 Tip: Add bullet groups to organize achievements by category (e.g., "Technical Leadership", "Delivery Management")
+                💡 Tip: {
+                  sectionType === 'education'
+                    ? 'Add bullet groups to organize details by category (e.g., "Coursework", "Research", "Honors")'
+                    : 'Add bullet groups to organize achievements by category (e.g., "Technical Leadership", "Delivery Management")'
+                }
               </p>
             </div>
           )}
@@ -1396,7 +1404,31 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, i
         alert('Location is required');
         return;
       }
-    } else if (!formData.title.trim()) {
+    }
+    // Validation for education
+    else if (sectionType === 'education' && !isBulletGroup) {
+      if (!formData.title.trim()) {
+        alert('Degree is required');
+        return;
+      }
+      if (!formData.subtitle.trim()) {
+        alert('University is required');
+        return;
+      }
+      if (!formData.start_date.trim()) {
+        alert('Start Date is required');
+        return;
+      }
+      if (!formData.end_date.trim()) {
+        alert('End Date is required');
+        return;
+      }
+      if (!formData.location.trim()) {
+        alert('Location is required');
+        return;
+      }
+    }
+    else if (!formData.title.trim()) {
       alert('Title is required');
       return;
     }
@@ -1467,10 +1499,10 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, i
             <input
               type="text"
               className="input-field"
-              placeholder={getPlaceholder('subtitle') + (sectionType === 'work_experience' ? ' *' : '')}
+              placeholder={getPlaceholder('subtitle') + ((sectionType === 'work_experience' || sectionType === 'education') ? ' *' : '')}
               value={formData.subtitle}
               onChange={(e) => setFormData({...formData, subtitle: e.target.value})}
-              required={sectionType === 'work_experience'}
+              required={sectionType === 'work_experience' || sectionType === 'education'}
             />
             <div className="form-row">
               <input
@@ -1479,7 +1511,7 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, i
                 placeholder="Start Date *"
                 value={formData.start_date}
                 onChange={(e) => setFormData({...formData, start_date: e.target.value})}
-                required={sectionType === 'work_experience'}
+                required={sectionType === 'work_experience' || sectionType === 'education'}
               />
               <input
                 type="month"
@@ -1487,7 +1519,7 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, i
                 placeholder="End Date *"
                 value={isPresent ? '' : formData.end_date}
                 onChange={(e) => setFormData({...formData, end_date: e.target.value})}
-                required={sectionType === 'work_experience' && !isPresent}
+                required={(sectionType === 'work_experience' && !isPresent) || sectionType === 'education'}
                 disabled={isPresent}
               />
             </div>
@@ -1511,10 +1543,10 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, i
             <input
               type="text"
               className="input-field"
-              placeholder={"Location (e.g., Stockholm, Sweden)" + (sectionType === 'work_experience' ? ' *' : '')}
+              placeholder={"Location (e.g., Stockholm, Sweden)" + ((sectionType === 'work_experience' || sectionType === 'education') ? ' *' : '')}
               value={formData.location}
               onChange={(e) => setFormData({...formData, location: e.target.value})}
-              required={sectionType === 'work_experience'}
+              required={sectionType === 'work_experience' || sectionType === 'education'}
             />
             <textarea
               className="textarea-field"
