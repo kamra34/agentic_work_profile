@@ -7,13 +7,17 @@ from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
+from typing import List
 import os
 import shutil
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Load environment variables FIRST before importing our modules
+load_dotenv()
+
 # Import our modules
-from models import Base, User, Profile, Section, SectionEntry, SectionItem
+from models import Base, User, Profile, Section, SectionEntry, SectionItem, TailoredCVVersion
 from schemas import (
     UserRegister, UserLogin, Token, UserResponse,
     ProfileResponse, ProfileCreate, ProfileUpdate,
@@ -21,15 +25,18 @@ from schemas import (
     SectionEntryResponse, SectionEntryCreate, SectionEntryUpdate,
     SectionItemResponse, SectionItemCreate, SectionItemUpdate,
     AIEditRequest, AIEditResponse, AIChatRequest, AIChatResponse,
-    JobAnalysisRequest, JobAnalysisResponse
+    JobAnalysisRequest, JobAnalysisResponse,
+    ProfileFitRequest, ProfileFitResponse,
+    CVTailoringRequest, CVTailoringResponse,
+    TailoredCVCreate, TailoredCVUpdate, TailoredCVResponse
 )
 from file_utils import extract_text_from_file
 from openai_service import parse_cv_with_openai
 from linkedin_service import parse_linkedin_text_with_openai
 from ai_editor_service import edit_with_openai, edit_with_claude, chat_with_ai
 from job_analysis_service import analyze_job_description_dual
-
-load_dotenv()
+from profile_fit_service import analyze_profile_fit_dual
+from cv_tailoring_service import tailor_cv_dual
 
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://kami:4444@eu1.pitunnel.com:20877/work_profile")
@@ -729,6 +736,292 @@ async def analyze_job_description(
         return JobAnalysisResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_complete_user_profile_data(db: Session, user_id: int) -> dict:
+    """
+    Fetch complete user profile with all sections, entries, and items
+    """
+    profile = db.query(Profile).filter(Profile.user_id == user_id).first()
+    if not profile:
+        return {}
+
+    sections = db.query(Section).filter(Section.profile_id == profile.id).all()
+
+    # Extract contact info from JSON field
+    contact_info = profile.contact_info or {}
+
+    profile_data = {
+        "profile_id": profile.id,
+        "profile_title": profile.title,
+        "contact_info": contact_info,
+        "phone": contact_info.get("phone"),
+        "email": contact_info.get("email"),
+        "location": contact_info.get("location"),
+        "linkedin": contact_info.get("linkedin"),
+        "github": contact_info.get("github"),
+        "website": contact_info.get("website"),
+        "sections": []
+    }
+
+    for section in sections:
+        section_data = {
+            "id": section.id,
+            "type": section.section_type.value if section.section_type else None,
+            "title": section.title,
+            "content": section.content,
+            "content_type": section.content_type.value if section.content_type else None,
+            "entries": []
+        }
+
+        # Get all entries (including both parent and sub-entries)
+        entries = db.query(SectionEntry).filter(SectionEntry.section_id == section.id).order_by(SectionEntry.order).all()
+
+        for entry in entries:
+            # Build date range from start_date and end_date
+            date_range = None
+            if entry.start_date or entry.end_date:
+                date_range = f"{entry.start_date or ''} - {entry.end_date or 'Present'}".strip(' -')
+
+            entry_data = {
+                "id": entry.id,
+                "title": entry.title,
+                "subtitle": entry.subtitle,
+                "start_date": entry.start_date,
+                "end_date": entry.end_date,
+                "date_range": date_range,
+                "location": entry.location,
+                "description": entry.description,
+                "content_type": entry.content_type.value if entry.content_type else None,
+                "order": entry.order,
+                "parent_entry_id": entry.parent_entry_id,  # Include parent relationship
+                "items": []
+            }
+
+            items = db.query(SectionItem).filter(SectionItem.entry_id == entry.id).order_by(SectionItem.order).all()
+
+            for item in items:
+                entry_data["items"].append({
+                    "id": item.id,
+                    "content": item.content,
+                    "order": item.order
+                })
+
+            section_data["entries"].append(entry_data)
+
+        profile_data["sections"].append(section_data)
+
+    return profile_data
+
+
+@app.post("/api/job/analyze-fit", response_model=ProfileFitResponse)
+async def analyze_profile_fit(
+    request: ProfileFitRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze how well the user's profile matches a job description
+
+    Uses both OpenAI and Anthropic to provide unbiased, honest assessment
+    of fit percentage, strengths, gaps, and recommendation
+    """
+    try:
+        print(f"[DEBUG] Analyzing fit for user {current_user.id}")
+        print(f"[DEBUG] Job analysis keys: {request.job_analysis.keys() if isinstance(request.job_analysis, dict) else 'Not a dict'}")
+
+        # Get complete user profile data
+        user_profile = get_complete_user_profile_data(db, current_user.id)
+
+        print(f"[DEBUG] User profile fetched: {bool(user_profile)}")
+        print(f"[DEBUG] Profile sections count: {len(user_profile.get('sections', []))}")
+
+        if not user_profile:
+            raise HTTPException(status_code=404, detail="User profile not found")
+
+        # Analyze fit with both AI models
+        result = analyze_profile_fit_dual(request.job_analysis, user_profile)
+        print(f"[DEBUG] Fit analysis completed successfully")
+        return ProfileFitResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] Fit analysis failed: {error_details}")
+        raise HTTPException(status_code=500, detail=f"{str(e)}\n\nTraceback: {error_details}")
+
+
+@app.post("/api/cv/tailor", response_model=CVTailoringResponse)
+async def get_cv_tailoring_recommendations(
+    request: CVTailoringRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI recommendations for which content to include in a tailored CV
+
+    Both OpenAI and Claude analyze the master profile and recommend specific items
+    to include for this job application
+    """
+    try:
+        print(f"[DEBUG] Getting CV tailoring recommendations for user {current_user.id}")
+
+        # Get complete user profile data
+        user_profile = get_complete_user_profile_data(db, current_user.id)
+
+        if not user_profile:
+            raise HTTPException(status_code=404, detail="User profile not found")
+
+        # Get recommendations from both AI models
+        result = tailor_cv_dual(request.job_analysis, user_profile)
+        print(f"[DEBUG] CV tailoring recommendations generated successfully")
+        return CVTailoringResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] CV tailoring failed: {error_details}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cv/tailored-versions", response_model=TailoredCVResponse)
+async def create_tailored_cv_version(
+    request: TailoredCVCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Save a tailored CV version for a specific job application
+    """
+    try:
+        # Get user's default profile
+        profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        # Create tailored CV version
+        tailored_cv = TailoredCVVersion(
+            user_id=current_user.id,
+            profile_id=profile.id,
+            job_title=request.job_title,
+            company_name=request.company_name,
+            job_description=request.job_description,
+            selected_content=request.selected_content,
+            openai_fit_score=request.openai_fit_score,
+            claude_fit_score=request.claude_fit_score,
+            openai_ats_score=request.openai_ats_score,
+            claude_ats_score=request.claude_ats_score,
+            openai_recommendations=request.openai_recommendations,
+            claude_recommendations=request.claude_recommendations,
+            notes=request.notes
+        )
+
+        db.add(tailored_cv)
+        db.commit()
+        db.refresh(tailored_cv)
+
+        print(f"[DEBUG] Created tailored CV version {tailored_cv.id} for user {current_user.id}")
+        return tailored_cv
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cv/tailored-versions", response_model=List[TailoredCVResponse])
+async def list_tailored_cv_versions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all tailored CV versions for the current user
+    """
+    versions = db.query(TailoredCVVersion).filter(
+        TailoredCVVersion.user_id == current_user.id
+    ).order_by(TailoredCVVersion.created_at.desc()).all()
+
+    return versions
+
+
+@app.get("/api/cv/tailored-versions/{version_id}", response_model=TailoredCVResponse)
+async def get_tailored_cv_version(
+    version_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific tailored CV version
+    """
+    version = db.query(TailoredCVVersion).filter(
+        TailoredCVVersion.id == version_id,
+        TailoredCVVersion.user_id == current_user.id
+    ).first()
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Tailored CV version not found")
+
+    return version
+
+
+@app.put("/api/cv/tailored-versions/{version_id}", response_model=TailoredCVResponse)
+async def update_tailored_cv_version(
+    version_id: int,
+    request: TailoredCVUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a tailored CV version
+    """
+    version = db.query(TailoredCVVersion).filter(
+        TailoredCVVersion.id == version_id,
+        TailoredCVVersion.user_id == current_user.id
+    ).first()
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Tailored CV version not found")
+
+    # Update fields if provided
+    if request.job_title is not None:
+        version.job_title = request.job_title
+    if request.company_name is not None:
+        version.company_name = request.company_name
+    if request.selected_content is not None:
+        version.selected_content = request.selected_content
+    if request.notes is not None:
+        version.notes = request.notes
+    if request.status is not None:
+        version.status = request.status
+
+    db.commit()
+    db.refresh(version)
+
+    return version
+
+
+@app.delete("/api/cv/tailored-versions/{version_id}")
+async def delete_tailored_cv_version(
+    version_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a tailored CV version
+    """
+    version = db.query(TailoredCVVersion).filter(
+        TailoredCVVersion.id == version_id,
+        TailoredCVVersion.user_id == current_user.id
+    ).first()
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Tailored CV version not found")
+
+    db.delete(version)
+    db.commit()
+
+    return {"message": "Tailored CV version deleted successfully"}
 
 
 if __name__ == "__main__":
