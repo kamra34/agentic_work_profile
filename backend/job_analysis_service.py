@@ -4,13 +4,27 @@ Analyzes job descriptions using both OpenAI and Anthropic models
 """
 import os
 import json
-from openai import OpenAI
-import anthropic
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-# Initialize clients
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Initialize clients conditionally
+openai_client = None
+anthropic_client = None
+
+try:
+    from openai import OpenAI
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if openai_api_key:
+        openai_client = OpenAI(api_key=openai_api_key)
+except Exception as e:
+    print(f"OpenAI client initialization failed: {e}")
+
+try:
+    import anthropic
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_api_key:
+        anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
+except Exception as e:
+    print(f"Anthropic client initialization failed: {e}")
 
 
 def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
@@ -24,6 +38,9 @@ def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
     - Required qualifications
     - Preferred qualifications
     """
+
+    if not openai_client:
+        raise Exception("OpenAI client not initialized. Please set OPENAI_API_KEY environment variable.")
 
     system_prompt = """You are an expert job description analyst. Analyze the provided job description and extract structured information.
 
@@ -75,6 +92,9 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
     - Required qualifications
     - Preferred qualifications
     """
+
+    if not anthropic_client:
+        raise Exception("Anthropic client not initialized. Please set ANTHROPIC_API_KEY environment variable.")
 
     system_prompt = """You are an expert job description analyst. Analyze the provided job description and extract structured information.
 
