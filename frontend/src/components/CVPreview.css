@@ -311,6 +311,10 @@
   gap: 1rem;
 }
 
+.cv-skills-single {
+  display: block;
+}
+
 .cv-skill-category {
   margin-bottom: 0.75rem;
 }
@@ -320,6 +324,16 @@
   font-weight: 600;
   margin: 0 0 0.5rem 0;
   color: #1a202c;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-skill-category-title:hover {
+  background-color: #f7fafc;
 }
 
 .cv-skill-list {
@@ -332,6 +346,16 @@
   margin-bottom: 0.25rem;
   line-height: 1.5;
   color: #2d3748;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-skill-list li:hover {
+  background-color: #f7fafc;
 }
 
 /* Generic Entry (for custom sections) */

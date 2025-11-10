@@ -273,35 +273,57 @@ function CVPreview({ profile, onSectionClick }) {
   );
 
   // Skills Section Renderer
-  const renderSkillsSection = (skillsSection) => (
-    <section
-      className="cv-section"
-      key={skillsSection.id}
-      onDoubleClick={() => onSectionClick && onSectionClick(skillsSection)}
-    >
-      <h3 className="cv-section-title">Core Skills</h3>
-      <div className="cv-section-content">
-        {skillsSection.entries && skillsSection.entries.length > 0 ? (
-          <div className="cv-skills-grid">
-            {skillsSection.entries.map(category => (
-              <div key={category.id} className="cv-skill-category">
-                <h4 className="cv-skill-category-title">{category.title}:</h4>
-                {category.items && category.items.length > 0 && (
-                  <ul className="cv-skill-list">
-                    {category.items.map(item => (
-                      <li key={item.id}>{item.content}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="cv-placeholder">Add your skills here...</div>
-        )}
-      </div>
-    </section>
-  );
+  const renderSkillsSection = (skillsSection) => {
+    // Get layout preference from meta_info (default to 'double')
+    const layout = skillsSection.meta_info?.layout || 'double';
+    const gridClass = layout === 'single' ? 'cv-skills-single' : 'cv-skills-grid';
+
+    return (
+      <section
+        className="cv-section"
+        key={skillsSection.id}
+        onDoubleClick={() => onSectionClick && onSectionClick(skillsSection)}
+      >
+        <h3 className="cv-section-title">Core Skills</h3>
+        <div className="cv-section-content">
+          {skillsSection.entries && skillsSection.entries.length > 0 ? (
+            <div className={gridClass}>
+              {skillsSection.entries.map(category => (
+                <div key={category.id} className="cv-skill-category">
+                  <h4
+                    className="cv-skill-category-title"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onSectionClick && onSectionClick({ section: skillsSection, target: 'entry', entryId: category.id });
+                    }}
+                  >
+                    {category.title}:
+                  </h4>
+                  {category.items && category.items.length > 0 && (
+                    <ul className="cv-skill-list">
+                      {category.items.map(item => (
+                        <li
+                          key={item.id}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            onSectionClick && onSectionClick({ section: skillsSection, target: 'item', entryId: category.id, itemId: item.id });
+                          }}
+                        >
+                          {item.content}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="cv-placeholder">Add your skills here...</div>
+          )}
+        </div>
+      </section>
+    );
+  };
 
   // Custom Section Renderer
   const renderCustomSection = (section) => (

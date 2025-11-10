@@ -698,6 +698,12 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
 
   const sectionConfig = SECTION_TYPES.find(s => s.value === section.section_type);
   const isSummarySection = section.section_type === 'summary';
+  const isSkillsSection = section.section_type === 'skills';
+
+  // Get layout preference from meta_info (default to 'double' for backward compatibility)
+  const [skillsLayout, setSkillsLayout] = useState(
+    section.meta_info?.layout || 'double'
+  );
 
   // Register the expand handler for this section
   useEffect(() => {
@@ -729,6 +735,31 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
       await onUpdate();
     } catch (err) {
       console.error('Error updating section:', err);
+    }
+  };
+
+  const updateSkillsLayout = async (newLayout) => {
+    try {
+      setSkillsLayout(newLayout);
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/api/sections/${section.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          meta_info: {
+            ...(section.meta_info || {}),
+            layout: newLayout
+          },
+          order: section.order
+        })
+      });
+      await onUpdate();
+    } catch (err) {
+      console.error('Error updating skills layout:', err);
+      setSkillsLayout(section.meta_info?.layout || 'double'); // Revert on error
     }
   };
 
@@ -959,13 +990,38 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
               )}
             </>
           ) : (
-            <div className="section-entries-area">
-              <div className="entries-header">
-                <h4>{getEntriesLabel(section.section_type)}</h4>
-                <button className="btn-add-entry" onClick={() => setShowAddEntry(true)}>
-                  + {getAddButtonLabel(section.section_type)}
-                </button>
-              </div>
+            <>
+              {isSkillsSection && (
+                <div className="content-type-tiles">
+                  <h4>Layout:</h4>
+                  <div className="tiles-container">
+                    <button
+                      className={`content-type-tile ${skillsLayout === 'single' ? 'active' : ''}`}
+                      onClick={() => updateSkillsLayout('single')}
+                    >
+                      <span className="tile-icon">📋</span>
+                      <span className="tile-label">Single Column</span>
+                      <span className="tile-description">Full-width layout</span>
+                    </button>
+                    <button
+                      className={`content-type-tile ${skillsLayout === 'double' ? 'active' : ''}`}
+                      onClick={() => updateSkillsLayout('double')}
+                    >
+                      <span className="tile-icon">📊</span>
+                      <span className="tile-label">Two Columns</span>
+                      <span className="tile-description">Compact side-by-side</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="section-entries-area">
+                <div className="entries-header">
+                  <h4>{getEntriesLabel(section.section_type)}</h4>
+                  <button className="btn-add-entry" onClick={() => setShowAddEntry(true)}>
+                    + {getAddButtonLabel(section.section_type)}
+                  </button>
+                </div>
 
               {section.entries && section.entries.length > 0 ? (
                 <div className="entries-list">
@@ -985,7 +1041,8 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
               ) : (
                 <p className="no-entries">No {getEntriesLabel(section.section_type).toLowerCase()} yet</p>
               )}
-            </div>
+              </div>
+            </>
           )}
 
           {showAddEntry && (
