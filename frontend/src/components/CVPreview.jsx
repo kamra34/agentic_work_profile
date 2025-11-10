@@ -58,6 +58,14 @@ function CVPreview({ profile, onSectionClick }) {
         return renderSkillsSection(section);
       case 'projects':
         return renderProjectsSection(section);
+      case 'certifications':
+        return renderCertificationsSection(section);
+      case 'awards':
+        return renderAwardsSection(section);
+      case 'publications':
+        return renderPublicationsSection(section);
+      case 'languages':
+        return renderLanguagesSection(section);
       default:
         return renderCustomSection(section);
     }
@@ -370,6 +378,202 @@ function CVPreview({ profile, onSectionClick }) {
             </div>
           ) : (
             <div className="cv-placeholder">Add your projects here...</div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  // Certifications Section Renderer
+  const renderCertificationsSection = (certificationsSection) => {
+    return (
+      <section
+        className="cv-section"
+        key={certificationsSection.id}
+        onDoubleClick={() => onSectionClick && onSectionClick(certificationsSection)}
+      >
+        <h3 className="cv-section-title">Certifications</h3>
+        <div className="cv-section-content">
+          {certificationsSection.entries && certificationsSection.entries.length > 0 ? (
+            <div className="cv-certifications-list">
+              {certificationsSection.entries.map(cert => (
+                <div key={cert.id} className="cv-certification">
+                  <h4
+                    className="cv-certification-title"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onSectionClick && onSectionClick({ section: certificationsSection, target: 'entry', entryId: cert.id });
+                    }}
+                  >
+                    {cert.title}
+                  </h4>
+                  {cert.items && cert.items.length > 0 && (
+                    <ul className="cv-certification-details">
+                      {cert.items.map(item => (
+                        <li
+                          key={item.id}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            onSectionClick && onSectionClick({ section: certificationsSection, target: 'item', entryId: cert.id, itemId: item.id });
+                          }}
+                        >
+                          {item.content}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="cv-placeholder">Add your certifications here...</div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  // Awards Section Renderer
+  const renderAwardsSection = (awardsSection) => {
+    return (
+      <section
+        className="cv-section"
+        key={awardsSection.id}
+        onDoubleClick={() => onSectionClick && onSectionClick(awardsSection)}
+      >
+        <h3 className="cv-section-title">Awards & Honors</h3>
+        <div className="cv-section-content">
+          {awardsSection.entries && awardsSection.entries.length > 0 ? (
+            <div className="cv-awards-list">
+              {awardsSection.entries.map(award => (
+                <div key={award.id} className="cv-award">
+                  <h4
+                    className="cv-award-title"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onSectionClick && onSectionClick({ section: awardsSection, target: 'entry', entryId: award.id });
+                    }}
+                  >
+                    {award.title}
+                  </h4>
+                  {award.items && award.items.length > 0 && (
+                    <ul className="cv-award-details">
+                      {award.items.map(item => (
+                        <li
+                          key={item.id}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            onSectionClick && onSectionClick({ section: awardsSection, target: 'item', entryId: award.id, itemId: item.id });
+                          }}
+                        >
+                          {item.content}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="cv-placeholder">Add your awards here...</div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  // Publications Section Renderer
+  const renderPublicationsSection = (publicationsSection) => {
+    return (
+      <section
+        className="cv-section"
+        key={publicationsSection.id}
+        onDoubleClick={() => onSectionClick && onSectionClick(publicationsSection)}
+      >
+        <h3 className="cv-section-title">Publications</h3>
+        <div className="cv-section-content">
+          {publicationsSection.entries && publicationsSection.entries.length > 0 ? (
+            <div className="cv-publications-list">
+              {publicationsSection.entries.map(pub => (
+                <div key={pub.id} className="cv-publication">
+                  <div
+                    className="cv-publication-title"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onSectionClick && onSectionClick({ section: publicationsSection, target: 'entry', entryId: pub.id });
+                    }}
+                  >
+                    {pub.title}
+                  </div>
+                  {pub.items && pub.items.length > 0 && (
+                    <ul className="cv-publication-details">
+                      {pub.items.map(item => (
+                        <li
+                          key={item.id}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            onSectionClick && onSectionClick({ section: publicationsSection, target: 'item', entryId: pub.id, itemId: item.id });
+                          }}
+                        >
+                          {item.content}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="cv-placeholder">Add your publications here...</div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  // Languages Section Renderer
+  const renderLanguagesSection = (languagesSection) => {
+    return (
+      <section
+        className="cv-section"
+        key={languagesSection.id}
+        onDoubleClick={() => onSectionClick && onSectionClick(languagesSection)}
+      >
+        <h3 className="cv-section-title">Languages</h3>
+        <div className="cv-section-content">
+          {languagesSection.entries && languagesSection.entries.length > 0 ? (
+            <div className="cv-languages-list">
+              {languagesSection.entries.map(lang => (
+                <div key={lang.id} className="cv-language">
+                  <h4
+                    className="cv-language-name"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onSectionClick && onSectionClick({ section: languagesSection, target: 'entry', entryId: lang.id });
+                    }}
+                  >
+                    {lang.title}
+                  </h4>
+                  {lang.items && lang.items.length > 0 && (
+                    <ul className="cv-language-proficiency">
+                      {lang.items.map(item => (
+                        <li
+                          key={item.id}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            onSectionClick && onSectionClick({ section: languagesSection, target: 'item', entryId: lang.id, itemId: item.id });
+                          }}
+                        >
+                          {item.content}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="cv-placeholder">Add your languages here...</div>
           )}
         </div>
       </section>

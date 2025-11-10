@@ -406,6 +406,199 @@
   background-color: #f7fafc;
 }
 
+/* Certifications Section */
+.cv-certifications-list {
+  display: block;
+}
+
+.cv-certification {
+  margin-bottom: 1rem;
+}
+
+.cv-certification-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: #1a202c;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-certification-title:hover {
+  background-color: #f7fafc;
+}
+
+.cv-certification-details {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.cv-certification-details li {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+  color: #2d3748;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-certification-details li:hover {
+  background-color: #f7fafc;
+}
+
+/* Awards Section */
+.cv-awards-list {
+  display: block;
+}
+
+.cv-award {
+  margin-bottom: 1rem;
+}
+
+.cv-award-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: #1a202c;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-award-title:hover {
+  background-color: #f7fafc;
+}
+
+.cv-award-details {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.cv-award-details li {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+  color: #2d3748;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-award-details li:hover {
+  background-color: #f7fafc;
+}
+
+/* Publications Section */
+.cv-publications-list {
+  display: block;
+}
+
+.cv-publication {
+  margin-bottom: 1rem;
+}
+
+.cv-publication-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-style: italic;
+  margin: 0 0 0.5rem 0;
+  color: #1a202c;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-publication-title:hover {
+  background-color: #f7fafc;
+}
+
+.cv-publication-details {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.cv-publication-details li {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+  color: #2d3748;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-publication-details li:hover {
+  background-color: #f7fafc;
+}
+
+/* Languages Section */
+.cv-languages-list {
+  display: block;
+}
+
+.cv-language {
+  margin-bottom: 1rem;
+}
+
+.cv-language-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: #1a202c;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-language-name:hover {
+  background-color: #f7fafc;
+}
+
+.cv-language-proficiency {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.cv-language-proficiency li {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+  color: #2d3748;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 4px;
+}
+
+.cv-language-proficiency li:hover {
+  background-color: #f7fafc;
+}
+
 /* Generic Entry (for custom sections) */
 .cv-entry {
   margin-bottom: 0.75rem;
