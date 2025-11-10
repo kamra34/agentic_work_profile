@@ -40,13 +40,262 @@ function CVPreview({ profile, onSectionClick }) {
     return match ? match[1] : url;
   };
 
-  // Get section by type
-  const getSection = (type) => sections.find(s => s.section_type === type);
+  // Sort sections by order field
+  const sortedSections = Array.isArray(sections)
+    ? [...sections].sort((a, b) => (a.order || 0) - (b.order || 0))
+    : [];
 
-  const summarySection = getSection('summary');
-  const workSection = getSection('work_experience');
-  const educationSection = getSection('education');
-  const skillsSection = getSection('skills');
+  // Render section content based on type
+  const renderSectionContent = (section) => {
+    switch (section.section_type) {
+      case 'summary':
+        return renderSummarySection(section);
+      case 'work_experience':
+        return renderWorkExperienceSection(section);
+      case 'education':
+        return renderEducationSection(section);
+      case 'skills':
+        return renderSkillsSection(section);
+      default:
+        return renderCustomSection(section);
+    }
+  };
+
+  // Summary Section Renderer
+  const renderSummarySection = (summarySection) => (
+    <section className="cv-section" key={summarySection.id}>
+      <h3
+        className="cv-section-title"
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onSectionClick && onSectionClick({ section: summarySection, target: 'title' });
+        }}
+      >
+        Summary of Qualifications
+      </h3>
+      <div className="cv-section-content">
+        {summarySection.content ? (
+          <div
+            className="cv-summary-text"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              onSectionClick && onSectionClick({ section: summarySection, target: 'content', type: 'text' });
+            }}
+          >
+            {summarySection.content}
+          </div>
+        ) : summarySection.entries && summarySection.entries.length > 0 ? (
+          <div className="cv-summary-bullets">
+            {summarySection.entries[0]?.items?.map((item, idx) => (
+              <div
+                key={item.id}
+                className="cv-bullet"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  onSectionClick && onSectionClick({ section: summarySection, target: 'item', itemId: item.id, type: 'bullet' });
+                }}
+              >
+                • {item.content}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="cv-placeholder"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              onSectionClick && onSectionClick({ section: summarySection, target: 'empty' });
+            }}
+          >
+            Add your summary here...
+          </div>
+        )}
+      </div>
+    </section>
+  );
+
+  // Work Experience Section Renderer
+  const renderWorkExperienceSection = (workSection) => (
+    <section
+      className="cv-section"
+      key={workSection.id}
+      onDoubleClick={() => onSectionClick && onSectionClick(workSection)}
+    >
+      <h3 className="cv-section-title">Professional Experience</h3>
+      <div className="cv-section-content">
+        {workSection.entries && workSection.entries.filter(e => !e.parent_entry_id).length > 0 ? (
+          workSection.entries.filter(e => !e.parent_entry_id).map(job => (
+            <div key={job.id} className="cv-job">
+              <div
+                className="cv-job-header"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  onSectionClick && onSectionClick({ section: workSection, target: 'entry', entryId: job.id });
+                }}
+              >
+                <div className="cv-job-title-line">
+                  <strong className="cv-job-title">{job.title}</strong>
+                  <span className="cv-job-location">{job.location}</span>
+                </div>
+                <div className="cv-job-company-line">
+                  <span className="cv-job-company">{job.subtitle}</span>
+                  <span className="cv-job-dates">
+                    {job.start_date && job.end_date ? `${job.start_date} - ${job.end_date}` : ''}
+                  </span>
+                </div>
+              </div>
+
+              {/* Job description */}
+              {job.description && (
+                <div className="cv-job-description">• {job.description}</div>
+              )}
+
+              {/* Direct bullets (not in groups) */}
+              {job.items && job.items.length > 0 && (
+                <div className="cv-job-bullets">
+                  {job.items.map(item => (
+                    <div key={item.id} className="cv-bullet">• {item.content}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Bullet Groups */}
+              {job.sub_entries && job.sub_entries.length > 0 && (
+                <div className="cv-bullet-groups">
+                  {job.sub_entries.map(group => (
+                    <div key={group.id} className="cv-bullet-group">
+                      <div
+                        className="cv-bullet-group-title"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          onSectionClick && onSectionClick({ section: workSection, target: 'subentry', entryId: job.id, subEntryId: group.id });
+                        }}
+                      >
+                        • {group.title}
+                      </div>
+                      {group.items && group.items.length > 0 && (
+                        <div className="cv-bullet-group-items">
+                          {group.items.map(item => (
+                            <div key={item.id} className="cv-bullet-sub">– {item.content}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          <div className="cv-placeholder">Add your work experience here...</div>
+        )}
+      </div>
+    </section>
+  );
+
+  // Education Section Renderer
+  const renderEducationSection = (educationSection) => (
+    <section
+      className="cv-section"
+      key={educationSection.id}
+      onDoubleClick={() => onSectionClick && onSectionClick(educationSection)}
+    >
+      <h3 className="cv-section-title">Education</h3>
+      <div className="cv-section-content">
+        {educationSection.entries && educationSection.entries.length > 0 ? (
+          educationSection.entries.map(edu => (
+            <div key={edu.id} className="cv-education">
+              <div className="cv-edu-header">
+                <div className="cv-edu-title-line">
+                  <strong className="cv-edu-degree">{edu.title}</strong>
+                  <span className="cv-edu-location">{edu.location}</span>
+                </div>
+                <div className="cv-edu-school-line">
+                  <span className="cv-edu-school">{edu.subtitle}</span>
+                  <span className="cv-edu-dates">
+                    {edu.start_date && edu.end_date ? `${edu.start_date} - ${edu.end_date}` : ''}
+                  </span>
+                </div>
+              </div>
+              {edu.items && edu.items.length > 0 && (
+                <div className="cv-edu-bullets">
+                  {edu.items.map(item => (
+                    <div key={item.id} className="cv-bullet">• {item.content}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          <div className="cv-placeholder">Add your education here...</div>
+        )}
+      </div>
+    </section>
+  );
+
+  // Skills Section Renderer
+  const renderSkillsSection = (skillsSection) => (
+    <section
+      className="cv-section"
+      key={skillsSection.id}
+      onDoubleClick={() => onSectionClick && onSectionClick(skillsSection)}
+    >
+      <h3 className="cv-section-title">Core Skills</h3>
+      <div className="cv-section-content">
+        {skillsSection.entries && skillsSection.entries.length > 0 ? (
+          <div className="cv-skills-grid">
+            {skillsSection.entries.map(category => (
+              <div key={category.id} className="cv-skill-category">
+                <h4 className="cv-skill-category-title">{category.title}:</h4>
+                {category.items && category.items.length > 0 && (
+                  <ul className="cv-skill-list">
+                    {category.items.map(item => (
+                      <li key={item.id}>{item.content}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="cv-placeholder">Add your skills here...</div>
+        )}
+      </div>
+    </section>
+  );
+
+  // Custom Section Renderer
+  const renderCustomSection = (section) => (
+    <section
+      key={section.id}
+      className="cv-section"
+      onDoubleClick={() => onSectionClick && onSectionClick(section)}
+    >
+      <h3 className="cv-section-title">{section.title}</h3>
+      <div className="cv-section-content">
+        {section.content && (
+          <div className="cv-text-content">{section.content}</div>
+        )}
+        {section.entries && section.entries.length > 0 ? (
+          section.entries.map(entry => (
+            <div key={entry.id} className="cv-entry">
+              <strong>{entry.title}</strong>
+              {entry.subtitle && <span> - {entry.subtitle}</span>}
+              {entry.items && entry.items.length > 0 && (
+                <div className="cv-entry-bullets">
+                  {entry.items.map(item => (
+                    <div key={item.id} className="cv-bullet">• {item.content}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          !section.content && <div className="cv-placeholder">Add content here...</div>
+        )}
+      </div>
+    </section>
+  );
 
   return (
     <div className="cv-preview">
@@ -98,240 +347,8 @@ function CVPreview({ profile, onSectionClick }) {
           </div>
         </header>
 
-        {/* Summary Section */}
-        {summarySection && (
-          <section className="cv-section">
-            <h3
-              className="cv-section-title"
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                onSectionClick && onSectionClick({ section: summarySection, target: 'title' });
-              }}
-            >
-              Summary of Qualifications
-            </h3>
-            <div className="cv-section-content">
-              {summarySection.content ? (
-                <div
-                  className="cv-summary-text"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    onSectionClick && onSectionClick({ section: summarySection, target: 'content', type: 'text' });
-                  }}
-                >
-                  {summarySection.content}
-                </div>
-              ) : summarySection.entries && summarySection.entries.length > 0 ? (
-                <div className="cv-summary-bullets">
-                  {summarySection.entries[0]?.items?.map((item, idx) => (
-                    <div
-                      key={item.id}
-                      className="cv-bullet"
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        onSectionClick && onSectionClick({ section: summarySection, target: 'item', itemId: item.id, type: 'bullet' });
-                      }}
-                    >
-                      • {item.content}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  className="cv-placeholder"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    onSectionClick && onSectionClick({ section: summarySection, target: 'empty' });
-                  }}
-                >
-                  Add your summary here...
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Professional Experience Section */}
-        {workSection && (
-          <section
-            className="cv-section"
-            onDoubleClick={() => onSectionClick && onSectionClick(workSection)}
-          >
-            <h3 className="cv-section-title">Professional Experience</h3>
-            <div className="cv-section-content">
-              {workSection.entries && workSection.entries.filter(e => !e.parent_entry_id).length > 0 ? (
-                workSection.entries.filter(e => !e.parent_entry_id).map(job => (
-                  <div key={job.id} className="cv-job">
-                    <div
-                      className="cv-job-header"
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        onSectionClick && onSectionClick({ section: workSection, target: 'entry', entryId: job.id });
-                      }}
-                    >
-                      <div className="cv-job-title-line">
-                        <strong className="cv-job-title">{job.title}</strong>
-                        <span className="cv-job-location">{job.location}</span>
-                      </div>
-                      <div className="cv-job-company-line">
-                        <span className="cv-job-company">{job.subtitle}</span>
-                        <span className="cv-job-dates">
-                          {job.start_date && job.end_date ? `${job.start_date} - ${job.end_date}` : ''}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Job description */}
-                    {job.description && (
-                      <div className="cv-job-description">• {job.description}</div>
-                    )}
-
-                    {/* Direct bullets (not in groups) */}
-                    {job.items && job.items.length > 0 && (
-                      <div className="cv-job-bullets">
-                        {job.items.map(item => (
-                          <div key={item.id} className="cv-bullet">• {item.content}</div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Bullet Groups */}
-                    {job.sub_entries && job.sub_entries.length > 0 && (
-                      <div className="cv-bullet-groups">
-                        {job.sub_entries.map(group => (
-                          <div key={group.id} className="cv-bullet-group">
-                            <div
-                              className="cv-bullet-group-title"
-                              onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                onSectionClick && onSectionClick({ section: workSection, target: 'subentry', entryId: job.id, subEntryId: group.id });
-                              }}
-                            >
-                              • {group.title}
-                            </div>
-                            {group.items && group.items.length > 0 && (
-                              <div className="cv-bullet-group-items">
-                                {group.items.map(item => (
-                                  <div key={item.id} className="cv-bullet-sub">– {item.content}</div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="cv-placeholder">Add your work experience here...</div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Education Section */}
-        {educationSection && (
-          <section
-            className="cv-section"
-            onDoubleClick={() => onSectionClick && onSectionClick(educationSection)}
-          >
-            <h3 className="cv-section-title">Education</h3>
-            <div className="cv-section-content">
-              {educationSection.entries && educationSection.entries.length > 0 ? (
-                educationSection.entries.map(edu => (
-                  <div key={edu.id} className="cv-education">
-                    <div className="cv-edu-header">
-                      <div className="cv-edu-title-line">
-                        <strong className="cv-edu-degree">{edu.title}</strong>
-                        <span className="cv-edu-location">{edu.location}</span>
-                      </div>
-                      <div className="cv-edu-school-line">
-                        <span className="cv-edu-school">{edu.subtitle}</span>
-                        <span className="cv-edu-dates">
-                          {edu.start_date && edu.end_date ? `${edu.start_date} - ${edu.end_date}` : ''}
-                        </span>
-                      </div>
-                    </div>
-                    {edu.items && edu.items.length > 0 && (
-                      <div className="cv-edu-bullets">
-                        {edu.items.map(item => (
-                          <div key={item.id} className="cv-bullet">• {item.content}</div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="cv-placeholder">Add your education here...</div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Skills Section */}
-        {skillsSection && (
-          <section
-            className="cv-section"
-            onDoubleClick={() => onSectionClick && onSectionClick(skillsSection)}
-          >
-            <h3 className="cv-section-title">Core Skills</h3>
-            <div className="cv-section-content">
-              {skillsSection.entries && skillsSection.entries.length > 0 ? (
-                <div className="cv-skills-grid">
-                  {skillsSection.entries.map(category => (
-                    <div key={category.id} className="cv-skill-category">
-                      <h4 className="cv-skill-category-title">{category.title}:</h4>
-                      {category.items && category.items.length > 0 && (
-                        <ul className="cv-skill-list">
-                          {category.items.map(item => (
-                            <li key={item.id}>{item.content}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="cv-placeholder">Add your skills here...</div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Other Custom Sections */}
-        {sections
-          .filter(s => !['summary', 'work_experience', 'education', 'skills'].includes(s.section_type))
-          .map(section => (
-            <section
-              key={section.id}
-              className="cv-section"
-              onDoubleClick={() => onSectionClick && onSectionClick(section)}
-            >
-              <h3 className="cv-section-title">{section.title}</h3>
-              <div className="cv-section-content">
-                {section.content && (
-                  <div className="cv-text-content">{section.content}</div>
-                )}
-                {section.entries && section.entries.length > 0 ? (
-                  section.entries.map(entry => (
-                    <div key={entry.id} className="cv-entry">
-                      <strong>{entry.title}</strong>
-                      {entry.subtitle && <span> - {entry.subtitle}</span>}
-                      {entry.items && entry.items.length > 0 && (
-                        <div className="cv-entry-bullets">
-                          {entry.items.map(item => (
-                            <div key={item.id} className="cv-bullet">• {item.content}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  !section.content && <div className="cv-placeholder">Add content here...</div>
-                )}
-              </div>
-            </section>
-          ))}
+        {/* Render sections dynamically based on order */}
+        {sortedSections.map(section => renderSectionContent(section))}
 
         {/* Footer */}
         <footer className="cv-footer">
