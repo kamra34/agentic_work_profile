@@ -56,6 +56,8 @@ function CVPreview({ profile, onSectionClick }) {
         return renderEducationSection(section);
       case 'skills':
         return renderSkillsSection(section);
+      case 'projects':
+        return renderProjectsSection(section);
       default:
         return renderCustomSection(section);
     }
@@ -319,6 +321,55 @@ function CVPreview({ profile, onSectionClick }) {
             </div>
           ) : (
             <div className="cv-placeholder">Add your skills here...</div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  // Projects Section Renderer
+  const renderProjectsSection = (projectsSection) => {
+    return (
+      <section
+        className="cv-section"
+        key={projectsSection.id}
+        onDoubleClick={() => onSectionClick && onSectionClick(projectsSection)}
+      >
+        <h3 className="cv-section-title">Projects</h3>
+        <div className="cv-section-content">
+          {projectsSection.entries && projectsSection.entries.length > 0 ? (
+            <div className="cv-projects-list">
+              {projectsSection.entries.map(project => (
+                <div key={project.id} className="cv-project">
+                  <h4
+                    className="cv-project-title"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onSectionClick && onSectionClick({ section: projectsSection, target: 'entry', entryId: project.id });
+                    }}
+                  >
+                    {project.title}
+                  </h4>
+                  {project.items && project.items.length > 0 && (
+                    <ul className="cv-project-details">
+                      {project.items.map(item => (
+                        <li
+                          key={item.id}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            onSectionClick && onSectionClick({ section: projectsSection, target: 'item', entryId: project.id, itemId: item.id });
+                          }}
+                        >
+                          {item.content}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="cv-placeholder">Add your projects here...</div>
           )}
         </div>
       </section>
