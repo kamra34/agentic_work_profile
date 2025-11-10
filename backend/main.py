@@ -67,6 +67,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Version endpoint
+@app.get("/api/version")
+async def get_version():
+    """Get backend version"""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "VERSION"), "r") as f:
+            version = f.read().strip()
+        return {"version": version}
+    except:
+        return {"version": "unknown"}
+
 # Database dependency
 def get_db():
     db = SessionLocal()
@@ -839,8 +850,13 @@ async def analyze_profile_fit(
         if not user_profile:
             raise HTTPException(status_code=404, detail="User profile not found")
 
-        # Analyze fit with both AI models
-        result = analyze_profile_fit_dual(request.job_analysis, user_profile)
+        # Generate formatted profile text for AI
+        from format_profile_for_ai import format_profile_for_ai
+        formatted_profile = format_profile_for_ai(db, current_user.id)
+
+        # Analyze fit with both AI models using formatted profile
+        result = analyze_profile_fit_dual(request.job_analysis, formatted_profile)
+
         print(f"[DEBUG] Fit analysis completed successfully")
         return ProfileFitResponse(**result)
     except HTTPException:
@@ -873,8 +889,12 @@ async def get_cv_tailoring_recommendations(
         if not user_profile:
             raise HTTPException(status_code=404, detail="User profile not found")
 
-        # Get recommendations from both AI models
-        result = tailor_cv_dual(request.job_analysis, user_profile)
+        # Generate formatted profile text for AI
+        from format_profile_for_ai import format_profile_for_ai
+        formatted_profile = format_profile_for_ai(db, current_user.id)
+
+        # Get recommendations from both AI models using formatted profile
+        result = tailor_cv_dual(request.job_analysis, formatted_profile, user_profile)
         print(f"[DEBUG] CV tailoring recommendations generated successfully")
         return CVTailoringResponse(**result)
     except HTTPException:

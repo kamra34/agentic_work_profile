@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ProfileManagement from './ProfileManagement';
 import './Dashboard.css';
 
@@ -186,6 +186,35 @@ function TailorCVView() {
   const [atsExpandedOpenAI, setAtsExpandedOpenAI] = useState(false);
   const [atsExpandedClaude, setAtsExpandedClaude] = useState(false);
 
+  // Data viewer expandable states
+  const [fitDataExpanded, setFitDataExpanded] = useState(false);
+  const [atsDataExpanded, setAtsDataExpanded] = useState(false);
+  const [tailorDataExpanded, setTailorDataExpanded] = useState(false);
+
+  // Timing states
+  const [jobAnalysisTime, setJobAnalysisTime] = useState(null);
+  const [fitAnalysisTime, setFitAnalysisTime] = useState(null);
+  const [atsAnalysisTime, setAtsAnalysisTime] = useState(null);
+
+  // Backend version
+  const [backendVersion, setBackendVersion] = useState('loading...');
+
+  // Fetch backend version on mount
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/version`);
+        if (response.ok) {
+          const data = await response.json();
+          setBackendVersion(data.version);
+        }
+      } catch (error) {
+        setBackendVersion('error');
+      }
+    };
+    fetchVersion();
+  }, []);
+
   const handleAnalyze = async () => {
     if (!jobDescription.trim()) {
       setError('Please paste a job description to analyze');
@@ -198,6 +227,9 @@ function TailorCVView() {
     setFitAnalysis(null);
     setProgressStep('starting');
     setProgressDetails('Initializing analysis...');
+    setJobAnalysisTime(null);
+    setFitAnalysisTime(null);
+    setAtsAnalysisTime(null);
 
     try {
       const token = localStorage.getItem('token');
@@ -205,6 +237,7 @@ function TailorCVView() {
       // Step 1: Analyze job description with OpenAI
       setProgressStep('job-analysis');
       setProgressDetails('Step 1/3: Analyzing job requirements with OpenAI GPT-4o and Claude Sonnet 4.5...');
+      const jobStartTime = Date.now();
 
       const jobResponse = await fetch(`${API_URL}/api/job/analyze`, {
         method: 'POST',
@@ -220,15 +253,19 @@ function TailorCVView() {
       }
 
       const jobData = await jobResponse.json();
+      const jobEndTime = Date.now();
+      const jobTime = ((jobEndTime - jobStartTime) / 1000).toFixed(2);
+      setJobAnalysisTime(jobTime);
       setAnalysis(jobData);
 
-      setProgressStep('job-complete');
-      setProgressDetails('Step 2/4: Job analysis complete. Analyzing profile fit...');
+      // Wait briefly to show Job Analysis completion
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Step 2: Analyze profile fit based on job analysis
       setAnalyzingFit(true);
       setProgressStep('fit-analysis');
-      setProgressDetails('Step 2/4: Analyzing your profile fit with dual AI models (this may take 10-20 seconds)...');
+      setProgressDetails('Step 2/3: Analyzing your profile fit with dual AI models (this may take 10-20 seconds)...');
+      const fitStartTime = Date.now();
 
       // Get the actual analysis object from the first successful provider
       const firstAnalysis = jobData.analyses.find(a => a.analysis && !a.error);
@@ -244,21 +281,45 @@ function TailorCVView() {
 
         if (fitResponse.ok) {
           const fitData = await fitResponse.json();
+
+          // DEBUG: Log the response to check for input_data
+          console.log('[DEBUG] Fit Analysis Response Keys:', Object.keys(fitData));
+          console.log('[DEBUG] Has input_data?', 'input_data' in fitData);
+          if (fitData.input_data) {
+            console.log('[DEBUG] input_data keys:', Object.keys(fitData.input_data));
+          }
+
+          const fitEndTime = Date.now();
+          const fitTime = ((fitEndTime - fitStartTime) / 1000).toFixed(2);
+
+          // Set fit analysis data and timing IMMEDIATELY
+          setFitAnalysisTime(fitTime);
           setFitAnalysis(fitData);
           setProgressStep('fit-complete');
-          setProgressDetails('Step 3/4: Profile fit analysis complete. Calculating ATS compatibility...');
+          setProgressDetails('Step 2/3: Profile fit analysis complete!');
+
+          // Wait to show Profile Fit completion before starting ATS
+          await new Promise(resolve => setTimeout(resolve, 800));
+
+          // Step 3: Show ATS analysis (data already included in fit analysis, but show progression)
+          setProgressStep('ats-analysis');
+          setProgressDetails('Step 3/3: Analyzing ATS compatibility...');
+          const atsStartTime = Date.now();
+
+          // Simulate ATS processing time for better UX (minimum 1.5 seconds)
+          await new Promise(resolve => setTimeout(resolve, 1500));
+
+          // Calculate ATS timing separately
+          const atsEndTime = Date.now();
+          const atsTime = ((atsEndTime - atsStartTime) / 1000).toFixed(2);
+          setAtsAnalysisTime(atsTime);
+          setProgressStep('ats-complete');
+          setProgressDetails('All analysis complete!');
         } else {
           const errorData = await fitResponse.json();
           throw new Error(errorData.detail || 'Failed to analyze profile fit');
         }
       }
-
-      // Step 3: Show ATS analysis (already included in fit analysis)
-      setProgressStep('ats-analysis');
-      setProgressDetails('Step 4/4: ATS compatibility scoring complete!');
-
-      // Brief delay to show the ATS step
-      await new Promise(resolve => setTimeout(resolve, 500));
 
       setProgressStep('complete');
       setProgressDetails('All analysis complete!');
@@ -283,6 +344,9 @@ function TailorCVView() {
     setFitAnalysis(null);
     setError(null);
     setTailoringRecs(null);
+    setJobAnalysisTime(null);
+    setFitAnalysisTime(null);
+    setAtsAnalysisTime(null);
   };
 
   const handleTailorCV = async () => {
@@ -464,10 +528,15 @@ function TailorCVView() {
 
       <div className="tailor-content">
         <div className="job-input-section">
-          <label className="input-label">
-            Job Description
-            <span className="input-hint">Paste the complete job posting including requirements, responsibilities, and qualifications</span>
-          </label>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+            <label className="input-label">
+              Job Description
+              <span className="input-hint">Paste the complete job posting including requirements, responsibilities, and qualifications</span>
+            </label>
+            <div style={{fontSize: '0.75rem', color: '#666', background: '#f0f0f0', padding: '0.25rem 0.5rem', borderRadius: '4px'}}>
+              Backend: v{backendVersion}
+            </div>
+          </div>
           <textarea
             className="job-description-input"
             placeholder="Paste the job description here...
@@ -566,9 +635,11 @@ Requirements:
               <div className="progress-line"></div>
 
               {/* Step 3: ATS Score */}
-              <div className={`progress-step ${progressStep === 'ats-analysis' ? 'active completed' : ''}`}>
+              <div className={`progress-step ${progressStep === 'ats-analysis' ? 'active' : progressStep === 'ats-complete' ? 'completed' : ''}`}>
                 <div className="step-icon">
                   {progressStep === 'ats-analysis' ? (
+                    <span className="spinner-small"></span>
+                  ) : progressStep === 'ats-complete' ? (
                     <span className="check-icon">✓</span>
                   ) : (
                     <span className="pending-icon">⏳</span>
@@ -591,6 +662,7 @@ Requirements:
               <h2 className="results-title">
                 <span className="expand-arrow">{jobReqExpanded ? '▼' : '▶'}</span>
                 Job Requirements Analysis
+                {jobAnalysisTime && <span className="timing-badge">⏱️ {jobAnalysisTime}s</span>}
               </h2>
               <p className="results-subtitle">
                 Powered by OpenAI GPT-4o and Anthropic Claude Sonnet 4.5
@@ -635,7 +707,10 @@ Requirements:
         {/* Profile Fit Analysis Section - SECOND (Scores always visible, details expandable per column) */}
         {fitAnalysis && (
           <div className="fit-analysis-container">
-            <h2 className="fit-title">Profile Fit Analysis</h2>
+            <h2 className="fit-title">
+              Profile Fit Analysis
+              {fitAnalysisTime && <span className="timing-badge">⏱️ {fitAnalysisTime}s</span>}
+            </h2>
             <p className="fit-subtitle">Unbiased assessment by dual AI models</p>
 
             <div className="fit-comparison">
@@ -714,6 +789,43 @@ Requirements:
                                 <strong>Technical Skills Match:</strong> {result.fit_analysis.technical_skills_match}%
                               </div>
                             </div>
+
+                            {/* Data Viewer - View Input Data Sent to AI */}
+                            <div className="data-viewer-section" style={{marginTop: '1.5rem'}}>
+                              <button
+                                className="data-viewer-toggle"
+                                onClick={() => setFitDataExpanded(!fitDataExpanded)}
+                              >
+                                <span className="expand-arrow">{fitDataExpanded ? '▼' : '▶'}</span>
+                                🔍 View Data Sent to AI Models for Profile Fit
+                              </button>
+                              {fitDataExpanded && (
+                                <div className="data-viewer-content">
+                                  {fitAnalysis.input_data ? (
+                                    <>
+                                      <div className="data-viewer-warning">
+                                        ⚠️ This is the exact data that was sent to {isOpenAI ? 'OpenAI' : 'Claude'} for Profile Fit Analysis
+                                      </div>
+                                      <div className="data-viewer-sections">
+                                        <div className="data-viewer-block">
+                                          <h4>Job Analysis Data</h4>
+                                          <pre>{JSON.stringify(fitAnalysis.input_data.job_analysis, null, 2)}</pre>
+                                        </div>
+                                        <div className="data-viewer-block">
+                                          <h4>Your Profile Data</h4>
+                                          <pre>{fitAnalysis.input_data.formatted_profile || 'No profile data available'}</pre>
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="data-viewer-warning" style={{background: '#fff3cd', borderColor: '#ffc107'}}>
+                                      ⚠️ Input data not available. This analysis was run before the data viewer feature was added.
+                                      <br/><strong>Please run a fresh analysis to see the input data.</strong>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -728,7 +840,10 @@ Requirements:
         {/* ATS Compatibility Section - THIRD (Scores always visible, details expandable per column) */}
         {fitAnalysis && fitAnalysis.fit_analyses && fitAnalysis.fit_analyses.length > 0 && (
           <div className="ats-overall-container">
-            <h2 className="ats-overall-title">ATS Compatibility Analysis</h2>
+            <h2 className="ats-overall-title">
+              ATS Compatibility Analysis
+              {atsAnalysisTime && <span className="timing-badge">⏱️ {atsAnalysisTime}s</span>}
+            </h2>
             <p className="ats-overall-subtitle">How well your profile will perform in Applicant Tracking Systems</p>
 
             <div className="ats-comparison">
@@ -812,6 +927,43 @@ Requirements:
                             <strong>ATS Notes:</strong> {result.fit_analysis.ats_compatibility.ats_notes}
                           </div>
                         )}
+
+                        {/* Data Viewer for ATS - Same data as Profile Fit since ATS is part of it */}
+                        <div className="data-viewer-section" style={{marginTop: '1.5rem'}}>
+                          <button
+                            className="data-viewer-toggle"
+                            onClick={() => setAtsDataExpanded(!atsDataExpanded)}
+                          >
+                            <span className="expand-arrow">{atsDataExpanded ? '▼' : '▶'}</span>
+                            🔍 View Data Sent to AI Models for ATS Score
+                          </button>
+                          {atsDataExpanded && (
+                            <div className="data-viewer-content">
+                              {fitAnalysis.input_data ? (
+                                <>
+                                  <div className="data-viewer-warning">
+                                    ⚠️ This is the exact data that was sent to {isOpenAI ? 'OpenAI' : 'Claude'} for ATS Compatibility Analysis
+                                  </div>
+                                  <div className="data-viewer-sections">
+                                    <div className="data-viewer-block">
+                                      <h4>Job Analysis Data</h4>
+                                      <pre>{JSON.stringify(fitAnalysis.input_data.job_analysis, null, 2)}</pre>
+                                    </div>
+                                    <div className="data-viewer-block">
+                                      <h4>Your Profile Data</h4>
+                                      <pre>{fitAnalysis.input_data.formatted_profile || 'No profile data available'}</pre>
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="data-viewer-warning" style={{background: '#fff3cd', borderColor: '#ffc107'}}>
+                                  ⚠️ Input data not available. This analysis was run before the data viewer feature was added.
+                                  <br/><strong>Please run a fresh analysis to see the input data.</strong>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -854,6 +1006,36 @@ Requirements:
               <p>Review the specific content recommended by OpenAI and Claude. Items recommended by both models are highlighted.</p>
             </div>
 
+            {/* Data Viewer for CV Tailoring */}
+            {tailoringRecs.input_data && (
+              <div className="data-viewer-section">
+                <button
+                  className="data-viewer-toggle"
+                  onClick={() => setTailorDataExpanded(!tailorDataExpanded)}
+                >
+                  <span className="expand-arrow">{tailorDataExpanded ? '▼' : '▶'}</span>
+                  🔍 View Input Data Sent to AI Models
+                </button>
+                {tailorDataExpanded && (
+                  <div className="data-viewer-content">
+                    <div className="data-viewer-warning">
+                      ⚠️ This is the exact data that was sent to OpenAI and Claude for CV Tailoring Recommendations
+                    </div>
+                    <div className="data-viewer-sections">
+                      <div className="data-viewer-block">
+                        <h4>Job Analysis Data</h4>
+                        <pre>{JSON.stringify(tailoringRecs.input_data.job_analysis, null, 2)}</pre>
+                      </div>
+                      <div className="data-viewer-block">
+                        <h4>Your Profile Data</h4>
+                        <pre>{tailoringRecs.input_data.formatted_profile || 'No profile data available'}</pre>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Overall Strategy */}
             {tailoringRecs.enriched_recommendations && (tailoringRecs.enriched_recommendations.overall_strategy?.openai || tailoringRecs.enriched_recommendations.overall_strategy?.claude) && (
               <div className="strategy-comparison">
@@ -872,21 +1054,26 @@ Requirements:
               </div>
             )}
 
-            {/* Summary Items */}
-            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.summary_items && tailoringRecs.enriched_recommendations.summary_items.length > 0 && (
+            {/* Summary - Unified Layout */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.summary && tailoringRecs.enriched_recommendations.summary.length > 0 && (
               <div className="enriched-section">
-                <h3 className="section-title">📋 Summary ({tailoringRecs.enriched_recommendations.summary_items.length} items recommended)</h3>
-                <div className="enriched-items">
-                  {tailoringRecs.enriched_recommendations.summary_items.map((item, idx) => (
-                    <div key={idx} className={`enriched-item ${item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
-                      <div className="item-content">• {item.content}</div>
-                      <div className="item-badges">
-                        {item.recommended_by.includes('openai') && (
-                          <span className="badge-openai">🟢 OpenAI</span>
-                        )}
-                        {item.recommended_by.includes('claude') && (
-                          <span className="badge-claude">🔵 Claude</span>
-                        )}
+                <h3 className="section-title">📋 Summary</h3>
+                <p className="section-subtitle">
+                  {tailoringRecs.enriched_recommendations.summary.length} selected items from your profile
+                </p>
+
+                <div className="unified-summary-list">
+                  {tailoringRecs.enriched_recommendations.summary.map((item, idx) => (
+                    <div key={idx} className="unified-item">
+                      <div className="item-content-row">
+                        <span className="item-bullet">•</span>
+                        <div className="item-text-wrapper">
+                          <p className="item-text">{item.content}</p>
+                        </div>
+                        <div className="item-badges-inline">
+                          {item.recommended_by && item.recommended_by.includes('openai') && <span className="badge-openai-small">🟢</span>}
+                          {item.recommended_by && item.recommended_by.includes('claude') && <span className="badge-claude-small">🔵</span>}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -897,7 +1084,9 @@ Requirements:
             {/* Work Experience */}
             {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.work_experience && tailoringRecs.enriched_recommendations.work_experience.length > 0 && (
               <div className="enriched-section">
-                <h3 className="section-title">💼 Work Experience ({tailoringRecs.enriched_recommendations.work_experience.length} roles recommended)</h3>
+                <h3 className="section-title">💼 Work Experience ({tailoringRecs.enriched_recommendations.work_experience.length} entries)</h3>
+                <p className="section-subtitle">AI-selected bullets from your work history that best match this role</p>
+
                 {tailoringRecs.enriched_recommendations.work_experience.map((exp, idx) => (
                   <div key={idx} className="enriched-work-entry">
                     <div className="work-entry-header">
@@ -905,21 +1094,23 @@ Requirements:
                       <div className="work-meta">
                         {exp.subtitle && <span className="work-company">{exp.subtitle}</span>}
                         {exp.date_range && <span className="work-dates">{exp.date_range}</span>}
+                        {exp.location && <span className="work-location">📍 {exp.location}</span>}
                       </div>
                     </div>
 
+                    {/* Direct bullets under this entry */}
                     {exp.items && exp.items.length > 0 && (
                       <div className="work-bullets">
-                        <p className="bullets-label">Recommended Bullets ({exp.items.length}):</p>
+                        <p className="bullets-label">Key Achievements ({exp.items.length}):</p>
                         {exp.items.map((item, i) => (
-                          <div key={i} className={`enriched-item ${item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
+                          <div key={i} className={`enriched-item ${item.recommended_by && item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
                             <div className="item-content">• {item.content}</div>
                             <div className="item-badges">
-                              {item.recommended_by.includes('openai') && (
-                                <span className="badge-openai">🟢 OpenAI</span>
+                              {item.recommended_by && item.recommended_by.includes('openai') && (
+                                <span className="badge-openai">🟢</span>
                               )}
-                              {item.recommended_by.includes('claude') && (
-                                <span className="badge-claude">🔵 Claude</span>
+                              {item.recommended_by && item.recommended_by.includes('claude') && (
+                                <span className="badge-claude">🔵</span>
                               )}
                             </div>
                           </div>
@@ -927,15 +1118,234 @@ Requirements:
                       </div>
                     )}
 
+                    {/* Sub-entries (hierarchical roles/subsections) */}
+                    {exp.sub_entries && exp.sub_entries.length > 0 && (
+                      <div className="work-sub-entries">
+                        {exp.sub_entries.map((subEntry, subIdx) => (
+                          <div key={subIdx} className="work-sub-entry">
+                            <h5 className="sub-entry-title">└─ {subEntry.title}</h5>
+                            {subEntry.items && subEntry.items.length > 0 && (
+                              <div className="sub-entry-bullets">
+                                {subEntry.items.map((item, i) => (
+                                  <div key={i} className={`enriched-item ${item.recommended_by && item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
+                                    <div className="item-content">• {item.content}</div>
+                                    <div className="item-badges">
+                                      {item.recommended_by && item.recommended_by.includes('openai') && (
+                                        <span className="badge-openai">🟢</span>
+                                      )}
+                                      {item.recommended_by && item.recommended_by.includes('claude') && (
+                                        <span className="badge-claude">🔵</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Reasoning for sub-entry */}
+                            {(subEntry.reasoning?.openai || subEntry.reasoning?.claude) && (
+                              <div className="sub-entry-reasoning">
+                                {subEntry.reasoning.openai && (
+                                  <p className="reasoning-text">🟢 {subEntry.reasoning.openai}</p>
+                                )}
+                                {subEntry.reasoning.claude && (
+                                  <p className="reasoning-text">🔵 {subEntry.reasoning.claude}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Overall reasoning for this entry */}
                     {(exp.reasoning?.openai || exp.reasoning?.claude) && (
                       <div className="work-reasoning">
-                        <p className="reasoning-title"><strong>Why Include This Role:</strong></p>
+                        <p className="reasoning-title"><strong>Why This Experience Matters:</strong></p>
                         {exp.reasoning.openai && (
-                          <p className="reasoning-openai">🟢 <strong>OpenAI:</strong> "{exp.reasoning.openai}"</p>
+                          <p className="reasoning-openai">🟢 <strong>OpenAI:</strong> {exp.reasoning.openai}</p>
                         )}
                         {exp.reasoning.claude && (
-                          <p className="reasoning-claude">🔵 <strong>Claude:</strong> "{exp.reasoning.claude}"</p>
+                          <p className="reasoning-claude">🔵 <strong>Claude:</strong> {exp.reasoning.claude}</p>
                         )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Skills Section */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.skills && tailoringRecs.enriched_recommendations.skills.length > 0 && (
+              <div className="enriched-section">
+                <h3 className="section-title">🛠️ Skills ({tailoringRecs.enriched_recommendations.skills.length} categories)</h3>
+                <p className="section-subtitle">Most relevant skills for this role</p>
+
+                {tailoringRecs.enriched_recommendations.skills.map((skillCategory, idx) => (
+                  <div key={idx} className="skill-category">
+                    <h4 className="skill-category-title">{skillCategory.title}</h4>
+                    {skillCategory.items && skillCategory.items.length > 0 && (
+                      <div className="skill-items">
+                        {skillCategory.items.map((item, i) => (
+                          <span key={i} className={`skill-tag ${item.recommended_by && item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
+                            {item.content}
+                            {item.recommended_by && item.recommended_by.length === 2 && <span className="tag-badge">🟢🔵</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {(skillCategory.reasoning?.openai || skillCategory.reasoning?.claude) && (
+                      <div className="skill-reasoning">
+                        {skillCategory.reasoning.openai && (
+                          <p className="reasoning-text">🟢 {skillCategory.reasoning.openai}</p>
+                        )}
+                        {skillCategory.reasoning.claude && (
+                          <p className="reasoning-text">🔵 {skillCategory.reasoning.claude}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Education Section */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.education && tailoringRecs.enriched_recommendations.education.length > 0 && (
+              <div className="enriched-section">
+                <h3 className="section-title">📚 Education ({tailoringRecs.enriched_recommendations.education.length} entries)</h3>
+                {tailoringRecs.enriched_recommendations.education.map((edu, idx) => (
+                  <div key={idx} className="enriched-entry">
+                    <div className="entry-header">
+                      <h4 className="entry-title">{edu.title}</h4>
+                      {edu.subtitle && <p className="entry-subtitle">{edu.subtitle}</p>}
+                      {edu.date_range && <p className="entry-dates">{edu.date_range}</p>}
+                    </div>
+                    {edu.recommended_by && (
+                      <div className="entry-badges">
+                        {edu.recommended_by.includes('openai') && <span className="badge-openai">🟢 OpenAI</span>}
+                        {edu.recommended_by.includes('claude') && <span className="badge-claude">🔵 Claude</span>}
+                      </div>
+                    )}
+                    {edu.items && edu.items.length > 0 && (
+                      <div className="entry-items">
+                        {edu.items.map((item, i) => (
+                          <p key={i} className="entry-item-text">• {item.content}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Projects Section */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.projects && tailoringRecs.enriched_recommendations.projects.length > 0 && (
+              <div className="enriched-section">
+                <h3 className="section-title">🚀 Projects ({tailoringRecs.enriched_recommendations.projects.length} recommended)</h3>
+                {tailoringRecs.enriched_recommendations.projects.map((project, idx) => (
+                  <div key={idx} className="enriched-entry">
+                    <div className="entry-header">
+                      <h4 className="entry-title">{project.title}</h4>
+                      {project.subtitle && <p className="entry-subtitle">{project.subtitle}</p>}
+                      {project.date_range && <p className="entry-dates">{project.date_range}</p>}
+                    </div>
+                    {project.recommended_by && (
+                      <div className="entry-badges">
+                        {project.recommended_by.includes('openai') && <span className="badge-openai">🟢 OpenAI</span>}
+                        {project.recommended_by.includes('claude') && <span className="badge-claude">🔵 Claude</span>}
+                      </div>
+                    )}
+                    {project.items && project.items.length > 0 && (
+                      <div className="entry-items">
+                        {project.items.map((item, i) => (
+                          <p key={i} className="entry-item-text">• {item.content}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Certifications Section */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.certifications && tailoringRecs.enriched_recommendations.certifications.length > 0 && (
+              <div className="enriched-section">
+                <h3 className="section-title">🏆 Certifications ({tailoringRecs.enriched_recommendations.certifications.length} relevant)</h3>
+                {tailoringRecs.enriched_recommendations.certifications.map((cert, idx) => (
+                  <div key={idx} className="enriched-entry">
+                    <div className="entry-header">
+                      <h4 className="entry-title">{cert.title}</h4>
+                      {cert.subtitle && <p className="entry-subtitle">{cert.subtitle}</p>}
+                      {cert.date_range && <p className="entry-dates">{cert.date_range}</p>}
+                    </div>
+                    {cert.recommended_by && (
+                      <div className="entry-badges">
+                        {cert.recommended_by.includes('openai') && <span className="badge-openai">🟢 OpenAI</span>}
+                        {cert.recommended_by.includes('claude') && <span className="badge-claude">🔵 Claude</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Awards Section */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.awards && tailoringRecs.enriched_recommendations.awards.length > 0 && (
+              <div className="enriched-section">
+                <h3 className="section-title">⭐ Awards ({tailoringRecs.enriched_recommendations.awards.length} relevant)</h3>
+                {tailoringRecs.enriched_recommendations.awards.map((award, idx) => (
+                  <div key={idx} className="enriched-entry">
+                    <div className="entry-header">
+                      <h4 className="entry-title">{award.title}</h4>
+                      {award.subtitle && <p className="entry-subtitle">{award.subtitle}</p>}
+                      {award.date_range && <p className="entry-dates">{award.date_range}</p>}
+                    </div>
+                    {award.recommended_by && (
+                      <div className="entry-badges">
+                        {award.recommended_by.includes('openai') && <span className="badge-openai">🟢 OpenAI</span>}
+                        {award.recommended_by.includes('claude') && <span className="badge-claude">🔵 Claude</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Publications Section */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.publications && tailoringRecs.enriched_recommendations.publications.length > 0 && (
+              <div className="enriched-section">
+                <h3 className="section-title">📄 Publications ({tailoringRecs.enriched_recommendations.publications.length} relevant)</h3>
+                {tailoringRecs.enriched_recommendations.publications.map((pub, idx) => (
+                  <div key={idx} className="enriched-entry">
+                    <div className="entry-header">
+                      <h4 className="entry-title">{pub.title}</h4>
+                      {pub.subtitle && <p className="entry-subtitle">{pub.subtitle}</p>}
+                      {pub.date_range && <p className="entry-dates">{pub.date_range}</p>}
+                    </div>
+                    {pub.recommended_by && (
+                      <div className="entry-badges">
+                        {pub.recommended_by.includes('openai') && <span className="badge-openai">🟢 OpenAI</span>}
+                        {pub.recommended_by.includes('claude') && <span className="badge-claude">🔵 Claude</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Languages Section */}
+            {tailoringRecs.enriched_recommendations && tailoringRecs.enriched_recommendations.languages && tailoringRecs.enriched_recommendations.languages.length > 0 && (
+              <div className="enriched-section">
+                <h3 className="section-title">🌍 Languages ({tailoringRecs.enriched_recommendations.languages.length} relevant)</h3>
+                {tailoringRecs.enriched_recommendations.languages.map((lang, idx) => (
+                  <div key={idx} className="enriched-entry">
+                    <div className="entry-header">
+                      <h4 className="entry-title">{lang.title}</h4>
+                      {lang.subtitle && <p className="entry-subtitle">{lang.subtitle}</p>}
+                    </div>
+                    {lang.recommended_by && (
+                      <div className="entry-badges">
+                        {lang.recommended_by.includes('openai') && <span className="badge-openai">🟢 OpenAI</span>}
+                        {lang.recommended_by.includes('claude') && <span className="badge-claude">🔵 Claude</span>}
                       </div>
                     )}
                   </div>

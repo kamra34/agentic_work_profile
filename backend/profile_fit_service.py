@@ -28,9 +28,13 @@ except Exception as e:
     print(f"Anthropic client initialization failed: {e}")
 
 
-def analyze_profile_fit_with_openai(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_profile_fit_with_openai(job_analysis: Dict[str, Any], user_profile: str) -> Dict[str, Any]:
     """
     Analyze profile fit using OpenAI GPT-4o with strict, unbiased evaluation
+
+    Args:
+        job_analysis: The analyzed job description data
+        user_profile: Formatted profile text from format_profile_for_ai()
     """
     if not openai_client:
         raise Exception("OpenAI client not initialized. Please set OPENAI_API_KEY environment variable.")
@@ -100,7 +104,7 @@ Return your analysis as a JSON object with this exact structure:
 {json.dumps(job_analysis, indent=2)}
 
 Candidate Profile:
-{json.dumps(user_profile, indent=2)}
+{user_profile}
 
 Analyze how well this candidate's profile matches the job requirements. Be honest and unbiased."""
 
@@ -127,9 +131,13 @@ Analyze how well this candidate's profile matches the job requirements. Be hones
         raise Exception(f"OpenAI fit analysis failed: {str(e)}")
 
 
-def analyze_profile_fit_with_claude(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_profile_fit_with_claude(job_analysis: Dict[str, Any], user_profile: str) -> Dict[str, Any]:
     """
     Analyze profile fit using Claude Sonnet 4.5 with strict, unbiased evaluation
+
+    Args:
+        job_analysis: The analyzed job description data
+        user_profile: Formatted profile text from format_profile_for_ai()
     """
     if not anthropic_client:
         raise Exception("Anthropic client not initialized. Please set ANTHROPIC_API_KEY environment variable.")
@@ -173,13 +181,35 @@ Your analysis must include:
 
 8. **Recommendation**: Clear YES/NO on whether candidate should apply, with brief reasoning
 
-Return your analysis as a JSON object. Start your response with { and end with }."""
+Return your analysis as a JSON object with this exact structure:
+{
+  "fit_percentage": <number 0-100>,
+  "fit_summary": "<honest assessment>",
+  "strengths": ["<specific strength 1>", "<specific strength 2>", ...],
+  "critical_gaps": ["<gap 1>", "<gap 2>", ...],
+  "experience_match": "<assessment>",
+  "technical_skills_match": <percentage 0-100>,
+  "ats_compatibility": {
+    "keyword_match": <number 0-100>,
+    "skills_coverage": <number 0-100>,
+    "has_metrics": <boolean>,
+    "action_verbs_score": <number 0-100>,
+    "overall_ats_score": <number 0-100>,
+    "ats_notes": "<brief explanation of ATS scoring>"
+  },
+  "recommendation": {
+    "should_apply": <true/false>,
+    "reasoning": "<clear explanation>"
+  }
+}
+
+Start your response with { and end with }."""
 
     user_content = f"""Job Requirements Analysis:
 {json.dumps(job_analysis, indent=2)}
 
 Candidate Profile:
-{json.dumps(user_profile, indent=2)}
+{user_profile}
 
 Analyze how well this candidate's profile matches the job requirements. Be honest and unbiased."""
 
@@ -219,24 +249,26 @@ Analyze how well this candidate's profile matches the job requirements. Be hones
         raise Exception(f"Claude fit analysis failed: {str(e)}")
 
 
-def analyze_profile_fit_dual(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_profile_fit_dual(job_analysis: Dict[str, Any], formatted_profile: str) -> Dict[str, Any]:
     """
     Analyze profile fit with both OpenAI and Claude, return both results for comparison
+
+    Args:
+        job_analysis: The analyzed job description data
+        formatted_profile: Formatted profile text from format_profile_for_ai()
     """
     results = {
         "job_analysis": job_analysis,
-        "user_profile_summary": {
-            "sections_count": len(user_profile.get("sections", [])),
-            "has_work_experience": any(s.get("type") == "work_experience" for s in user_profile.get("sections", [])),
-            "has_education": any(s.get("type") == "education" for s in user_profile.get("sections", [])),
-            "has_skills": any(s.get("type") == "skills" for s in user_profile.get("sections", []))
+        "input_data": {
+            "job_analysis": job_analysis,
+            "formatted_profile": formatted_profile
         },
         "fit_analyses": []
     }
 
     # Try OpenAI analysis
     try:
-        openai_result = analyze_profile_fit_with_openai(job_analysis, user_profile)
+        openai_result = analyze_profile_fit_with_openai(job_analysis, formatted_profile)
         results["fit_analyses"].append(openai_result)
     except Exception as e:
         results["fit_analyses"].append({
@@ -246,12 +278,16 @@ def analyze_profile_fit_dual(job_analysis: Dict[str, Any], user_profile: Dict[st
 
     # Try Claude analysis
     try:
-        claude_result = analyze_profile_fit_with_claude(job_analysis, user_profile)
+        claude_result = analyze_profile_fit_with_claude(job_analysis, formatted_profile)
         results["fit_analyses"].append(claude_result)
     except Exception as e:
         results["fit_analyses"].append({
             "provider": "anthropic",
             "error": str(e)
         })
+
+    # Debug: Print to verify input_data is included
+    print(f"[DEBUG] Response has input_data: {'input_data' in results}")
+    print(f"[DEBUG] Response keys: {results.keys()}")
 
     return results

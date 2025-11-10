@@ -182,3 +182,58 @@ class SectionItem(Base):
 
     # Relationships
     entry = relationship("SectionEntry", back_populates="items")
+
+
+class TailoredCVVersion(Base):
+    """
+    Saved tailored CV versions for specific job applications
+    Stores which items were selected from the master profile for each application
+    """
+    __tablename__ = "tailored_cv_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    profile_id = Column(Integer, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False)
+
+    # Job information
+    job_title = Column(String, nullable=False)
+    company_name = Column(String, nullable=True)
+    job_description = Column(Text, nullable=True)  # Original job description
+
+    # AI Analysis scores
+    openai_fit_score = Column(Integer, nullable=True)  # 0-100
+    claude_fit_score = Column(Integer, nullable=True)  # 0-100
+    openai_ats_score = Column(Integer, nullable=True)  # 0-100
+    claude_ats_score = Column(Integer, nullable=True)  # 0-100
+
+    # Selected content (stored as JSON with item IDs)
+    selected_content = Column(JSON, nullable=False)
+    # Structure:
+    # {
+    #   "summary_items": [item_id1, item_id2, ...],
+    #   "work_experience": [{
+    #     "entry_id": entry_id,
+    #     "items": [item_id1, item_id2, ...]
+    #   }],
+    #   "skills": [{
+    #     "entry_id": entry_id,
+    #     "items": [item_id1, item_id2, ...]
+    #   }],
+    #   "education_entries": [entry_id1, entry_id2, ...],
+    #   "project_entries": [entry_id1, entry_id2, ...],
+    #   "certification_entries": [entry_id1, entry_id2, ...]
+    # }
+
+    # AI recommendations (for reference)
+    openai_recommendations = Column(JSON, nullable=True)
+    claude_recommendations = Column(JSON, nullable=True)
+
+    # Metadata
+    notes = Column(Text, nullable=True)  # User's notes about this application
+    status = Column(String, default="draft")  # draft, applied, interview, rejected, offer
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User")
+    profile = relationship("Profile")

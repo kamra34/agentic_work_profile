@@ -28,9 +28,13 @@ except Exception as e:
     print(f"Anthropic client initialization failed: {e}")
 
 
-def tailor_cv_with_openai(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+def tailor_cv_with_openai(job_analysis: Dict[str, Any], formatted_profile: str) -> Dict[str, Any]:
     """
     Recommend which specific content to include for this job using OpenAI
+
+    Args:
+        job_analysis: The analyzed job description data
+        formatted_profile: Formatted profile text from format_profile_for_ai()
     """
     if not openai_client:
         raise Exception("OpenAI client not initialized. Please set OPENAI_API_KEY environment variable.")
@@ -38,27 +42,43 @@ def tailor_cv_with_openai(job_analysis: Dict[str, Any], user_profile: Dict[str, 
     system_prompt = """You are an expert CV tailoring assistant. Your job is to recommend which specific content from a candidate's master profile should be included in a tailored CV for a specific job application.
 
 CRITICAL INSTRUCTIONS:
-- Recommend SPECIFIC items by their IDs
+
+**SUMMARY SECTION:**
+- The candidate has existing summary items in their profile (you'll see IDs)
+- SELECT 5-7 of the candidate's existing summary items that best fit this job
+- Recommend by item_id, just like work experience bullets
+- Choose summaries that highlight the most relevant aspects for this specific role
+
+**WORK EXPERIENCE:**
+- Recommend SPECIFIC bullet point IDs (you'll see IDs in the profile structure)
+- The candidate has a hierarchical structure: companies → roles/subsections → bullet points
+- For EACH role entry and sub-entry, recommend which specific bullet points to include
+- Select bullets that best match the job requirements and demonstrate relevant skills
 - Be selective - quality over quantity
-- For Summary: recommend 5-7 most relevant bullet points (from all available summary items)
-- For Work Experience: The candidate has MULTIPLE jobs in their profile. For EACH job entry, recommend which specific bullet points to include (not which jobs to include - include ALL jobs but select bullets within each)
-- For Skills: The candidate has skill categories/groups. For EACH category, recommend which specific skills to include
-- For Education: recommend which degrees/certifications to include
-- For Projects: recommend most relevant projects
+
+**SKILLS:**
+- The candidate has skill categories/groups
+- For EACH category (entry_id), recommend which specific skill items to include
+- Prioritize skills mentioned in the job description
+
+**EDUCATION, PROJECTS, CERTIFICATIONS:**
+- Recommend entire entries (by entry_id) that are most relevant
+- All bullets within recommended entries will be included
+
+**IMPORTANT NOTES:**
 - Prioritize content that matches job requirements and keywords
 - Consider ATS optimization - include exact keyword matches
 - Keep CV length reasonable (1-2 pages worth of content)
 
-IMPORTANT: You will see the candidate's COMPLETE work history with ALL jobs. Your job is NOT to filter which jobs to show, but rather to recommend which BULLETS within each job are most relevant for this role.
-
 Your recommendations must be in this JSON structure:
 {
-  "recommended_summary_items": [<item_id>, <item_id>, ...],
+  "recommended_summary": [<item_id>, <item_id>, ...],  // 5-7 summary item IDs from the candidate's existing summaries
   "recommended_work_experience": [
     {
       "entry_id": <entry_id>,
+      "entry_type": "<'parent' or 'sub_entry'>",
       "recommended_items": [<item_id>, <item_id>, ...],
-      "reasoning": "<why this job/role is relevant>"
+      "reasoning": "<why these bullets are relevant>"
     }
   ],
   "recommended_skills": [
@@ -71,6 +91,9 @@ Your recommendations must be in this JSON structure:
   "recommended_education": [<entry_id>, <entry_id>, ...],
   "recommended_projects": [<entry_id>, <entry_id>, ...],
   "recommended_certifications": [<entry_id>, <entry_id>, ...],
+  "recommended_awards": [<entry_id>, <entry_id>, ...],
+  "recommended_publications": [<entry_id>, <entry_id>, ...],
+  "recommended_languages": [<entry_id>, <entry_id>, ...],
   "overall_strategy": "<brief explanation of tailoring strategy>",
   "key_keywords_to_include": ["<keyword1>", "<keyword2>", ...],
   "estimated_page_count": <number>
@@ -82,7 +105,7 @@ Return ONLY the JSON object, no other text."""
 {json.dumps(job_analysis, indent=2)}
 
 Candidate Master Profile:
-{json.dumps(user_profile, indent=2)}
+{formatted_profile}
 
 Recommend which specific items to include in a tailored CV for this job. Be selective and strategic."""
 
@@ -109,9 +132,13 @@ Recommend which specific items to include in a tailored CV for this job. Be sele
         raise Exception(f"OpenAI CV tailoring failed: {str(e)}")
 
 
-def tailor_cv_with_claude(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+def tailor_cv_with_claude(job_analysis: Dict[str, Any], formatted_profile: str) -> Dict[str, Any]:
     """
     Recommend which specific content to include for this job using Claude
+
+    Args:
+        job_analysis: The analyzed job description data
+        formatted_profile: Formatted profile text from format_profile_for_ai()
     """
     if not anthropic_client:
         raise Exception("Anthropic client not initialized. Please set ANTHROPIC_API_KEY environment variable.")
@@ -119,26 +146,70 @@ def tailor_cv_with_claude(job_analysis: Dict[str, Any], user_profile: Dict[str, 
     system_prompt = """You are an expert CV tailoring assistant. Your job is to recommend which specific content from a candidate's master profile should be included in a tailored CV for a specific job application.
 
 CRITICAL INSTRUCTIONS:
-- Recommend SPECIFIC items by their IDs
+
+**SUMMARY SECTION:**
+- The candidate has existing summary items in their profile (you'll see IDs)
+- SELECT 5-7 of the candidate's existing summary items that best fit this job
+- Recommend by item_id, just like work experience bullets
+- Choose summaries that highlight the most relevant aspects for this specific role
+
+**WORK EXPERIENCE:**
+- Recommend SPECIFIC bullet point IDs (you'll see IDs in the profile structure)
+- The candidate has a hierarchical structure: companies → roles/subsections → bullet points
+- For EACH role entry and sub-entry, recommend which specific bullet points to include
+- Select bullets that best match the job requirements and demonstrate relevant skills
 - Be selective - quality over quantity
-- For Summary: recommend 5-7 most relevant bullet points (from all available summary items)
-- For Work Experience: The candidate has MULTIPLE jobs in their profile. For EACH job entry, recommend which specific bullet points to include (not which jobs to include - include ALL jobs but select bullets within each)
-- For Skills: The candidate has skill categories/groups. For EACH category, recommend which specific skills to include
-- For Education: recommend which degrees/certifications to include
-- For Projects: recommend most relevant projects
+
+**SKILLS:**
+- The candidate has skill categories/groups
+- For EACH category (entry_id), recommend which specific skill items to include
+- Prioritize skills mentioned in the job description
+
+**EDUCATION, PROJECTS, CERTIFICATIONS:**
+- Recommend entire entries (by entry_id) that are most relevant
+- All bullets within recommended entries will be included
+
+**IMPORTANT NOTES:**
 - Prioritize content that matches job requirements and keywords
 - Consider ATS optimization - include exact keyword matches
 - Keep CV length reasonable (1-2 pages worth of content)
 
-IMPORTANT: You will see the candidate's COMPLETE work history with ALL jobs. Your job is NOT to filter which jobs to show, but rather to recommend which BULLETS within each job are most relevant for this role.
+Your recommendations must be in this JSON structure:
+{
+  "recommended_summary": [<item_id>, <item_id>, ...],  // 5-7 summary item IDs from the candidate's existing summaries
+  "recommended_work_experience": [
+    {
+      "entry_id": <entry_id>,
+      "entry_type": "<'parent' or 'sub_entry'>",
+      "recommended_items": [<item_id>, <item_id>, ...],
+      "reasoning": "<why these bullets are relevant>"
+    }
+  ],
+  "recommended_skills": [
+    {
+      "entry_id": <entry_id>,
+      "recommended_items": [<item_id>, <item_id>, ...],
+      "reasoning": "<why these skills>"
+    }
+  ],
+  "recommended_education": [<entry_id>, <entry_id>, ...],
+  "recommended_projects": [<entry_id>, <entry_id>, ...],
+  "recommended_certifications": [<entry_id>, <entry_id>, ...],
+  "recommended_awards": [<entry_id>, <entry_id>, ...],
+  "recommended_publications": [<entry_id>, <entry_id>, ...],
+  "recommended_languages": [<entry_id>, <entry_id>, ...],
+  "overall_strategy": "<brief explanation of tailoring strategy>",
+  "key_keywords_to_include": ["<keyword1>", "<keyword2>", ...],
+  "estimated_page_count": <number>
+}
 
-Your recommendations must be in this JSON structure. Start your response with { and end with }."""
+Start your response with { and end with }."""
 
     user_content = f"""Job Requirements:
 {json.dumps(job_analysis, indent=2)}
 
 Candidate Master Profile:
-{json.dumps(user_profile, indent=2)}
+{formatted_profile}
 
 Recommend which specific items to include in a tailored CV for this job. Be selective and strategic."""
 
@@ -224,12 +295,15 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
 
     # Merge and enrich recommendations
     enriched = {
-        "summary_items": [],
+        "summary": [],  # Selected summary items from candidate's existing summaries
         "work_experience": [],
         "skills": [],
         "education": [],
         "projects": [],
         "certifications": [],
+        "awards": [],
+        "publications": [],
+        "languages": [],
         "overall_strategy": {
             "openai": openai_recs.get("overall_strategy") if openai_recs else None,
             "claude": claude_recs.get("overall_strategy") if claude_recs else None
@@ -244,9 +318,9 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
         }
     }
 
-    # Enrich summary items
-    openai_summary = set(openai_recs.get("recommended_summary_items", []) if openai_recs else [])
-    claude_summary = set(claude_recs.get("recommended_summary_items", []) if claude_recs else [])
+    # Enrich summary (item-level selection from existing summaries)
+    openai_summary = set(openai_recs.get("recommended_summary", []) if openai_recs else [])
+    claude_summary = set(claude_recs.get("recommended_summary", []) if claude_recs else [])
     all_summary_items = openai_summary | claude_summary
 
     for item_id in all_summary_items:
@@ -257,7 +331,7 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
                 item_data["recommended_by"].append("openai")
             if item_id in claude_summary:
                 item_data["recommended_by"].append("claude")
-            enriched["summary_items"].append(item_data)
+            enriched["summary"].append(item_data)
 
     # Enrich work experience (handle hierarchical structure: parent entries with sub-entries)
     openai_work = openai_recs.get("recommended_work_experience", []) if openai_recs else []
@@ -468,21 +542,96 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
 
             enriched["certifications"].append(entry_info)
 
+    # Enrich awards (entry-level recommendations)
+    openai_awards = set(openai_recs.get("recommended_awards", []) if openai_recs else [])
+    claude_awards = set(claude_recs.get("recommended_awards", []) if claude_recs else [])
+    all_awards = openai_awards | claude_awards
+
+    for entry_id in all_awards:
+        if entry_id in entries_lookup:
+            entry_info = entries_lookup[entry_id].copy()
+            entry_info["recommended_by"] = []
+            if entry_id in openai_awards:
+                entry_info["recommended_by"].append("openai")
+            if entry_id in claude_awards:
+                entry_info["recommended_by"].append("claude")
+
+            # Include all items for this award entry
+            entry_info["items"] = []
+            for item_id, item_data in items_lookup.items():
+                if item_data["entry_id"] == entry_id:
+                    entry_info["items"].append(item_data)
+
+            enriched["awards"].append(entry_info)
+
+    # Enrich publications (entry-level recommendations)
+    openai_pubs = set(openai_recs.get("recommended_publications", []) if openai_recs else [])
+    claude_pubs = set(claude_recs.get("recommended_publications", []) if claude_recs else [])
+    all_pubs = openai_pubs | claude_pubs
+
+    for entry_id in all_pubs:
+        if entry_id in entries_lookup:
+            entry_info = entries_lookup[entry_id].copy()
+            entry_info["recommended_by"] = []
+            if entry_id in openai_pubs:
+                entry_info["recommended_by"].append("openai")
+            if entry_id in claude_pubs:
+                entry_info["recommended_by"].append("claude")
+
+            # Include all items for this publication entry
+            entry_info["items"] = []
+            for item_id, item_data in items_lookup.items():
+                if item_data["entry_id"] == entry_id:
+                    entry_info["items"].append(item_data)
+
+            enriched["publications"].append(entry_info)
+
+    # Enrich languages (entry-level recommendations)
+    openai_langs = set(openai_recs.get("recommended_languages", []) if openai_recs else [])
+    claude_langs = set(claude_recs.get("recommended_languages", []) if claude_recs else [])
+    all_langs = openai_langs | claude_langs
+
+    for entry_id in all_langs:
+        if entry_id in entries_lookup:
+            entry_info = entries_lookup[entry_id].copy()
+            entry_info["recommended_by"] = []
+            if entry_id in openai_langs:
+                entry_info["recommended_by"].append("openai")
+            if entry_id in claude_langs:
+                entry_info["recommended_by"].append("claude")
+
+            # Include all items for this language entry
+            entry_info["items"] = []
+            for item_id, item_data in items_lookup.items():
+                if item_data["entry_id"] == entry_id:
+                    entry_info["items"].append(item_data)
+
+            enriched["languages"].append(entry_info)
+
     return enriched
 
 
-def tailor_cv_dual(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+def tailor_cv_dual(job_analysis: Dict[str, Any], formatted_profile: str, user_profile: Dict[str, Any]) -> Dict[str, Any]:
     """
     Get CV tailoring recommendations from both OpenAI and Claude, then enrich with actual content
+
+    Args:
+        job_analysis: The analyzed job description data
+        formatted_profile: Formatted profile text from format_profile_for_ai()
+        user_profile: Structured user profile data (needed for enrichment)
     """
     results = {
         "job_analysis": job_analysis,
+        "input_data": {
+            "job_analysis": job_analysis,
+            "formatted_profile": formatted_profile
+        },
         "tailoring_recommendations": []
     }
 
     # Try OpenAI
     try:
-        openai_result = tailor_cv_with_openai(job_analysis, user_profile)
+        openai_result = tailor_cv_with_openai(job_analysis, formatted_profile)
         results["tailoring_recommendations"].append(openai_result)
     except Exception as e:
         results["tailoring_recommendations"].append({
@@ -492,7 +641,7 @@ def tailor_cv_dual(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -
 
     # Try Claude
     try:
-        claude_result = tailor_cv_with_claude(job_analysis, user_profile)
+        claude_result = tailor_cv_with_claude(job_analysis, formatted_profile)
         results["tailoring_recommendations"].append(claude_result)
     except Exception as e:
         results["tailoring_recommendations"].append({
@@ -500,7 +649,7 @@ def tailor_cv_dual(job_analysis: Dict[str, Any], user_profile: Dict[str, Any]) -
             "error": str(e)
         })
 
-    # Enrich recommendations with actual content
+    # Enrich recommendations with actual content (still needs structured profile)
     enriched_recs = enrich_recommendations_with_content(
         results["tailoring_recommendations"],
         user_profile

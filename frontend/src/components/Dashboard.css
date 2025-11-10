@@ -2083,3 +2083,453 @@
     padding: 0.75rem;
   }
 }
+
+/* ============================================
+   DATA VIEWER SECTION STYLES
+   ============================================ */
+
+.data-viewer-section {
+  margin-top: 2rem;
+  border-top: 2px dashed #e0e0e0;
+  padding-top: 1.5rem;
+}
+
+.data-viewer-toggle {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.data-viewer-toggle:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.data-viewer-toggle .expand-arrow {
+  font-size: 0.9rem;
+  transition: transform 0.3s ease;
+}
+
+.data-viewer-content {
+  margin-top: 1rem;
+  animation: slideDown 0.3s ease-out;
+}
+
+.data-viewer-warning {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  color: #000;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  border-left: 4px solid #ff9800;
+}
+
+.data-viewer-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.data-viewer-block {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.data-viewer-block h4 {
+  margin: 0 0 1rem 0;
+  color: #667eea;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #667eea;
+}
+
+.data-viewer-block pre {
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 1.5rem;
+  overflow-x: auto;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #2c3e50;
+  margin: 0;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.data-viewer-block pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.data-viewer-block pre::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.data-viewer-block pre::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.data-viewer-block pre::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+@media (max-width: 768px) {
+  .data-viewer-toggle {
+    font-size: 0.9rem;
+    padding: 0.875rem 1.25rem;
+  }
+
+  .data-viewer-block pre {
+    font-size: 0.75rem;
+    padding: 1rem;
+  }
+}
+
+/* ============================================
+   TIMING BADGE STYLES
+   ============================================ */
+
+.timing-badge {
+  display: inline-block;
+  margin-left: 1rem;
+  padding: 0.4rem 0.8rem;
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+  vertical-align: middle;
+}
+
+.results-title .timing-badge,
+.fit-title .timing-badge,
+.ats-overall-title .timing-badge {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.7rem;
+}
+
+@media (max-width: 768px) {
+  .timing-badge {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+    margin-left: 0.5rem;
+  }
+}
+
+/* ==================================================================
+   CV TAILORING - UNIFIED LAYOUT (LIKE PROFILE STRUCTURE)
+   ================================================================== */
+
+.unified-summary-list,
+.unified-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.unified-item {
+  padding: 0.75rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.unified-item:hover {
+  border-color: #cbd5e0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.item-content-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.item-bullet {
+  font-size: 1.2rem;
+  color: #667eea;
+  font-weight: bold;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.item-text-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-text {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #2d3748;
+  margin: 0 0 0.25rem 0;
+}
+
+.item-meta {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: #718096;
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+.item-badges-inline {
+  display: flex;
+  gap: 0.25rem;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+.badge-openai-small,
+.badge-claude-small {
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: help;
+}
+
+.badge-openai-small {
+  filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.3));
+}
+
+.badge-claude-small {
+  filter: drop-shadow(0 1px 2px rgba(59, 130, 246, 0.3));
+}
+
+/* ==================================================================
+   CV TAILORING - WORK EXPERIENCE SUB-ENTRIES STYLING
+   ================================================================== */
+
+.work-sub-entries {
+  margin-top: 1rem;
+  margin-left: 1rem;
+  border-left: 3px solid #e2e8f0;
+  padding-left: 1rem;
+}
+
+.work-sub-entry {
+  margin-bottom: 1.5rem;
+}
+
+.sub-entry-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sub-entry-bullets {
+  margin-left: 1rem;
+}
+
+.sub-entry-reasoning {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #f7fafc;
+  border-radius: 6px;
+  border-left: 3px solid #667eea;
+}
+
+.sub-entry-reasoning .reasoning-text {
+  font-size: 0.85rem;
+  color: #4a5568;
+  margin: 0.25rem 0;
+  line-height: 1.5;
+}
+
+/* ==================================================================
+   CV TAILORING - SKILLS STYLING
+   ================================================================== */
+
+.skill-category {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: #f7fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.skill-category-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 0.75rem;
+}
+
+.skill-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.skill-tag {
+  background: white;
+  color: #4a5568;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  border: 1.5px solid #cbd5e0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.2s;
+}
+
+.skill-tag.recommended-by-both {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border-color: #667eea;
+  font-weight: 600;
+}
+
+.skill-tag:hover {
+  border-color: #667eea;
+  transform: translateY(-1px);
+}
+
+.tag-badge {
+  font-size: 0.7rem;
+}
+
+.skill-reasoning {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 6px;
+  border-left: 3px solid #667eea;
+}
+
+.skill-reasoning .reasoning-text {
+  font-size: 0.85rem;
+  color: #4a5568;
+  margin: 0.25rem 0;
+  line-height: 1.5;
+}
+
+/* ==================================================================
+   CV TAILORING - GENERIC ENTRY STYLING (Education, Projects, etc.)
+   ================================================================== */
+
+.enriched-entry {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.enriched-entry:hover {
+  border-color: #cbd5e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.entry-header {
+  margin-bottom: 0.75rem;
+}
+
+.entry-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0 0 0.25rem 0;
+}
+
+.entry-subtitle {
+  font-size: 0.9rem;
+  color: #718096;
+  margin: 0.25rem 0;
+}
+
+.entry-dates {
+  font-size: 0.85rem;
+  color: #a0aec0;
+  margin: 0.25rem 0;
+}
+
+.entry-badges {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.entry-items {
+  margin-top: 0.75rem;
+  padding-left: 0.5rem;
+}
+
+.entry-item-text {
+  font-size: 0.9rem;
+  color: #4a5568;
+  margin: 0.5rem 0;
+  line-height: 1.6;
+}
+
+/* ==================================================================
+   SECTION SUBTITLE STYLING
+   ================================================================== */
+
+.section-subtitle {
+  font-size: 0.9rem;
+  color: #718096;
+  margin-top: -0.5rem;
+  margin-bottom: 1.5rem;
+  font-style: italic;
+}
+
+/* ==================================================================
+   ENHANCED BADGE STYLING
+   ================================================================== */
+
+.badge-openai,
+.badge-claude {
+  padding: 0.3rem 0.7rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.badge-openai {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-claude {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* Work location styling */
+.work-location {
+  font-size: 0.85rem;
+  color: #718096;
+  margin-left: 0.5rem;
+}

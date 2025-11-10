@@ -247,3 +247,71 @@ class JobAnalysisResult(BaseModel):
 class JobAnalysisResponse(BaseModel):
     job_description: str
     analyses: List[JobAnalysisResult]
+
+# Profile Fit Analysis schemas
+class ProfileFitRequest(BaseModel):
+    job_analysis: Dict[str, Any]  # The job analysis result from job_analysis_service
+
+class ProfileFitResult(BaseModel):
+    provider: str  # "openai" or "anthropic"
+    model: Optional[str] = None
+    fit_analysis: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+class ProfileFitResponse(BaseModel):
+    job_analysis: Dict[str, Any]
+    user_profile_summary: Optional[Dict[str, Any]] = None  # Optional since we include formatted_profile in input_data
+    input_data: Dict[str, Any]
+    fit_analyses: List[ProfileFitResult]
+
+# CV Tailoring schemas
+class CVTailoringRequest(BaseModel):
+    job_analysis: Dict[str, Any]
+
+class CVTailoringRecommendation(BaseModel):
+    provider: str  # "openai" or "anthropic"
+    model: Optional[str] = None
+    recommendations: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+class CVTailoringResponse(BaseModel):
+    job_analysis: Dict[str, Any]
+    input_data: Dict[str, Any]
+    tailoring_recommendations: List[CVTailoringRecommendation]
+    enriched_recommendations: Optional[Dict[str, Any]] = None
+
+# Tailored CV Version schemas
+class TailoredCVCreate(BaseModel):
+    job_title: str
+    company_name: Optional[str] = None
+    job_description: Optional[str] = None
+    selected_content: Dict[str, Any]
+    openai_fit_score: Optional[int] = None
+    claude_fit_score: Optional[int] = None
+    openai_ats_score: Optional[int] = None
+    claude_ats_score: Optional[int] = None
+    openai_recommendations: Optional[Dict[str, Any]] = None
+    claude_recommendations: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+
+class TailoredCVUpdate(BaseModel):
+    job_title: Optional[str] = None
+    company_name: Optional[str] = None
+    selected_content: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+
+class TailoredCVResponse(BaseModel):
+    id: int
+    job_title: str
+    company_name: Optional[str]
+    openai_fit_score: Optional[int]
+    claude_fit_score: Optional[int]
+    openai_ats_score: Optional[int]
+    claude_ats_score: Optional[int]
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
