@@ -233,3 +233,17 @@ class AIChatResponse(BaseModel):
     ats_keywords: Optional[List[str]] = None
     risk_flags: Optional[List[str]] = None
     style_check: Optional[str] = None
+
+# Job Analysis schemas
+class JobAnalysisRequest(BaseModel):
+    job_description: str
+
+class JobAnalysisResult(BaseModel):
+    provider: str  # "openai" or "anthropic"
+    model: Optional[str] = None
+    analysis: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+class JobAnalysisResponse(BaseModel):
+    job_description: str
+    analyses: List[JobAnalysisResult]

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import ProfileManagement from './ProfileManagement';
 import './Dashboard.css';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 function Dashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('home');
 
@@ -114,10 +116,10 @@ function HomeView({ onNavigate }) {
         <div className="step-card step-2">
           <div className="step-number">2</div>
           <div className="step-content">
-            <h3>Tailor CV with AI</h3>
-            <p>Paste a job description and let our AI analyze it against your master profile. Get intelligent suggestions on which experiences and skills to include for maximum impact.</p>
+            <h3>Analyze Job Requirements with AI</h3>
+            <p>Paste a job description and let AI analyze the requirements using both OpenAI GPT-4o and Anthropic Claude Sonnet 4.5. Get detailed insights about required skills, education, experience level, and job category (technical, managerial, leadership, etc.).</p>
             <button className="step-btn" onClick={() => onNavigate('tailor')}>
-              Tailor CV with AI →
+              Analyze Job with AI →
             </button>
           </div>
         </div>
@@ -163,26 +165,188 @@ function HomeView({ onNavigate }) {
   );
 }
 
-// Tailor CV View Component (Placeholder)
+// Tailor CV View Component
 function TailorCVView() {
+  const [jobDescription, setJobDescription] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleAnalyze = async () => {
+    if (!jobDescription.trim()) {
+      setError('Please paste a job description to analyze');
+      return;
+    }
+
+    setAnalyzing(true);
+    setError(null);
+    setAnalysis(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/job/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ job_description: jobDescription })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze job description');
+      }
+
+      const data = await response.json();
+      setAnalysis(data);
+    } catch (err) {
+      setError(err.message || 'An error occurred during analysis');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleClear = () => {
+    setJobDescription('');
+    setAnalysis(null);
+    setError(null);
+  };
+
   return (
-    <div className="placeholder-view">
-      <div className="placeholder-content">
-        <div className="placeholder-icon">🎯</div>
-        <h2>AI-Powered CV Tailoring</h2>
-        <p className="placeholder-description">
-          This feature is under development. Soon you'll be able to:
+    <div className="tailor-cv-view">
+      <div className="tailor-header">
+        <h1>AI-Powered Job Description Analysis</h1>
+        <p className="tailor-subtitle">
+          Paste a job description below and let our AI analyze the requirements, skills, and qualifications needed for the role.
         </p>
-        <ul className="placeholder-list">
-          <li>Paste job descriptions for AI analysis</li>
-          <li>Get intelligent recommendations on which profile items to include</li>
-          <li>See fit scores and gap analysis</li>
-          <li>Generate tailored CVs optimized for specific roles</li>
-          <li>Save multiple CV versions for different applications</li>
-        </ul>
-        <div className="placeholder-cta">
-          <p>Start by building your master profile with all your experiences and skills!</p>
+      </div>
+
+      <div className="tailor-content">
+        <div className="job-input-section">
+          <label className="input-label">
+            Job Description
+            <span className="input-hint">Paste the complete job posting including requirements, responsibilities, and qualifications</span>
+          </label>
+          <textarea
+            className="job-description-input"
+            placeholder="Paste the job description here...
+
+Example:
+Senior Software Engineer - AI/ML
+
+We are seeking an experienced Senior Software Engineer to join our AI/ML team...
+
+Requirements:
+• 5+ years of software development experience
+• Strong Python and machine learning expertise
+• Bachelor's degree in Computer Science or related field
+..."
+            value={jobDescription}
+            onChange={(e) => setJobDescription(e.target.value)}
+            rows={12}
+          />
+
+          <div className="action-buttons">
+            <button
+              className="btn-analyze"
+              onClick={handleAnalyze}
+              disabled={analyzing || !jobDescription.trim()}
+            >
+              {analyzing ? (
+                <>
+                  <span className="spinner"></span>
+                  Analyzing with AI...
+                </>
+              ) : (
+                <>
+                  🤖 Analyze with AI
+                </>
+              )}
+            </button>
+            {(jobDescription || analysis) && (
+              <button className="btn-clear" onClick={handleClear}>
+                Clear
+              </button>
+            )}
+          </div>
         </div>
+
+        {error && (
+          <div className="error-message">
+            <span className="error-icon">⚠️</span>
+            {error}
+          </div>
+        )}
+
+        {analysis && (
+          <div className="analysis-results">
+            <h2 className="results-title">Analysis Results</h2>
+            <p className="results-subtitle">
+              Powered by OpenAI GPT-4o and Anthropic Claude Sonnet 4.5
+            </p>
+
+            {analysis.analyses && analysis.analyses.map((result, idx) => (
+              <div key={idx} className="analysis-block">
+                <div className="analysis-header">
+                  <h3 className="provider-name">
+                    {result.provider === 'openai' ? '🟢 OpenAI GPT-4o' : '🔵 Anthropic Claude Sonnet 4.5'}
+                  </h3>
+                  {result.model && <span className="model-badge">{result.model}</span>}
+                </div>
+
+                {result.error ? (
+                  <div className="provider-error">
+                    <span className="error-icon">⚠️</span>
+                    Error: {result.error}
+                  </div>
+                ) : result.analysis && (
+                  <div className="analysis-content">
+                    {renderAnalysisSection('Job Category', result.analysis.job_category || result.analysis['Job Category'])}
+                    {renderAnalysisSection('Job Level', result.analysis.job_level || result.analysis['Job Level'])}
+                    {renderAnalysisSection('Technical Skills', result.analysis.technical_skills || result.analysis['Technical Skills'])}
+                    {renderAnalysisSection('Soft Skills', result.analysis.soft_skills || result.analysis['Soft Skills'])}
+                    {renderAnalysisSection('Education Requirements', result.analysis.education_requirements || result.analysis['Education Requirements'])}
+                    {renderAnalysisSection('Experience Requirements', result.analysis.experience_requirements || result.analysis['Experience Requirements'])}
+                    {renderAnalysisSection('Responsibilities', result.analysis.responsibilities || result.analysis['Responsibilities'])}
+                    {renderAnalysisSection('Preferred Qualifications', result.analysis.preferred_qualifications || result.analysis['Preferred Qualifications'])}
+                    {renderAnalysisSection('Domain/Industry', result.analysis.domain || result.analysis['Domain/Industry'])}
+                    {renderAnalysisSection('Key Requirements', result.analysis.key_requirements || result.analysis['Key Requirements'])}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Helper function to render analysis sections
+function renderAnalysisSection(title, content) {
+  if (!content) return null;
+
+  return (
+    <div className="analysis-section">
+      <h4 className="section-title">{title}</h4>
+      <div className="section-content">
+        {Array.isArray(content) ? (
+          <ul className="content-list">
+            {content.map((item, idx) => (
+              <li key={idx}>{typeof item === 'object' ? JSON.stringify(item) : item}</li>
+            ))}
+          </ul>
+        ) : typeof content === 'object' ? (
+          <div className="content-object">
+            {Object.entries(content).map(([key, value]) => (
+              <div key={key} className="object-item">
+                <strong>{key}:</strong> {Array.isArray(value) ? value.join(', ') : String(value)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="content-text">{String(content)}</p>
+        )}
       </div>
     </div>
   );

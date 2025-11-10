@@ -20,12 +20,14 @@ from schemas import (
     SectionResponse, SectionCreate, SectionUpdate,
     SectionEntryResponse, SectionEntryCreate, SectionEntryUpdate,
     SectionItemResponse, SectionItemCreate, SectionItemUpdate,
-    AIEditRequest, AIEditResponse, AIChatRequest, AIChatResponse
+    AIEditRequest, AIEditResponse, AIChatRequest, AIChatResponse,
+    JobAnalysisRequest, JobAnalysisResponse
 )
 from file_utils import extract_text_from_file
 from openai_service import parse_cv_with_openai
 from linkedin_service import parse_linkedin_text_with_openai
 from ai_editor_service import edit_with_openai, edit_with_claude, chat_with_ai
+from job_analysis_service import analyze_job_description_dual
 
 load_dotenv()
 
@@ -703,6 +705,28 @@ def ai_chat_section(
         )
         # Result can be either {"response": "text"} or full critique object
         return AIChatResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/job/analyze", response_model=JobAnalysisResponse)
+async def analyze_job_description(
+    request: JobAnalysisRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Analyze a job description using both OpenAI (GPT-4o) and Anthropic (Claude Sonnet 4.5)
+
+    Returns structured analysis including:
+    - Job category (technical, managerial, leadership, etc.)
+    - Key requirements and qualifications
+    - Technical and soft skills
+    - Education and experience requirements
+    - Responsibilities and job level
+    """
+    try:
+        result = analyze_job_description_dual(request.job_description)
+        return JobAnalysisResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
