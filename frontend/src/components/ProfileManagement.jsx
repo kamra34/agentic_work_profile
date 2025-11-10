@@ -345,6 +345,7 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
   const [tempContactInfo, setTempContactInfo] = useState({});
   const [refreshKey, setRefreshKey] = useState(0);
   const [contactInfoExpanded, setContactInfoExpanded] = useState(false);
+  const [draggedSectionId, setDraggedSectionId] = useState(null);
 
   useEffect(() => {
     if (profile) {
@@ -419,6 +420,46 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
     } catch (err) {
       console.error('Error adding section:', err);
       alert('Error adding section');
+    }
+  };
+
+  const reorderSections = async (draggedId, targetId) => {
+    const draggedIndex = sections.findIndex(s => s.id === draggedId);
+    const targetIndex = sections.findIndex(s => s.id === targetId);
+
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Reorder locally first for immediate feedback
+    const newSections = [...sections];
+    const [draggedSection] = newSections.splice(draggedIndex, 1);
+    newSections.splice(targetIndex, 0, draggedSection);
+
+    // Update local state
+    setSections(newSections);
+
+    // Update order values and save to backend
+    try {
+      const token = localStorage.getItem('token');
+      const updatePromises = newSections.map((section, index) =>
+        fetch(`${API_URL}/api/sections/${section.id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...section,
+            order: index
+          })
+        })
+      );
+
+      await Promise.all(updatePromises);
+      await onUpdate();
+    } catch (err) {
+      console.error('Error reordering sections:', err);
+      // Revert on error
+      setSections(sections);
     }
   };
 
@@ -533,6 +574,15 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
                 onUpdate={onUpdate}
                 sectionRef={(el) => { if (sectionRefs) sectionRefs.current[section.id] = el; }}
                 expandHandler={(handler) => { if (sectionExpandHandlers) sectionExpandHandlers.current[section.id] = handler; }}
+                onDragStart={() => setDraggedSectionId(section.id)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedSectionId && draggedSectionId !== section.id) {
+                    reorderSections(draggedSectionId, section.id);
+                  }
+                }}
+                onDragEnd={() => setDraggedSectionId(null)}
+                isDragging={draggedSectionId === section.id}
               />
             ))}
           </div>
@@ -638,7 +688,7 @@ function getAddButtonLabel(sectionType) {
   return labels[sectionType] || 'Add Entry';
 }
 
-function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }) {
+function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, onDragStart, onDragOver, onDragEnd, isDragging }) {
   const [expanded, setExpanded] = useState(false);
   const [content, setContent] = useState(section.content || '');
   const [contentType, setContentType] = useState(section.content_type);
@@ -837,9 +887,17 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }
   };
 
   return (
-    <div className="section-card" ref={sectionRef}>
+    <div
+      className={`section-card ${isDragging ? 'dragging' : ''}`}
+      ref={sectionRef}
+      draggable="true"
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+    >
       <div className="section-card-header" onClick={() => setExpanded(!expanded)}>
         <div className="section-info">
+          <span className="drag-handle" title="Drag to reorder">⋮⋮</span>
           <span className="section-icon">{section.icon}</span>
           <span className="section-title">{section.title}</span>
           <span className="section-type-badge">{contentType}</span>

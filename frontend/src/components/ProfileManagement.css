@@ -477,11 +477,18 @@
   border-radius: 12px;
   overflow: hidden;
   transition: all 0.2s;
+  cursor: move;
 }
 
 .section-card:hover {
   border-color: #cbd5e0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.section-card.dragging {
+  opacity: 0.4;
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .section-card-header {
@@ -503,6 +510,23 @@
   align-items: center;
   gap: 1rem;
   flex: 1;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: #a0aec0;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: color 0.2s;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.section-card:hover .drag-handle {
+  color: #667eea;
 }
 
 .section-icon {
