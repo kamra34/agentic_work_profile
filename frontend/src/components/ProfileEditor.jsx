@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AIEditor from './AIEditor';
 import './ProfileEditor.css';
 
 const API_URL = 'http://localhost:8000';
@@ -15,6 +16,7 @@ function ProfileEditor({ profile: initialProfile, onProfileUpdate }) {
   const [addingSection, setAddingSection] = useState(false);
   const [addingEntry, setAddingEntry] = useState(null);
   const [addingItem, setAddingItem] = useState(null);
+  const [aiEditingEntry, setAiEditingEntry] = useState(null);
 
   useEffect(() => {
     if (initialProfile) {
@@ -268,6 +270,59 @@ function ProfileEditor({ profile: initialProfile, onProfileUpdate }) {
     }
   };
 
+  const handleApplyAISuggestions = async (bulletPoints) => {
+    if (!aiEditingEntry) return;
+
+    try {
+      const token = localStorage.getItem('token');
+
+      // If editing a section (Summary), update content directly
+      if (aiEditingEntry.isSection) {
+        const newContent = bulletPoints.join('\n\n');
+        await fetch(`${API_URL}/api/sections/${aiEditingEntry.id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            content: newContent
+          })
+        });
+      } else {
+        // If editing an entry, replace items
+        // Delete existing items
+        for (const item of aiEditingEntry.items || []) {
+          await fetch(`${API_URL}/api/items/${item.id}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+        }
+
+        // Create new items from AI suggestions with sequential ordering
+        for (let i = 0; i < bulletPoints.length; i++) {
+          await fetch(`${API_URL}/api/entries/${aiEditingEntry.id}/items`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              content: bulletPoints[i],
+              order: i
+            })
+          });
+        }
+      }
+
+      fetchProfile();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="editor-loading">
@@ -420,16 +475,25 @@ function ProfileEditor({ profile: initialProfile, onProfileUpdate }) {
                           />
                         ) : (
                           <>
-                            <p
-                              onDoubleClick={() => setEditingSection(`${section.id}-content`)}
+                            <div className="section-text-content">
+                              <p
+                                onDoubleClick={() => setEditingSection(`${section.id}-content`)}
+                              >
+                                {section.content}
+                              </p>
+                              {section.source && (
+                                <span className="section-source">
+                                  [{section.source}]
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => setAiEditingEntry({ id: section.id, isSection: true, content: section.content, title: section.title })}
+                              className="btn-ai-edit-section"
+                              title="Edit with AI"
                             >
-                              {section.content}
-                            </p>
-                            {section.source && (
-                              <span className="section-source">
-                                [{section.source}]
-                              </span>
-                            )}
+                              ✨ AI Edit
+                            </button>
                           </>
                         )}
                       </div>
@@ -491,13 +555,22 @@ function ProfileEditor({ profile: initialProfile, onProfileUpdate }) {
                                   )
                                 )}
                               </div>
-                              <button
-                                onClick={() => deleteEntry(entry.id)}
-                                className="btn-delete-small"
-                                title="Delete entry"
-                              >
-                                ×
-                              </button>
+                              <div className="entry-actions">
+                                <button
+                                  onClick={() => setAiEditingEntry(entry)}
+                                  className="btn-ai-edit"
+                                  title="Edit with AI"
+                                >
+                                  ✨
+                                </button>
+                                <button
+                                  onClick={() => deleteEntry(entry.id)}
+                                  className="btn-delete-small"
+                                  title="Delete entry"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             </div>
 
                             {expandedEntries[entry.id] && (
@@ -666,6 +739,14 @@ function ProfileEditor({ profile: initialProfile, onProfileUpdate }) {
           )}
         </div>
       </div>
+
+      {aiEditingEntry && (
+        <AIEditor
+          entry={aiEditingEntry}
+          onClose={() => setAiEditingEntry(null)}
+          onApply={handleApplyAISuggestions}
+        />
+      )}
     </div>
   );
 }

@@ -1,18 +1,15 @@
 import { useState } from 'react';
-import ProfileUpload from './ProfileUpload';
-import ProfileEditor from './ProfileEditor';
-import LinkedInImport from './LinkedInImport';
+import ProfileManagement from './ProfileManagement';
 import './Dashboard.css';
 
 function Dashboard({ user, onLogout }) {
-  const [activeTab, setActiveTab] = useState('upload');
-  const [profile, setProfile] = useState(null);
+  const [activeTab, setActiveTab] = useState('profiles');
 
   return (
     <div className="dashboard">
       <nav className="navbar">
         <div className="navbar-content">
-          <h2>CV Profile Builder</h2>
+          <h2>Professional Profile Manager</h2>
           <div className="navbar-right">
             <span className="user-name">{user.full_name}</span>
             <button onClick={onLogout} className="btn-logout">
@@ -25,49 +22,35 @@ function Dashboard({ user, onLogout }) {
       <div className="dashboard-content">
         <aside className="sidebar">
           <button
-            className={`sidebar-item ${activeTab === 'upload' ? 'active' : ''}`}
-            onClick={() => setActiveTab('upload')}
+            className={`sidebar-item ${activeTab === 'profiles' ? 'active' : ''}`}
+            onClick={() => setActiveTab('profiles')}
+          >
+            <span className="icon">📝</span>
+            My Profiles
+          </button>
+          <button
+            className="sidebar-item"
+            disabled
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
+          >
+            <span className="icon">🎯</span>
+            Job Matching
+            <span style={{ fontSize: '0.7rem', marginLeft: '0.5rem' }}>Coming Soon</span>
+          </button>
+          <button
+            className="sidebar-item"
+            disabled
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
           >
             <span className="icon">📄</span>
-            Upload CV
-          </button>
-          <button
-            className={`sidebar-item ${activeTab === 'linkedin' ? 'active' : ''}`}
-            onClick={() => setActiveTab('linkedin')}
-          >
-            <span className="icon">💼</span>
-            Import LinkedIn
-          </button>
-          <button
-            className={`sidebar-item ${activeTab === 'editor' ? 'active' : ''}`}
-            onClick={() => setActiveTab('editor')}
-          >
-            <span className="icon">✏️</span>
-            Edit Profile
+            Generate CV
+            <span style={{ fontSize: '0.7rem', marginLeft: '0.5rem' }}>Coming Soon</span>
           </button>
         </aside>
 
         <main className="main-content">
-          {activeTab === 'upload' && (
-            <ProfileUpload
-              onUploadSuccess={(newProfile) => {
-                setProfile(newProfile);
-                setActiveTab('editor');
-              }}
-            />
-          )}
-          {activeTab === 'linkedin' && (
-            <LinkedInImport
-              onImportSuccess={() => {
-                setActiveTab('editor');
-              }}
-            />
-          )}
-          {activeTab === 'editor' && (
-            <ProfileEditor
-              profile={profile}
-              onProfileUpdate={setProfile}
-            />
+          {activeTab === 'profiles' && (
+            <ProfileManagement />
           )}
         </main>
       </div>

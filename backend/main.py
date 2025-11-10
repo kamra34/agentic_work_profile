@@ -16,15 +16,16 @@ from dotenv import load_dotenv
 from models import Base, User, Profile, Section, SectionEntry, SectionItem
 from schemas import (
     UserRegister, UserLogin, Token, UserResponse,
-    ProfileResponse, ProfileUploadResponse,
+    ProfileResponse, ProfileCreate, ProfileUpdate,
     SectionResponse, SectionCreate, SectionUpdate,
     SectionEntryResponse, SectionEntryCreate, SectionEntryUpdate,
     SectionItemResponse, SectionItemCreate, SectionItemUpdate,
-    LinkedInRequest, LinkedInProcessResponse
+    AIEditRequest, AIEditResponse, AIChatRequest, AIChatResponse
 )
 from file_utils import extract_text_from_file
 from openai_service import parse_cv_with_openai
 from linkedin_service import parse_linkedin_text_with_openai
+from ai_editor_service import edit_with_openai, edit_with_claude, chat_with_ai
 
 load_dotenv()
 
@@ -151,286 +152,134 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 # ==================== PROFILE ENDPOINTS ====================
 
-@app.post("/api/profile/upload", response_model=ProfileUploadResponse)
-async def upload_profile(
-    file: UploadFile = File(...),
-    openai_model: str = Form("gpt-4o"),
+# REMOVED: CV upload endpoint - now using manual profile creation
+# @app.post("/api/profile/upload", response_model=ProfileUploadResponse)
+# async def upload_profile(...):
+#     """Upload CV (PDF/DOCX) and extract profile information using OpenAI"""
+#     ... (commented out - see git history for original code)
+
+# NEW: Get all profiles for a user (supports multiple profiles)
+@app.get("/api/profiles", response_model=list[ProfileResponse])
+def get_profiles(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Upload CV (PDF/DOCX) and extract profile information using OpenAI"""
+    """Get all profiles for the current user"""
+    profiles = db.query(Profile).filter(Profile.user_id == current_user.id).order_by(Profile.is_default.desc(), Profile.created_at.desc()).all()
+    return profiles
 
-    # Check file type
-    if not file.filename.lower().endswith(('.pdf', '.docx', '.doc')):
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
+# NEW: Create a new profile
+@app.post("/api/profiles", response_model=ProfileResponse)
+def create_profile(
+    profile_data: ProfileCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new profile"""
+    db_profile = Profile(
+        user_id=current_user.id,
+        title=profile_data.title,
+        is_default=profile_data.is_default,
+        contact_info=profile_data.contact_info,
+        notes=profile_data.notes
+    )
+    db.add(db_profile)
+    db.commit()
+    db.refresh(db_profile)
+    return db_profile
 
-    # Delete existing profile if any
-    existing_profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
-    if existing_profile:
-        # Delete old file
-        if os.path.exists(existing_profile.file_path):
-            os.remove(existing_profile.file_path)
-        db.delete(existing_profile)
-        db.commit()
-
-    # Save file
-    file_path = UPLOAD_DIR / f"user_{current_user.id}_{file.filename}"
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    try:
-        # Extract text from file
-        cv_text, file_type = extract_text_from_file(str(file_path))
-
-        # Parse with OpenAI
-        parsed_data = parse_cv_with_openai(cv_text, model=openai_model)
-
-        # Create profile
-        db_profile = Profile(
-            user_id=current_user.id,
-            original_filename=file.filename,
-            file_path=str(file_path),
-            file_type=file_type,
-            openai_model=openai_model
-        )
-        db.add(db_profile)
-        db.flush()  # Get the profile ID
-
-        # Create sections
-        for idx, section_data in enumerate(parsed_data.get("sections", [])):
-            db_section = Section(
-                profile_id=db_profile.id,
-                title=section_data.get("title"),
-                section_type=section_data.get("section_type"),
-                content=section_data.get("content"),
-                order=idx,
-                source=f"source: CV-{file.filename}"
-            )
-            db.add(db_section)
-            db.flush()
-
-            # Create entries if any
-            for entry_idx, entry_data in enumerate(section_data.get("entries", [])):
-                db_entry = SectionEntry(
-                    section_id=db_section.id,
-                    title=entry_data.get("title"),
-                    subtitle=entry_data.get("subtitle"),
-                    start_date=entry_data.get("start_date"),
-                    end_date=entry_data.get("end_date"),
-                    location=entry_data.get("location"),
-                    description=entry_data.get("description"),
-                    order=entry_idx,
-                    source=f"source: CV-{file.filename}",
-                    extra_data=entry_data.get("extra_data")
-                )
-                db.add(db_entry)
-                db.flush()
-
-                # Create items if any
-                for item_idx, item_content in enumerate(entry_data.get("items", [])):
-                    db_item = SectionItem(
-                        entry_id=db_entry.id,
-                        content=item_content,
-                        order=item_idx,
-                        source=f"source: CV-{file.filename}"
-                    )
-                    db.add(db_item)
-
-        db.commit()
-        db.refresh(db_profile)
-
-        return {
-            "profile": db_profile,
-            "message": "CV uploaded and parsed successfully"
-        }
-
-    except Exception as e:
-        db.rollback()
-        # Clean up file on error
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        raise HTTPException(status_code=500, detail=f"Error processing CV: {str(e)}")
-
-@app.get("/api/profile", response_model=ProfileResponse)
+# NEW: Get a specific profile by ID
+@app.get("/api/profiles/{profile_id}", response_model=ProfileResponse)
 def get_profile(
+    profile_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get user's profile with all sections"""
-    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    """Get a specific profile by ID"""
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile
 
-@app.delete("/api/profile")
-def delete_profile(
+# NEW: Update a profile
+@app.put("/api/profiles/{profile_id}", response_model=ProfileResponse)
+def update_profile(
+    profile_id: int,
+    profile_data: ProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete user's profile"""
-    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    """Update a profile"""
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    # Delete file
-    if os.path.exists(profile.file_path):
-        os.remove(profile.file_path)
+    update_data = profile_data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(profile, field, value)
+
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+# NEW: Delete a profile
+@app.delete("/api/profiles/{profile_id}")
+def delete_profile(
+    profile_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a profile"""
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
 
     db.delete(profile)
     db.commit()
     return {"message": "Profile deleted successfully"}
 
-@app.get("/api/profile/file")
-def get_profile_file(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Download the original CV file"""
-    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    if not os.path.exists(profile.file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-
-    return FileResponse(profile.file_path, filename=profile.original_filename)
-
-@app.post("/api/profile/linkedin", response_model=LinkedInProcessResponse)
-async def process_linkedin(
-    linkedin_data: LinkedInRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Process LinkedIn profile text and merge with existing profile"""
-
-    # Get existing profile
-    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
-    if not profile:
-        raise HTTPException(status_code=404, detail="Please upload your CV first before adding LinkedIn data")
-
-    # Parse LinkedIn data with OpenAI
-    try:
-        # Extract the actual LinkedIn profile text from the URL field
-        # In the frontend, users will paste their LinkedIn profile content
-        linkedin_text = linkedin_data.linkedin_url
-
-        parsed_data = parse_linkedin_text_with_openai(linkedin_text, profile.openai_model)
-
-        sections_added = 0
-        items_added = 0
-
-        # Process each section from LinkedIn
-        for section_data in parsed_data.get("sections", []):
-            section_title = section_data.get("title", "")
-            section_type = section_data.get("section_type", "other")
-
-            # Find if a similar section already exists
-            existing_section = None
-            for sec in profile.sections:
-                # Match by title (case-insensitive) or section_type
-                if (sec.title.lower() == section_title.lower() or
-                    sec.section_type.lower() == section_type.lower()):
-                    existing_section = sec
-                    break
-
-            if not existing_section:
-                # Create new section
-                db_section = Section(
-                    profile_id=profile.id,
-                    title=section_title,
-                    section_type=section_type,
-                    content=section_data.get("content"),
-                    order=len(profile.sections),
-                    source="source: LinkedIn"
-                )
-                db.add(db_section)
-                db.flush()
-                sections_added += 1
-            else:
-                db_section = existing_section
-
-            # Process entries
-            for entry_data in section_data.get("entries", []):
-                entry_title = entry_data.get("title", "")
-
-                # Check if entry already exists
-                existing_entry = None
-                for entry in db_section.entries:
-                    if entry.title.lower() == entry_title.lower():
-                        existing_entry = entry
-                        break
-
-                if not existing_entry:
-                    # Create new entry
-                    db_entry = SectionEntry(
-                        section_id=db_section.id,
-                        title=entry_title,
-                        subtitle=entry_data.get("subtitle"),
-                        start_date=entry_data.get("start_date"),
-                        end_date=entry_data.get("end_date"),
-                        location=entry_data.get("location"),
-                        description=entry_data.get("description"),
-                        order=len(db_section.entries),
-                        source="source: LinkedIn"
-                    )
-                    db.add(db_entry)
-                    db.flush()
-                else:
-                    db_entry = existing_entry
-
-                # Process items
-                for item_content in entry_data.get("items", []):
-                    # Check if this item already exists
-                    item_exists = any(
-                        item.content.lower() == item_content.lower()
-                        for item in db_entry.items
-                    )
-
-                    if not item_exists:
-                        db_item = SectionItem(
-                            entry_id=db_entry.id,
-                            content=item_content,
-                            order=len(db_entry.items),
-                            source="source: LinkedIn"
-                        )
-                        db.add(db_item)
-                        items_added += 1
-
-        # Update profile with LinkedIn URL
-        profile.linkedin_url = linkedin_data.linkedin_url[:500]  # Store first 500 chars as reference
-
-        db.commit()
-
-        return LinkedInProcessResponse(
-            message=f"Successfully processed LinkedIn data",
-            sections_added=sections_added,
-            items_added=items_added
-        )
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error processing LinkedIn data: {str(e)}")
+# REMOVED: Old endpoints that referenced file_path, original_filename, and LinkedIn import
+# These used the old single-profile CV extraction approach
+# @app.get("/api/profile/file")
+# @app.post("/api/profile/linkedin") - LinkedIn import endpoint removed
 
 # ==================== SECTION ENDPOINTS ====================
 
-@app.post("/api/profile/sections", response_model=SectionResponse)
+@app.post("/api/profiles/{profile_id}/sections", response_model=SectionResponse)
 def create_section(
+    profile_id: int,
     section_data: SectionCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new section"""
-    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    """Create a new section in a profile"""
+    # Verify profile belongs to user
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     db_section = Section(
         profile_id=profile.id,
         title=section_data.title,
-        section_type=section_data.section_type,
+        section_type=section_data.section_type,  # Pass enum member directly, SQLAlchemy will handle conversion
+        icon=section_data.icon,
         content=section_data.content,
+        content_type=section_data.content_type,  # Pass enum member directly, SQLAlchemy will handle conversion
         order=section_data.order,
-        source=section_data.source or "source: Manual Entry"
+        is_visible=section_data.is_visible,
+        meta_info=section_data.meta_info
     )
     db.add(db_section)
     db.commit()
@@ -497,30 +346,74 @@ def create_entry(
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
 
+    # Create the main entry
     db_entry = SectionEntry(
         section_id=section.id,
+        parent_entry_id=entry_data.parent_entry_id,
         title=entry_data.title,
         subtitle=entry_data.subtitle,
         start_date=entry_data.start_date,
         end_date=entry_data.end_date,
         location=entry_data.location,
         description=entry_data.description,
+        content_type=entry_data.content_type,
         order=entry_data.order,
-        source=entry_data.source or "source: Manual Entry",
-        extra_data=entry_data.extra_data
+        is_visible=entry_data.is_visible,
+        extra_data=entry_data.extra_data,
+        meta_info=entry_data.meta_info or {"source": "manual"}
     )
     db.add(db_entry)
     db.flush()
 
-    # Add items if any
+    # Add items (bullet points) if any
     for idx, item in enumerate(entry_data.items or []):
         db_item = SectionItem(
             entry_id=db_entry.id,
             content=item.content,
             order=item.order if item.order is not None else idx,
-            source=item.source or "source: Manual Entry"
+            is_visible=item.is_visible,
+            meta_info=item.meta_info or {"source": "manual"}
         )
         db.add(db_item)
+
+    # Recursively add sub-entries if any (for hierarchical structure)
+    def create_sub_entries(parent_entry: SectionEntry, sub_entries_data: list, parent_order: int = 0):
+        for idx, sub_entry_data in enumerate(sub_entries_data):
+            db_sub_entry = SectionEntry(
+                section_id=section.id,
+                parent_entry_id=parent_entry.id,
+                title=sub_entry_data.title,
+                subtitle=sub_entry_data.subtitle,
+                start_date=sub_entry_data.start_date,
+                end_date=sub_entry_data.end_date,
+                location=sub_entry_data.location,
+                description=sub_entry_data.description,
+                content_type=sub_entry_data.content_type,
+                order=sub_entry_data.order if sub_entry_data.order is not None else idx,
+                is_visible=sub_entry_data.is_visible,
+                extra_data=sub_entry_data.extra_data,
+                meta_info=sub_entry_data.meta_info or {"source": "manual"}
+            )
+            db.add(db_sub_entry)
+            db.flush()
+
+            # Add items for this sub-entry
+            for item_idx, item_data in enumerate(sub_entry_data.items or []):
+                db_item = SectionItem(
+                    entry_id=db_sub_entry.id,
+                    content=item_data.content,
+                    order=item_data.order if item_data.order is not None else item_idx,
+                    is_visible=item_data.is_visible,
+                    meta_info=item_data.meta_info or {"source": "manual"}
+                )
+                db.add(db_item)
+
+            # Recursively handle nested sub-entries if any
+            if sub_entry_data.sub_entries:
+                create_sub_entries(db_sub_entry, sub_entry_data.sub_entries, idx)
+
+    if entry_data.sub_entries:
+        create_sub_entries(db_entry, entry_data.sub_entries)
 
     db.commit()
     db.refresh(db_entry)
@@ -590,7 +483,8 @@ def create_item(
         entry_id=entry.id,
         content=item_data.content,
         order=item_data.order,
-        source=item_data.source or "source: Manual Entry"
+        is_visible=item_data.is_visible,
+        meta_info=item_data.meta_info or {"source": "manual"}
     )
     db.add(db_item)
     db.commit()
@@ -638,6 +532,180 @@ def delete_item(
     db.delete(item)
     db.commit()
     return {"message": "Item deleted successfully"}
+
+# ==================== AI EDITOR ENDPOINTS ====================
+
+@app.post("/api/entries/{entry_id}/ai-edit", response_model=AIEditResponse)
+def ai_edit_entry(
+    entry_id: int,
+    request: AIEditRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get AI critique and suggestions for an entry"""
+    # Fetch the entry with authorization check
+    entry = db.query(SectionEntry).join(Section).join(Profile).filter(
+        SectionEntry.id == entry_id,
+        Profile.user_id == current_user.id
+    ).first()
+
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    # Get the section to fetch all entries for context
+    section = entry.section
+    all_entries = []
+    for e in section.entries:
+        entry_dict = {
+            "id": e.id,
+            "title": e.title,
+            "subtitle": e.subtitle,
+            "start_date": e.start_date,
+            "end_date": e.end_date,
+            "location": e.location,
+            "description": e.description,
+            "items": [{"content": item.content} for item in e.items]
+        }
+        all_entries.append(entry_dict)
+
+    # Find the specific entry dict
+    entry_dict = next((e for e in all_entries if e["id"] == entry_id), None)
+
+    try:
+        if request.model_type == "openai":
+            result = edit_with_openai(entry_dict, all_entries, request.model or "gpt-4o")
+        elif request.model_type == "claude":
+            result = edit_with_claude(entry_dict, all_entries, request.model or "claude-3-5-sonnet-20241022")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid model_type")
+
+        return AIEditResponse(**result)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/entries/{entry_id}/ai-chat", response_model=AIChatResponse)
+def ai_chat_entry(
+    entry_id: int,
+    request: AIChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Continue conversation with AI about an entry"""
+    # Fetch the entry with authorization check
+    entry = db.query(SectionEntry).join(Section).join(Profile).filter(
+        SectionEntry.id == entry_id,
+        Profile.user_id == current_user.id
+    ).first()
+
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    # Build entry context
+    entry_context = {
+        "id": entry.id,
+        "title": entry.title,
+        "subtitle": entry.subtitle,
+        "start_date": entry.start_date,
+        "end_date": entry.end_date,
+        "location": entry.location,
+        "description": entry.description,
+        "items": [{"content": item.content} for item in entry.items]
+    }
+
+    # Convert messages
+    messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+
+    try:
+        result = chat_with_ai(messages, entry_context, request.model_type, request.model)
+        # Result can be either {"response": "text"} or full critique object
+        return AIChatResponse(**result)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sections/{section_id}/ai-edit", response_model=AIEditResponse)
+def ai_edit_section(
+    section_id: int,
+    request: AIEditRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get AI critique and suggestions for a section (e.g., Summary)"""
+    # Get the section and verify ownership
+    section = db.query(Section).filter(Section.id == section_id).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    profile = db.query(Profile).filter(Profile.id == section.profile_id).first()
+    if profile.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # For sections, we treat the content as a single piece of text to critique
+    section_dict = {
+        "id": section.id,
+        "title": section.title,
+        "content": section.content,
+        "section_type": section.section_type
+    }
+
+    # Get all sections for context (not other entries, but other sections)
+    all_sections = db.query(Section).filter(Section.profile_id == profile.id).all()
+    all_sections_data = [{"id": s.id, "title": s.title, "section_type": s.section_type} for s in all_sections]
+
+    try:
+        if request.model_type == "openai":
+            result = edit_with_openai(section_dict, all_sections_data, request.model or "gpt-4o")
+        elif request.model_type == "claude":
+            result = edit_with_claude(section_dict, all_sections_data, request.model or "claude-3-5-sonnet-20241022")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid model type")
+
+        return AIEditResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sections/{section_id}/ai-chat", response_model=AIChatResponse)
+def ai_chat_section(
+    section_id: int,
+    request: AIChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Continue conversation with AI about a section"""
+    # Get the section and verify ownership
+    section = db.query(Section).filter(Section.id == section_id).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    profile = db.query(Profile).filter(Profile.id == section.profile_id).first()
+    if profile.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    section_context = {
+        "id": section.id,
+        "title": section.title,
+        "content": section.content,
+        "section_type": section.section_type
+    }
+
+    messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+
+    try:
+        result = chat_with_ai(
+            messages=messages,
+            entry_context=section_context,
+            model_type=request.model_type,
+            model=request.model
+        )
+        # Result can be either {"response": "text"} or full critique object
+        return AIChatResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

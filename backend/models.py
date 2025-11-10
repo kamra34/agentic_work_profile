@@ -1,9 +1,34 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
+import enum
 
 Base = declarative_base()
+
+
+class ContentType(str, enum.Enum):
+    """Type of content stored in a section or entry"""
+    PARAGRAPH = "paragraph"  # Flowing text with multiple sentences
+    BULLETS = "bullets"  # List of bullet points only
+    TEXT_AND_BULLETS = "text_and_bullets"  # Description text followed by bullet points
+    EMPTY = "empty"  # No content, just metadata (title, dates, etc.)
+
+
+class SectionType(str, enum.Enum):
+    """Predefined section types for consistent structure"""
+    SUMMARY = "summary"
+    WORK_EXPERIENCE = "work_experience"
+    EDUCATION = "education"
+    SKILLS = "skills"
+    PROJECTS = "projects"
+    CERTIFICATIONS = "certifications"
+    AWARDS = "awards"
+    PUBLICATIONS = "publications"
+    LANGUAGES = "languages"
+    VOLUNTEER = "volunteer"
+    CUSTOM = "custom"  # User-defined section type
+
 
 class User(Base):
     __tablename__ = "users"
@@ -16,88 +41,144 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    profile = relationship("Profile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    profiles = relationship("Profile", back_populates="user", cascade="all, delete-orphan")
 
 
 class Profile(Base):
+    """
+    User's professional profile - can have multiple versions (e.g., for different roles)
+    """
     __tablename__ = "profiles"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
-    original_filename = Column(String, nullable=False)
-    file_path = Column(String, nullable=False)  # Path to stored CV file
-    file_type = Column(String, nullable=False)  # pdf or docx
-    openai_model = Column(String, default="gpt-4o")  # Model used for extraction
-    linkedin_url = Column(String, nullable=True)  # LinkedIn profile URL
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False, default="My Profile")  # e.g., "Software Engineer Profile", "Data Scientist Profile"
+    is_default = Column(Boolean, default=True)  # User's primary profile
+
+    # Basic contact info (stored at profile level)
+    contact_info = Column(JSON, nullable=True)  # {"phone": "...", "email": "...", "location": "...", "linkedin": "...", "github": "..."}
+
+    # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    notes = Column(Text, nullable=True)  # User's private notes about this profile
 
     # Relationships
-    user = relationship("User", back_populates="profile")
-    sections = relationship("Section", back_populates="profile", cascade="all, delete-orphan")
+    user = relationship("User", back_populates="profiles")
+    sections = relationship("Section", back_populates="profile", cascade="all, delete-orphan", order_by="Section.order")
 
 
 class Section(Base):
     """
-    Level 1: Top-level sections like Summary, Work Experience, Education, Skills
+    Top-level sections of a profile (Summary, Work Experience, Education, etc.)
+    Can contain either:
+    1. Direct content (for simple sections like Summary)
+    2. Multiple entries (for complex sections like Work Experience)
     """
     __tablename__ = "sections"
 
     id = Column(Integer, primary_key=True, index=True)
     profile_id = Column(Integer, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False)
-    title = Column(String, nullable=False)  # e.g., "Summary", "Work Experience"
-    section_type = Column(String, nullable=False)  # summary, work_experience, education, skills, etc.
-    content = Column(Text, nullable=True)  # For simple sections like Summary (no entries needed)
-    order = Column(Integer, default=0)  # For ordering sections
-    source = Column(String, nullable=True)  # e.g., "source: CV-resume.pdf" or "source: LinkedIn"
-    page_reference = Column(JSON, nullable=True)  # {"page": 1, "coordinates": {...}} for PDF highlighting
+
+    # Section identification
+    title = Column(String, nullable=False)  # Display name: "Professional Summary", "Work Experience", etc.
+    section_type = Column(SQLEnum(SectionType, values_callable=lambda obj: [e.value for e in obj]), nullable=False)  # Standardized type for programmatic access
+    icon = Column(String, nullable=True)  # Icon name for UI (e.g., "briefcase", "graduation-cap")
+
+    # Content configuration
+    content_type = Column(SQLEnum(ContentType, values_callable=lambda obj: [e.value for e in obj]), nullable=False, default=ContentType.EMPTY)
+    content = Column(Text, nullable=True)  # Direct content for paragraph-based sections (e.g., Summary)
+
+    # Organization
+    order = Column(Integer, default=0)  # Display order
+    is_visible = Column(Boolean, default=True)  # Show/hide in generated outputs
+
+    # Metadata for AI and tracking
+    meta_info = Column(JSON, nullable=True)  # Flexible field for: {"source": "manual", "last_ai_reviewed": "2024-01-15", "keywords": [...]}
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     profile = relationship("Profile", back_populates="sections")
-    entries = relationship("SectionEntry", back_populates="section", cascade="all, delete-orphan")
+    entries = relationship("SectionEntry", back_populates="section", cascade="all, delete-orphan", order_by="SectionEntry.order")
 
 
 class SectionEntry(Base):
     """
-    Level 2: Individual entries within a section
-    e.g., a specific job in Work Experience, a degree in Education
+    Individual entries within a section (e.g., a specific job, degree, project)
+    Supports hierarchical structure:
+    - Work Experience: Company (parent) → Role (child) → bullet points
+    - Education: Degree (parent) → bullet points (no child entries needed)
+    - Summary: Direct section content (no entries needed)
+
+    Can contain:
+    1. Just metadata (title, dates, location)
+    2. Text description
+    3. Bullet points (via SectionItem)
+    4. Both text description AND bullet points
+    5. Sub-entries (child entries for nested structure)
     """
     __tablename__ = "section_entries"
 
     id = Column(Integer, primary_key=True, index=True)
     section_id = Column(Integer, ForeignKey("sections.id", ondelete="CASCADE"), nullable=False)
-    title = Column(String, nullable=False)  # e.g., "Software Engineer at Google"
-    subtitle = Column(String, nullable=True)  # e.g., Company name or degree name
-    start_date = Column(String, nullable=True)
-    end_date = Column(String, nullable=True)  # "Present" for current positions
-    location = Column(String, nullable=True)
-    description = Column(Text, nullable=True)  # Brief description
+    parent_entry_id = Column(Integer, ForeignKey("section_entries.id", ondelete="CASCADE"), nullable=True)  # For nested entries (e.g., roles within a company)
+
+    # Entry identification
+    title = Column(String, nullable=False)  # Job title, degree name, project name, company name, etc.
+    subtitle = Column(String, nullable=True)  # Company (for top-level roles), university, organization, department, etc.
+
+    # Time and location
+    start_date = Column(String, nullable=True)  # Flexible format: "Jan 2020", "2020-01", etc.
+    end_date = Column(String, nullable=True)  # "Present", "Dec 2022", etc.
+    location = Column(String, nullable=True)  # "San Francisco, CA", "Remote", etc.
+
+    # Content configuration
+    content_type = Column(SQLEnum(ContentType, values_callable=lambda obj: [e.value for e in obj]), nullable=False, default=ContentType.BULLETS)
+    description = Column(Text, nullable=True)  # Text description/paragraph (for TEXT_AND_BULLETS or PARAGRAPH types)
+
+    # Organization
     order = Column(Integer, default=0)
-    source = Column(String, nullable=True)  # e.g., "CV: resume.pdf" or "LinkedIn"
-    page_reference = Column(JSON, nullable=True)
-    extra_data = Column(JSON, nullable=True)  # Extra fields like company, degree_type, etc.
+    is_visible = Column(Boolean, default=True)
+
+    # Flexible additional data
+    extra_data = Column(JSON, nullable=True)  # {"company_size": "5000+", "industry": "Tech", "degree_type": "Bachelor's", "gpa": "3.8", etc.}
+
+    # Metadata for AI and tracking
+    meta_info = Column(JSON, nullable=True)  # {"source": "manual", "ai_enhanced": false, "keywords": [...], "last_edited": "2024-01-15"}
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     section = relationship("Section", back_populates="entries")
-    items = relationship("SectionItem", back_populates="entry", cascade="all, delete-orphan")
+    items = relationship("SectionItem", back_populates="entry", cascade="all, delete-orphan", order_by="SectionItem.order")
+
+    # Self-referential relationship for hierarchical structure
+    parent_entry = relationship("SectionEntry", remote_side=[id], back_populates="sub_entries")
+    sub_entries = relationship("SectionEntry", back_populates="parent_entry", cascade="all, delete-orphan", order_by="SectionEntry.order")
 
 
 class SectionItem(Base):
     """
-    Level 3: Individual bullet points/items within an entry
-    e.g., specific achievements, responsibilities, skills
+    Individual bullet points or list items within an entry
+    Each item represents one achievement, responsibility, skill, etc.
     """
     __tablename__ = "section_items"
 
     id = Column(Integer, primary_key=True, index=True)
     entry_id = Column(Integer, ForeignKey("section_entries.id", ondelete="CASCADE"), nullable=False)
-    content = Column(Text, nullable=False)
+
+    # Content
+    content = Column(Text, nullable=False)  # The actual bullet point text
+
+    # Organization
     order = Column(Integer, default=0)
-    source = Column(String, nullable=True)  # e.g., "CV: resume.pdf" or "LinkedIn"
-    page_reference = Column(JSON, nullable=True)
+    is_visible = Column(Boolean, default=True)
+
+    # Metadata for AI and tracking
+    meta_info = Column(JSON, nullable=True)  # {"source": "manual", "ai_suggested": false, "keywords": [...], "impact_score": 8}
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     entry = relationship("SectionEntry", back_populates="items")

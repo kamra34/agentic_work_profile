@@ -1,6 +1,27 @@
 from pydantic import BaseModel, EmailStr, validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from enum import Enum
+
+# Enum types matching database
+class ContentType(str, Enum):
+    PARAGRAPH = "paragraph"
+    BULLETS = "bullets"
+    TEXT_AND_BULLETS = "text_and_bullets"
+    EMPTY = "empty"
+
+class SectionType(str, Enum):
+    SUMMARY = "summary"
+    WORK_EXPERIENCE = "work_experience"
+    EDUCATION = "education"
+    SKILLS = "skills"
+    PROJECTS = "projects"
+    CERTIFICATIONS = "certifications"
+    AWARDS = "awards"
+    PUBLICATIONS = "publications"
+    LANGUAGES = "languages"
+    VOLUNTEER = "volunteer"
+    CUSTOM = "custom"
 
 # User schemas
 class UserRegister(BaseModel):
@@ -43,7 +64,8 @@ class UserResponse(BaseModel):
 class SectionItemBase(BaseModel):
     content: str
     order: Optional[int] = 0
-    source: Optional[str] = None
+    is_visible: Optional[bool] = True
+    meta_info: Optional[Dict[str, Any]] = None
 
 class SectionItemCreate(SectionItemBase):
     pass
@@ -51,13 +73,14 @@ class SectionItemCreate(SectionItemBase):
 class SectionItemUpdate(BaseModel):
     content: Optional[str] = None
     order: Optional[int] = None
-    source: Optional[str] = None
+    is_visible: Optional[bool] = None
+    meta_info: Optional[Dict[str, Any]] = None
 
 class SectionItemResponse(SectionItemBase):
     id: int
     entry_id: int
-    page_reference: Optional[Dict[str, Any]] = None
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -69,12 +92,16 @@ class SectionEntryBase(BaseModel):
     end_date: Optional[str] = None
     location: Optional[str] = None
     description: Optional[str] = None
+    content_type: ContentType = ContentType.BULLETS
     order: Optional[int] = 0
-    source: Optional[str] = None
+    is_visible: Optional[bool] = True
     extra_data: Optional[Dict[str, Any]] = None
+    meta_info: Optional[Dict[str, Any]] = None
 
 class SectionEntryCreate(SectionEntryBase):
+    parent_entry_id: Optional[int] = None  # For nested entries (e.g., roles within a company)
     items: Optional[List[SectionItemCreate]] = []
+    sub_entries: Optional[List['SectionEntryCreate']] = []  # For hierarchical structure
 
 class SectionEntryUpdate(BaseModel):
     title: Optional[str] = None
@@ -83,60 +110,79 @@ class SectionEntryUpdate(BaseModel):
     end_date: Optional[str] = None
     location: Optional[str] = None
     description: Optional[str] = None
+    content_type: Optional[ContentType] = None
     order: Optional[int] = None
-    source: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    is_visible: Optional[bool] = None
+    extra_data: Optional[Dict[str, Any]] = None
+    meta_info: Optional[Dict[str, Any]] = None
 
 class SectionEntryResponse(SectionEntryBase):
     id: int
     section_id: int
-    page_reference: Optional[Dict[str, Any]] = None
+    parent_entry_id: Optional[int] = None
     created_at: datetime
+    updated_at: datetime
     items: List[SectionItemResponse] = []
+    sub_entries: List['SectionEntryResponse'] = []  # For hierarchical structure
 
     class Config:
         from_attributes = True
 
+# Enable forward references for recursive models
+SectionEntryCreate.model_rebuild()
+SectionEntryResponse.model_rebuild()
+
 class SectionBase(BaseModel):
     title: str
-    section_type: str
+    section_type: SectionType
+    icon: Optional[str] = None
     content: Optional[str] = None
+    content_type: ContentType = ContentType.EMPTY
     order: Optional[int] = 0
-    source: Optional[str] = None
+    is_visible: Optional[bool] = True
+    meta_info: Optional[Dict[str, Any]] = None
 
 class SectionCreate(SectionBase):
     entries: Optional[List[SectionEntryCreate]] = []
 
 class SectionUpdate(BaseModel):
     title: Optional[str] = None
-    section_type: Optional[str] = None
+    section_type: Optional[SectionType] = None
+    icon: Optional[str] = None
     content: Optional[str] = None
+    content_type: Optional[ContentType] = None
     order: Optional[int] = None
-    source: Optional[str] = None
+    is_visible: Optional[bool] = None
+    meta_info: Optional[Dict[str, Any]] = None
 
 class SectionResponse(SectionBase):
     id: int
     profile_id: int
-    page_reference: Optional[Dict[str, Any]] = None
     created_at: datetime
+    updated_at: datetime
     entries: List[SectionEntryResponse] = []
 
     class Config:
         from_attributes = True
 
 class ProfileBase(BaseModel):
-    original_filename: str
-    openai_model: Optional[str] = "gpt-4o"
+    title: str = "My Profile"
+    is_default: Optional[bool] = True
+    contact_info: Optional[Dict[str, str]] = None  # {"phone": "...", "email": "...", "location": "...", "linkedin": "...", "github": "..."}
+    notes: Optional[str] = None
 
 class ProfileCreate(ProfileBase):
     pass
 
+class ProfileUpdate(BaseModel):
+    title: Optional[str] = None
+    is_default: Optional[bool] = None
+    contact_info: Optional[Dict[str, str]] = None
+    notes: Optional[str] = None
+
 class ProfileResponse(ProfileBase):
     id: int
     user_id: int
-    file_path: str
-    file_type: str
-    linkedin_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     sections: List[SectionResponse] = []
@@ -144,14 +190,46 @@ class ProfileResponse(ProfileBase):
     class Config:
         from_attributes = True
 
-class ProfileUploadResponse(BaseModel):
-    profile: ProfileResponse
-    message: str
+# AI Editor schemas
+class AIEditRequest(BaseModel):
+    entry_id: Optional[int] = None
+    section_id: Optional[int] = None
+    model_type: str  # "openai" or "claude"
+    model: Optional[str] = None  # specific model name
 
-class LinkedInRequest(BaseModel):
-    linkedin_url: str
+class HumanizedRewrite(BaseModel):
+    text: str
+    original: Optional[str] = None
+    action: str  # "edit", "keep", "delete", or "add"
+    reason: Optional[str] = None
 
-class LinkedInProcessResponse(BaseModel):
-    message: str
-    sections_added: int
-    items_added: int
+class AIEditResponse(BaseModel):
+    verdict: str
+    hard_critique: List[str]
+    humanized_rewrites: List[HumanizedRewrite]
+    missing_evidence: List[str]
+    ats_keywords: List[str]
+    risk_flags: Optional[List[str]] = None
+    style_check: str
+
+class AIChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+class AIChatRequest(BaseModel):
+    entry_id: Optional[int] = None
+    section_id: Optional[int] = None
+    messages: List[AIChatMessage]
+    model_type: str  # "openai" or "claude"
+    model: Optional[str] = None
+
+class AIChatResponse(BaseModel):
+    response: Optional[str] = None
+    # When structured response (user asks for suggestions)
+    verdict: Optional[str] = None
+    hard_critique: Optional[List[str]] = None
+    humanized_rewrites: Optional[List[HumanizedRewrite]] = None
+    missing_evidence: Optional[List[str]] = None
+    ats_keywords: Optional[List[str]] = None
+    risk_flags: Optional[List[str]] = None
+    style_check: Optional[str] = None
