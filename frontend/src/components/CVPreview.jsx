@@ -162,7 +162,13 @@ function CVPreview({ profile, onSectionClick }) {
               {workSection.entries && workSection.entries.filter(e => !e.parent_entry_id).length > 0 ? (
                 workSection.entries.filter(e => !e.parent_entry_id).map(job => (
                   <div key={job.id} className="cv-job">
-                    <div className="cv-job-header">
+                    <div
+                      className="cv-job-header"
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        onSectionClick && onSectionClick({ section: workSection, target: 'entry', entryId: job.id });
+                      }}
+                    >
                       <div className="cv-job-title-line">
                         <strong className="cv-job-title">{job.title}</strong>
                         <span className="cv-job-location">{job.location}</span>
@@ -194,7 +200,15 @@ function CVPreview({ profile, onSectionClick }) {
                       <div className="cv-bullet-groups">
                         {job.sub_entries.map(group => (
                           <div key={group.id} className="cv-bullet-group">
-                            <div className="cv-bullet-group-title">• {group.title}</div>
+                            <div
+                              className="cv-bullet-group-title"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                onSectionClick && onSectionClick({ section: workSection, target: 'subentry', entryId: job.id, subEntryId: group.id });
+                              }}
+                            >
+                              • {group.title}
+                            </div>
                             {group.items && group.items.length > 0 && (
                               <div className="cv-bullet-group-items">
                                 {group.items.map(item => (

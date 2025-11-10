@@ -255,6 +255,62 @@ function ProfileManagement() {
                     }
                   }, 200);
                   return;
+                } else if (target === 'entry' && clickData.entryId) {
+                  // Expand and navigate to a specific entry (job)
+                  setTimeout(() => {
+                    const entryCard = ref.querySelector(`[data-entry-id="${clickData.entryId}"]`);
+                    if (entryCard) {
+                      // Click the header to expand if not expanded
+                      const header = entryCard.querySelector('.entry-header');
+                      const expandArrow = header?.querySelector('.expand-arrow');
+                      if (expandArrow && expandArrow.textContent.trim() === '▶') {
+                        header.click();
+                      }
+
+                      setTimeout(() => {
+                        entryCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        entryCard.style.boxShadow = '0 0 0 3px #667eea';
+                        setTimeout(() => {
+                          entryCard.style.boxShadow = '';
+                        }, 1000);
+                      }, 200);
+                    }
+                  }, 200);
+                  return;
+                } else if (target === 'subentry' && clickData.entryId && clickData.subEntryId) {
+                  // Expand and navigate to a specific sub-entry (bullet group)
+                  setTimeout(() => {
+                    // First expand the parent entry
+                    const parentEntryCard = ref.querySelector(`[data-entry-id="${clickData.entryId}"]`);
+                    if (parentEntryCard) {
+                      const parentHeader = parentEntryCard.querySelector('.entry-header');
+                      const parentExpandArrow = parentHeader?.querySelector('.expand-arrow');
+                      if (parentExpandArrow && parentExpandArrow.textContent.trim() === '▶') {
+                        parentHeader.click();
+                      }
+
+                      // Wait for parent to expand, then expand the sub-entry
+                      setTimeout(() => {
+                        const subEntryCard = parentEntryCard.querySelector(`[data-entry-id="${clickData.subEntryId}"]`);
+                        if (subEntryCard) {
+                          const subHeader = subEntryCard.querySelector('.entry-header');
+                          const subExpandArrow = subHeader?.querySelector('.expand-arrow');
+                          if (subExpandArrow && subExpandArrow.textContent.trim() === '▶') {
+                            subHeader.click();
+                          }
+
+                          setTimeout(() => {
+                            subEntryCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            subEntryCard.style.boxShadow = '0 0 0 3px #667eea';
+                            setTimeout(() => {
+                              subEntryCard.style.boxShadow = '';
+                            }, 1000);
+                          }, 200);
+                        }
+                      }, 200);
+                    }
+                  }, 200);
+                  return;
                 }
 
                 // Default: Flash highlight on the section
@@ -527,6 +583,45 @@ function getEntriesLabel(sectionType) {
   return labels[sectionType] || 'Entries';
 }
 
+// Format date from YYYY-MM to MMM YYYY
+function formatMonthYear(dateStr) {
+  if (!dateStr) return '';
+  if (dateStr.toLowerCase() === 'present') return 'Present';
+
+  // Check if it's already formatted (e.g., "Nov 2019")
+  if (dateStr.match(/^[A-Za-z]{3,}\s+\d{4}$/)) return dateStr;
+
+  // Parse YYYY-MM format
+  const [year, month] = dateStr.split('-');
+  if (!year || !month) return dateStr;
+
+  const date = new Date(parseInt(year), parseInt(month) - 1);
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+// Convert formatted date back to YYYY-MM for input
+function parseFormattedDate(dateStr) {
+  if (!dateStr) return '';
+  if (dateStr.toLowerCase() === 'present') return '';
+
+  // Check if it's already in YYYY-MM format
+  if (dateStr.match(/^\d{4}-\d{2}$/)) return dateStr;
+
+  // Parse "MMM YYYY" format
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const parts = dateStr.split(/\s+/);
+  if (parts.length !== 2) return '';
+
+  const monthIndex = monthNames.findIndex(m => m.toLowerCase() === parts[0].toLowerCase());
+  if (monthIndex === -1) return '';
+
+  const month = (monthIndex + 1).toString().padStart(2, '0');
+  return `${parts[1]}-${month}`;
+}
+
 function getAddButtonLabel(sectionType) {
   const labels = {
     'work_experience': 'Add Job',
@@ -576,7 +671,10 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(updates)
+        body: JSON.stringify({
+          ...updates,
+          order: section.order  // Preserve the original order
+        })
       });
       await onUpdate();
     } catch (err) {
@@ -604,6 +702,11 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }
   const addEntry = async (entryData) => {
     try {
       const token = localStorage.getItem('token');
+      // Calculate the order for the new entry
+      const maxOrder = section.entries && section.entries.length > 0
+        ? Math.max(...section.entries.map(e => e.order || 0))
+        : -1;
+
       const response = await fetch(`${API_URL}/api/sections/${section.id}/entries`, {
         method: 'POST',
         headers: {
@@ -612,6 +715,7 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }
         },
         body: JSON.stringify({
           ...entryData,
+          order: maxOrder + 1,  // Set order to be after the last entry
           meta_info: { source: 'manual' }
         })
       });
@@ -716,6 +820,22 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }
     await onUpdate();
   };
 
+  // Calculate entry count based on section type
+  const getEntryCountLabel = () => {
+    if (isSummarySection) {
+      if (contentType === 'bullets') {
+        const bulletCount = section.entries?.[0]?.items?.length || 0;
+        return `${bulletCount} bullet${bulletCount !== 1 ? 's' : ''}`;
+      }
+      // For paragraph type, don't show entry count
+      return '';
+    } else {
+      // For other sections, count only parent entries (not nested ones)
+      const parentEntryCount = section.entries?.filter(e => !e.parent_entry_id).length || 0;
+      return `${parentEntryCount} ${parentEntryCount === 1 ? getEntriesLabel(section.section_type).slice(0, -1) : getEntriesLabel(section.section_type).toLowerCase()}`;
+    }
+  };
+
   return (
     <div className="section-card" ref={sectionRef}>
       <div className="section-card-header" onClick={() => setExpanded(!expanded)}>
@@ -723,7 +843,7 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }
           <span className="section-icon">{section.icon}</span>
           <span className="section-title">{section.title}</span>
           <span className="section-type-badge">{contentType}</span>
-          <span className="entry-count">{section.entries?.length || 0} entries</span>
+          {getEntryCountLabel() && <span className="entry-count">{getEntryCountLabel()}</span>}
         </div>
         <div className="section-actions">
           <button className="btn-icon" onClick={(e) => { e.stopPropagation(); deleteSection(); }}>
@@ -736,96 +856,76 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler }
       {expanded && (
         <div className="section-card-body">
           {isSummarySection ? (
-            <div className="content-type-tiles">
-              <h4>Choose format:</h4>
-              <div className="tiles-container">
-                <button
-                  className={`content-type-tile ${contentType === 'paragraph' ? 'active' : ''}`}
-                  onClick={() => convertContentType('paragraph')}
-                >
-                  <span className="tile-icon">📝</span>
-                  <span className="tile-label">Text Only</span>
-                  <span className="tile-description">Write a paragraph summary</span>
-                </button>
-                <button
-                  className={`content-type-tile ${contentType === 'bullets' ? 'active' : ''}`}
-                  onClick={() => convertContentType('bullets')}
-                >
-                  <span className="tile-icon">•</span>
-                  <span className="tile-label">Bullet Points</span>
-                  <span className="tile-description">Add bullet-point highlights</span>
-                </button>
+            <>
+              <div className="content-type-tiles">
+                <h4>Choose format:</h4>
+                <div className="tiles-container">
+                  <button
+                    className={`content-type-tile ${contentType === 'paragraph' ? 'active' : ''}`}
+                    onClick={() => convertContentType('paragraph')}
+                  >
+                    <span className="tile-icon">📝</span>
+                    <span className="tile-label">Text Only</span>
+                    <span className="tile-description">Write a paragraph summary</span>
+                  </button>
+                  <button
+                    className={`content-type-tile ${contentType === 'bullets' ? 'active' : ''}`}
+                    onClick={() => convertContentType('bullets')}
+                  >
+                    <span className="tile-icon">•</span>
+                    <span className="tile-label">Bullet Points</span>
+                    <span className="tile-description">Add bullet-point highlights</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="form-group">
-              <label>Content Type</label>
-              <select
-                className="select-field"
-                value={contentType}
-                onChange={(e) => {
-                  setContentType(e.target.value);
-                  updateSection({ content_type: e.target.value });
-                }}
-              >
-                {CONTENT_TYPES.map(type => (
-                  <option key={type.value} value={type.value}>
-                    {type.label} - {type.description}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
-          {(contentType === 'paragraph' || contentType === 'text_and_bullets') && (
-            <div className="form-group">
-              <label>Content</label>
-              <textarea
-                className="textarea-field"
-                placeholder="Enter text content..."
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                onBlur={() => updateSection({ content })}
-                rows={6}
-              />
-            </div>
-          )}
+              {contentType === 'paragraph' && (
+                <div className="form-group">
+                  <label>Content</label>
+                  <textarea
+                    className="textarea-field"
+                    placeholder="Enter text content..."
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    onBlur={() => updateSection({ content })}
+                    rows={6}
+                  />
+                </div>
+              )}
 
-          {contentType !== 'paragraph' && (
-            <div className="section-entries-area">
-              {isSummarySection ? (
+              {contentType === 'bullets' && (
                 <SummaryBulletList
                   section={section}
                   onUpdate={onUpdate}
                 />
-              ) : (
-                <>
-                  <div className="entries-header">
-                    <h4>{getEntriesLabel(section.section_type)}</h4>
-                    <button className="btn-add-entry" onClick={() => setShowAddEntry(true)}>
-                      + {getAddButtonLabel(section.section_type)}
-                    </button>
-                  </div>
+              )}
+            </>
+          ) : (
+            <div className="section-entries-area">
+              <div className="entries-header">
+                <h4>{getEntriesLabel(section.section_type)}</h4>
+                <button className="btn-add-entry" onClick={() => setShowAddEntry(true)}>
+                  + {getAddButtonLabel(section.section_type)}
+                </button>
+              </div>
 
-                  {section.entries && section.entries.length > 0 ? (
-                    <div className="entries-list">
-                      {section.entries
-                        .filter(entry => !entry.parent_entry_id)
-                        .map(entry => (
-                          <EntryCard
-                            key={entry.id}
-                            entry={entry}
-                            sectionId={section.id}
-                            sectionType={section.section_type}
-                            maxNesting={sectionConfig?.maxNesting || 1}
-                            onUpdate={onUpdate}
-                          />
-                        ))}
-                    </div>
-                  ) : (
-                    <p className="no-entries">No {getEntriesLabel(section.section_type).toLowerCase()} yet</p>
-                  )}
-                </>
+              {section.entries && section.entries.length > 0 ? (
+                <div className="entries-list">
+                  {section.entries
+                    .filter(entry => !entry.parent_entry_id)
+                    .map(entry => (
+                      <EntryCard
+                        key={entry.id}
+                        entry={entry}
+                        sectionId={section.id}
+                        sectionType={section.section_type}
+                        maxNesting={sectionConfig?.maxNesting || 1}
+                        onUpdate={onUpdate}
+                      />
+                    ))}
+                </div>
+              ) : (
+                <p className="no-entries">No {getEntriesLabel(section.section_type).toLowerCase()} yet</p>
               )}
             </div>
           )}
@@ -848,6 +948,9 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
   const [showAddSubEntry, setShowAddSubEntry] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddBulletGroup, setShowAddBulletGroup] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editingItemContent, setEditingItemContent] = useState('');
 
   // For work experience: level 0 = job, level 1 = bullet group
   const canHaveBulletGroups = sectionType === 'work_experience' && level === 0;
@@ -870,9 +973,39 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
     }
   };
 
+  const updateEntry = async (entryData) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/entries/${entry.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ...entryData,
+          order: entry.order  // Preserve the original order
+        })
+      });
+
+      if (response.ok) {
+        setIsEditing(false);
+        await onUpdate();
+      }
+    } catch (err) {
+      console.error('Error updating entry:', err);
+      alert('Error updating entry');
+    }
+  };
+
   const addSubEntry = async (entryData) => {
     try {
       const token = localStorage.getItem('token');
+      // Calculate the order for the new sub-entry
+      const maxOrder = entry.sub_entries && entry.sub_entries.length > 0
+        ? Math.max(...entry.sub_entries.map(e => e.order || 0))
+        : -1;
+
       const response = await fetch(`${API_URL}/api/sections/${sectionId}/entries`, {
         method: 'POST',
         headers: {
@@ -882,6 +1015,7 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
         body: JSON.stringify({
           ...entryData,
           parent_entry_id: entry.id,
+          order: maxOrder + 1,  // Set order to be after the last sub-entry
           meta_info: { source: 'manual' }
         })
       });
@@ -900,6 +1034,11 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
   const addBulletGroup = async (groupTitle) => {
     try {
       const token = localStorage.getItem('token');
+      // Calculate the order for the new bullet group
+      const maxOrder = entry.sub_entries && entry.sub_entries.length > 0
+        ? Math.max(...entry.sub_entries.map(e => e.order || 0))
+        : -1;
+
       const response = await fetch(`${API_URL}/api/sections/${sectionId}/entries`, {
         method: 'POST',
         headers: {
@@ -910,6 +1049,7 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
           title: groupTitle,
           parent_entry_id: entry.id,
           content_type: 'bullets',
+          order: maxOrder + 1,  // Set order to be after the last bullet group
           meta_info: { source: 'manual', is_bullet_group: true }
         })
       });
@@ -961,8 +1101,29 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
     }
   };
 
+  const updateItem = async (itemId, content) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/api/items/${itemId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          content
+        })
+      });
+      setEditingItemId(null);
+      setEditingItemContent('');
+      await onUpdate();
+    } catch (err) {
+      console.error('Error updating item:', err);
+    }
+  };
+
   return (
-    <div className={`entry-card level-${level}`}>
+    <div className={`entry-card level-${level}`} data-entry-id={entry.id}>
       <div className="entry-header" onClick={() => setExpanded(!expanded)}>
         <div className="entry-info">
           <span className="expand-arrow">{expanded ? '▼' : '▶'}</span>
@@ -976,21 +1137,71 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
             )}
           </div>
         </div>
-        <button className="btn-icon" onClick={(e) => { e.stopPropagation(); deleteEntry(); }}>
-          🗑️
-        </button>
+        <div className="entry-actions">
+          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setIsEditing(true); setExpanded(true); }}>
+            ✏️
+          </button>
+          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); deleteEntry(); }}>
+            🗑️
+          </button>
+        </div>
       </div>
 
       {expanded && (
         <div className="entry-body">
-          {entry.description && <p className="entry-description">{entry.description}</p>}
+          {isEditing ? (
+            <EntryForm
+              sectionType={sectionType}
+              isSubEntry={level > 0}
+              isBulletGroup={isBulletGroup}
+              initialData={entry}
+              onSave={updateEntry}
+              onCancel={() => setIsEditing(false)}
+            />
+          ) : (
+            <>
+              {entry.description && <p className="entry-description">{entry.description}</p>}
 
-          {entry.items && entry.items.length > 0 && (
+              {entry.items && entry.items.length > 0 && (
             <ul className="items-list">
               {entry.items.map(item => (
                 <li key={item.id} className="item" data-item-id={item.id}>
-                  <span>{item.content}</span>
-                  <button className="btn-delete-tiny" onClick={() => deleteItem(item.id)}>×</button>
+                  {editingItemId === item.id ? (
+                    <input
+                      type="text"
+                      className="edit-item-input"
+                      value={editingItemContent}
+                      autoFocus
+                      onChange={(e) => setEditingItemContent(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && editingItemContent.trim()) {
+                          updateItem(item.id, editingItemContent);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (editingItemContent.trim() && editingItemContent !== item.content) {
+                          updateItem(item.id, editingItemContent);
+                        } else {
+                          setEditingItemId(null);
+                          setEditingItemContent('');
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span>{item.content}</span>
+                  )}
+                  <div className="item-actions">
+                    <button
+                      className="btn-edit-tiny"
+                      onClick={() => {
+                        setEditingItemId(item.id);
+                        setEditingItemContent(item.content);
+                      }}
+                    >
+                      ✏️
+                    </button>
+                    <button className="btn-delete-tiny" onClick={() => deleteItem(item.id)}>×</button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1073,43 +1284,87 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
               </p>
             </div>
           )}
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel }) {
-  const [formData, setFormData] = useState({
-    title: '',
-    subtitle: '',
-    start_date: '',
-    end_date: '',
-    location: '',
-    description: '',
-    content_type: 'bullets'
+function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, initialData = null }) {
+  const [formData, setFormData] = useState(() => {
+    if (initialData) {
+      return {
+        ...initialData,
+        start_date: parseFormattedDate(initialData.start_date || ''),
+        end_date: initialData.end_date?.toLowerCase() === 'present' ? '' : parseFormattedDate(initialData.end_date || '')
+      };
+    }
+    return {
+      title: '',
+      subtitle: '',
+      start_date: '',
+      end_date: '',
+      location: '',
+      description: '',
+      content_type: 'bullets'
+    };
   });
+  const [isPresent, setIsPresent] = useState(initialData?.end_date?.toLowerCase() === 'present');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.title.trim()) {
+
+    // Validation for work experience
+    if (sectionType === 'work_experience' && !isBulletGroup) {
+      if (!formData.title.trim()) {
+        alert('Job Title is required');
+        return;
+      }
+      if (!formData.subtitle.trim()) {
+        alert('Company is required');
+        return;
+      }
+      if (!formData.start_date.trim()) {
+        alert('Start Date is required');
+        return;
+      }
+      if (!isPresent && !formData.end_date.trim()) {
+        alert('End Date is required (or check "Present")');
+        return;
+      }
+      if (!formData.location.trim()) {
+        alert('Location is required');
+        return;
+      }
+    } else if (!formData.title.trim()) {
       alert('Title is required');
       return;
     }
-    onSave(formData);
+
+    // Format dates before saving
+    const dataToSave = {
+      ...formData,
+      start_date: formData.start_date ? formatMonthYear(formData.start_date) : '',
+      end_date: isPresent ? 'Present' : (formData.end_date ? formatMonthYear(formData.end_date) : '')
+    };
+
+    onSave(dataToSave);
   };
 
   const getFormTitle = () => {
+    const isEditing = !!initialData;
     if (sectionType === 'work_experience') {
-      if (isBulletGroup) return 'Add Bullet Group';
-      if (isSubEntry) return 'Add Role';
-      return 'Add Job';
+      if (isBulletGroup) return isEditing ? 'Edit Bullet Group' : 'Add Bullet Group';
+      if (isSubEntry) return isEditing ? 'Edit Role' : 'Add Role';
+      return isEditing ? 'Edit Job' : 'Add Job';
     } else if (sectionType === 'education') {
-      return 'Add Degree';
+      return isEditing ? 'Edit Degree' : 'Add Degree';
     } else if (sectionType === 'skills') {
-      return 'Add Skill Category';
+      return isEditing ? 'Edit Skill Category' : 'Add Skill Category';
     }
-    return 'Add Entry';
+    return isEditing ? 'Edit Entry' : 'Add Entry';
   };
 
   const getPlaceholder = (field) => {
@@ -1154,32 +1409,54 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel })
             <input
               type="text"
               className="input-field"
-              placeholder={getPlaceholder('subtitle')}
+              placeholder={getPlaceholder('subtitle') + (sectionType === 'work_experience' ? ' *' : '')}
               value={formData.subtitle}
               onChange={(e) => setFormData({...formData, subtitle: e.target.value})}
+              required={sectionType === 'work_experience'}
             />
             <div className="form-row">
               <input
-                type="text"
+                type="month"
                 className="input-field"
-                placeholder="Start Date (e.g., Nov. 2019)"
+                placeholder="Start Date *"
                 value={formData.start_date}
                 onChange={(e) => setFormData({...formData, start_date: e.target.value})}
+                required={sectionType === 'work_experience'}
               />
               <input
-                type="text"
+                type="month"
                 className="input-field"
-                placeholder="End Date (e.g., Present)"
-                value={formData.end_date}
+                placeholder="End Date *"
+                value={isPresent ? '' : formData.end_date}
                 onChange={(e) => setFormData({...formData, end_date: e.target.value})}
+                required={sectionType === 'work_experience' && !isPresent}
+                disabled={isPresent}
               />
             </div>
+            {sectionType === 'work_experience' && (
+              <div className="form-checkbox">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={isPresent}
+                    onChange={(e) => {
+                      setIsPresent(e.target.checked);
+                      if (e.target.checked) {
+                        setFormData({...formData, end_date: ''});
+                      }
+                    }}
+                  />
+                  <span>Currently working here (Present)</span>
+                </label>
+              </div>
+            )}
             <input
               type="text"
               className="input-field"
-              placeholder="Location (e.g., Stockholm, Sweden)"
+              placeholder={"Location (e.g., Stockholm, Sweden)" + (sectionType === 'work_experience' ? ' *' : '')}
               value={formData.location}
               onChange={(e) => setFormData({...formData, location: e.target.value})}
+              required={sectionType === 'work_experience'}
             />
             <textarea
               className="textarea-field"
@@ -1206,6 +1483,8 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel })
 function SummaryBulletList({ section, onUpdate }) {
   const [showAddBullet, setShowAddBullet] = useState(false);
   const [newBullet, setNewBullet] = useState('');
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editingItemContent, setEditingItemContent] = useState('');
 
   // Get or create the summary entry
   const summaryEntry = section.entries?.[0];
@@ -1279,6 +1558,27 @@ function SummaryBulletList({ section, onUpdate }) {
     }
   };
 
+  const updateBullet = async (itemId, content) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/api/items/${itemId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          content
+        })
+      });
+      setEditingItemId(null);
+      setEditingItemContent('');
+      await onUpdate();
+    } catch (err) {
+      console.error('Error updating bullet:', err);
+    }
+  };
+
   return (
     <div className="summary-bullet-list">
       <h4>Summary Bullets</h4>
@@ -1287,8 +1587,42 @@ function SummaryBulletList({ section, onUpdate }) {
         <ul className="summary-bullets">
           {summaryEntry.items.map(item => (
             <li key={item.id} className="summary-bullet-item" data-item-id={item.id}>
-              <span className="bullet-content">{item.content}</span>
-              <button className="btn-delete-tiny" onClick={() => deleteBullet(item.id)}>×</button>
+              {editingItemId === item.id ? (
+                <input
+                  type="text"
+                  className="edit-item-input"
+                  value={editingItemContent}
+                  autoFocus
+                  onChange={(e) => setEditingItemContent(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && editingItemContent.trim()) {
+                      updateBullet(item.id, editingItemContent);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (editingItemContent.trim() && editingItemContent !== item.content) {
+                      updateBullet(item.id, editingItemContent);
+                    } else {
+                      setEditingItemId(null);
+                      setEditingItemContent('');
+                    }
+                  }}
+                />
+              ) : (
+                <span className="bullet-content">{item.content}</span>
+              )}
+              <div className="item-actions">
+                <button
+                  className="btn-edit-tiny"
+                  onClick={() => {
+                    setEditingItemId(item.id);
+                    setEditingItemContent(item.content);
+                  }}
+                >
+                  ✏️
+                </button>
+                <button className="btn-delete-tiny" onClick={() => deleteBullet(item.id)}>×</button>
+              </div>
             </li>
           ))}
         </ul>
