@@ -7,6 +7,32 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function Dashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('home');
+  const [backendVersion, setBackendVersion] = useState(null);
+  const [frontendVersion, setFrontendVersion] = useState(null);
+
+  useEffect(() => {
+    fetchVersions();
+  }, []);
+
+  const fetchVersions = async () => {
+    try {
+      // Fetch backend version
+      const backendResponse = await fetch(`${API_URL}/api/version`);
+      if (backendResponse.ok) {
+        const backendData = await backendResponse.json();
+        setBackendVersion(backendData.version);
+      }
+
+      // Fetch frontend version
+      const frontendResponse = await fetch('/VERSION');
+      if (frontendResponse.ok) {
+        const frontendText = await frontendResponse.text();
+        setFrontendVersion(frontendText.trim());
+      }
+    } catch (err) {
+      console.error('Error fetching versions:', err);
+    }
+  };
 
   return (
     <div className="dashboard">
@@ -14,6 +40,14 @@ function Dashboard({ user, onLogout }) {
         <div className="navbar-content">
           <div className="navbar-left">
             <h2>🎯 Agentic CV Builder</h2>
+            <div className="navbar-versions">
+              {frontendVersion && (
+                <span className="version-badge">FE: v{frontendVersion}</span>
+              )}
+              {backendVersion && (
+                <span className="version-badge">BE: v{backendVersion}</span>
+              )}
+            </div>
           </div>
           <div className="navbar-right">
             <span className="user-name">👤 {user.full_name}</span>
@@ -411,27 +445,10 @@ function TailorCVView() {
       const token = localStorage.getItem('token');
 
       // Build selected_content from enriched_recommendations
+      // Send enriched data directly with recommended_by metadata
       const enriched = tailoringRecs.enriched_recommendations;
       const selectedContent = {
-        summary_items: enriched.summary ? enriched.summary.map(item => item.id) : [],
-        work_experience: enriched.work_experience ? enriched.work_experience.map(entry => ({
-          entry_id: entry.id,
-          items: entry.items ? entry.items.map(item => item.id) : [],
-          sub_entries: entry.sub_entries ? entry.sub_entries.map(sub => ({
-            entry_id: sub.id,
-            items: sub.items ? sub.items.map(item => item.id) : []
-          })) : []
-        })) : [],
-        skills: enriched.skills ? enriched.skills.map(entry => ({
-          entry_id: entry.id,
-          items: entry.items ? entry.items.map(item => item.id) : []
-        })) : [],
-        education_entries: enriched.education ? enriched.education.map(entry => entry.id) : [],
-        project_entries: enriched.projects ? enriched.projects.map(entry => entry.id) : [],
-        certification_entries: enriched.certifications ? enriched.certifications.map(entry => entry.id) : [],
-        award_entries: enriched.awards ? enriched.awards.map(entry => entry.id) : [],
-        publication_entries: enriched.publications ? enriched.publications.map(entry => entry.id) : [],
-        language_entries: enriched.languages ? enriched.languages.map(entry => entry.id) : []
+        enriched_data: enriched  // Send the full enriched data with recommended_by fields
       };
 
       // Extract scores from fitAnalysis
@@ -1304,7 +1321,12 @@ Requirements:
                         {skillCategory.items.map((item, i) => (
                           <span key={i} className={`skill-tag ${item.recommended_by && item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
                             {item.content}
-                            {item.recommended_by && item.recommended_by.length === 2 && <span className="tag-badge">🟢🔵</span>}
+                            {item.recommended_by && (
+                              <span className="tag-badge-inline">
+                                {item.recommended_by.includes('openai') && <span className="tag-badge">🟢</span>}
+                                {item.recommended_by.includes('claude') && <span className="tag-badge">🔵</span>}
+                              </span>
+                            )}
                           </span>
                         ))}
                       </div>
@@ -1344,7 +1366,17 @@ Requirements:
                     {edu.items && edu.items.length > 0 && (
                       <div className="entry-items">
                         {edu.items.map((item, i) => (
-                          <p key={i} className="entry-item-text">• {item.content}</p>
+                          <div key={i} className={`enriched-item ${item.recommended_by && item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
+                            <div className="item-content">• {item.content}</div>
+                            <div className="item-badges">
+                              {item.recommended_by && item.recommended_by.includes('openai') && (
+                                <span className="badge-openai">🟢</span>
+                              )}
+                              {item.recommended_by && item.recommended_by.includes('claude') && (
+                                <span className="badge-claude">🔵</span>
+                              )}
+                            </div>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1373,7 +1405,17 @@ Requirements:
                     {project.items && project.items.length > 0 && (
                       <div className="entry-items">
                         {project.items.map((item, i) => (
-                          <p key={i} className="entry-item-text">• {item.content}</p>
+                          <div key={i} className={`enriched-item ${item.recommended_by && item.recommended_by.length === 2 ? 'recommended-by-both' : ''}`}>
+                            <div className="item-content">• {item.content}</div>
+                            <div className="item-badges">
+                              {item.recommended_by && item.recommended_by.includes('openai') && (
+                                <span className="badge-openai">🟢</span>
+                              )}
+                              {item.recommended_by && item.recommended_by.includes('claude') && (
+                                <span className="badge-claude">🔵</span>
+                              )}
+                            </div>
+                          </div>
                         ))}
                       </div>
                     )}

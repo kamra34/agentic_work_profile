@@ -481,6 +481,33 @@ def delete_entry(
     db.commit()
     return {"message": "Entry deleted successfully"}
 
+@app.post("/api/entries/reorder")
+def reorder_entries(
+    updates: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reorder entries by updating their order values"""
+    try:
+        for update in updates.get("updates", []):
+            entry_id = update.get("id")
+            new_order = update.get("order")
+
+            # Verify the entry belongs to the current user
+            entry = db.query(SectionEntry).join(Section).join(Profile).filter(
+                SectionEntry.id == entry_id,
+                Profile.user_id == current_user.id
+            ).first()
+
+            if entry:
+                entry.order = new_order
+
+        db.commit()
+        return {"message": "Entries reordered successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ==================== ITEM ENDPOINTS ====================
 
 @app.post("/api/entries/{entry_id}/items", response_model=SectionItemResponse)
@@ -552,6 +579,33 @@ def delete_item(
     db.delete(item)
     db.commit()
     return {"message": "Item deleted successfully"}
+
+@app.post("/api/items/reorder")
+def reorder_items(
+    updates: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reorder items by updating their order values"""
+    try:
+        for update in updates.get("updates", []):
+            item_id = update.get("id")
+            new_order = update.get("order")
+
+            # Verify the item belongs to the current user
+            item = db.query(SectionItem).join(SectionEntry).join(Section).join(Profile).filter(
+                SectionItem.id == item_id,
+                Profile.user_id == current_user.id
+            ).first()
+
+            if item:
+                item.order = new_order
+
+        db.commit()
+        return {"message": "Items reordered successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== AI EDITOR ENDPOINTS ====================
 
@@ -906,6 +960,421 @@ async def get_cv_tailoring_recommendations(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def convert_enriched_to_snapshot(profile: Profile, enriched_data: dict) -> dict:
+    """
+    Convert enriched recommendation data (with recommended_by metadata) directly to snapshot
+    This preserves AI model attribution for each item
+    """
+    snapshot = {
+        "contact_info": profile.contact_info,
+        "sections": []
+    }
+
+    # Map section types to enriched data keys
+    section_mapping = {
+        "summary": enriched_data.get("summary", []),
+        "work_experience": enriched_data.get("work_experience", []),
+        "skills": enriched_data.get("skills", []),
+        "education": enriched_data.get("education", []),
+        "projects": enriched_data.get("projects", []),
+        "certifications": enriched_data.get("certifications", []),
+        "awards": enriched_data.get("awards", []),
+        "publications": enriched_data.get("publications", []),
+        "languages": enriched_data.get("languages", []),
+        "volunteer": enriched_data.get("volunteer", [])
+    }
+
+    for section in profile.sections:
+        section_type = section.section_type.value
+        enriched_items = section_mapping.get(section_type, [])
+
+        if not enriched_items:
+            continue
+
+        section_snapshot = {
+            "id": section.id,
+            "title": section.title,
+            "section_type": section_type,
+            "icon": section.icon,
+            "content_type": section.content_type.value,
+            "order": section.order,
+            "content": section.content,
+            "entries": []
+        }
+
+        # Handle different content structures
+        if section_type == "summary":
+            # Summary items are flat
+            for item in enriched_items:
+                section_snapshot["entries"].append({
+                    "id": item.get("id"),
+                    "items": [{
+                        "id": item.get("id"),
+                        "content": item.get("content"),
+                        "order": item.get("order", 0),
+                        "recommended_by": item.get("recommended_by", [])
+                    }]
+                })
+
+        elif section_type in ["work_experience", "education", "projects"]:
+            # These have entries with potential sub-entries
+            for entry in enriched_items:
+                entry_snapshot = {
+                    "id": entry.get("id"),
+                    "title": entry.get("title"),
+                    "subtitle": entry.get("subtitle"),
+                    "start_date": entry.get("start_date"),
+                    "end_date": entry.get("end_date"),
+                    "location": entry.get("location"),
+                    "description": entry.get("description"),
+                    "content_type": entry.get("content_type", "bullets"),
+                    "order": entry.get("order", 0),
+                    "items": [],
+                    "sub_entries": [],
+                    "reasoning": entry.get("reasoning")
+                }
+
+                # Add items with recommended_by metadata
+                if entry.get("items"):
+                    for item in entry["items"]:
+                        entry_snapshot["items"].append({
+                            "id": item.get("id"),
+                            "content": item.get("content"),
+                            "order": item.get("order", 0),
+                            "recommended_by": item.get("recommended_by", [])
+                        })
+
+                # Add sub-entries (for work experience)
+                if entry.get("sub_entries"):
+                    for sub in entry["sub_entries"]:
+                        sub_snapshot = {
+                            "id": sub.get("id"),
+                            "title": sub.get("title"),
+                            "subtitle": sub.get("subtitle"),
+                            "content_type": sub.get("content_type", "bullets"),
+                            "order": sub.get("order", 0),
+                            "items": [],
+                            "reasoning": sub.get("reasoning")
+                        }
+
+                        if sub.get("items"):
+                            for item in sub["items"]:
+                                sub_snapshot["items"].append({
+                                    "id": item.get("id"),
+                                    "content": item.get("content"),
+                                    "order": item.get("order", 0),
+                                    "recommended_by": item.get("recommended_by", [])
+                                })
+
+                        entry_snapshot["sub_entries"].append(sub_snapshot)
+
+                section_snapshot["entries"].append(entry_snapshot)
+
+        elif section_type == "skills":
+            # Skills have categories with items
+            for category in enriched_items:
+                category_snapshot = {
+                    "id": category.get("id"),
+                    "title": category.get("title"),
+                    "content_type": category.get("content_type", "inline"),
+                    "order": category.get("order", 0),
+                    "items": [],
+                    "reasoning": category.get("reasoning")
+                }
+
+                if category.get("items"):
+                    for item in category["items"]:
+                        category_snapshot["items"].append({
+                            "id": item.get("id"),
+                            "content": item.get("content"),
+                            "order": item.get("order", 0),
+                            "recommended_by": item.get("recommended_by", [])
+                        })
+
+                section_snapshot["entries"].append(category_snapshot)
+
+        snapshot["sections"].append(section_snapshot)
+
+    return snapshot
+
+
+def convert_ids_to_content_snapshot(db: Session, profile: Profile, selected_ids: dict) -> dict:
+    """
+    Convert ID-based selection OR enriched data into actual content snapshot
+    This ensures the CV remains intact even if master profile changes later
+    """
+    # Check if enriched_data is provided (new format with recommended_by metadata)
+    if "enriched_data" in selected_ids:
+        return convert_enriched_to_snapshot(profile, selected_ids["enriched_data"])
+
+    # Otherwise, use legacy ID-based format
+    snapshot = {
+        "contact_info": profile.contact_info,
+        "sections": []
+    }
+
+    # Build a lookup of all sections, entries, and items by ID
+    section_map = {section.id: section for section in profile.sections}
+
+    # Process each section type based on selected IDs
+    for section in profile.sections:
+        section_snapshot = None
+
+        if section.section_type.value == "summary":
+            selected_items = selected_ids.get("summary_items", [])
+            if selected_items:
+                section_snapshot = build_section_snapshot(section, selected_items=selected_items)
+
+        elif section.section_type.value == "work_experience":
+            selected_work = selected_ids.get("work_experience", [])
+            if selected_work:
+                section_snapshot = build_work_experience_snapshot(section, selected_work)
+
+        elif section.section_type.value == "skills":
+            selected_skills = selected_ids.get("skills", [])
+            if selected_skills:
+                section_snapshot = build_skills_snapshot(section, selected_skills)
+
+        elif section.section_type.value == "education":
+            selected_education = selected_ids.get("education_entries", [])
+            if selected_education:
+                section_snapshot = build_education_snapshot(section, selected_education)
+
+        elif section.section_type.value == "projects":
+            selected_projects = selected_ids.get("project_entries", [])
+            if selected_projects:
+                section_snapshot = build_generic_entries_snapshot(section, selected_projects)
+
+        elif section.section_type.value == "certifications":
+            selected_certs = selected_ids.get("certification_entries", [])
+            if selected_certs:
+                section_snapshot = build_generic_entries_snapshot(section, selected_certs)
+
+        if section_snapshot:
+            snapshot["sections"].append(section_snapshot)
+
+    return snapshot
+
+
+def build_section_snapshot(section: Section, selected_items: list = None) -> dict:
+    """Build a snapshot of a section with selected items"""
+    section_data = {
+        "id": section.id,
+        "title": section.title,
+        "section_type": section.section_type.value,
+        "icon": section.icon,
+        "content_type": section.content_type.value,
+        "content": section.content,
+        "order": section.order,
+        "entries": []
+    }
+
+    # For summary sections
+    if section.entries and selected_items:
+        for entry in section.entries:
+            items_snapshot = [
+                {
+                    "id": item.id,
+                    "content": item.content,
+                    "order": item.order
+                }
+                for item in entry.items if item.id in selected_items
+            ]
+            if items_snapshot:
+                section_data["entries"].append({
+                    "id": entry.id,
+                    "title": entry.title,
+                    "content_type": entry.content_type.value,
+                    "items": items_snapshot
+                })
+
+    return section_data
+
+
+def build_work_experience_snapshot(section: Section, selected_work: list) -> dict:
+    """
+    Build snapshot for work experience section
+    Handles hierarchical structure: Company (parent) -> Roles (sub_entries)
+    """
+    section_data = {
+        "id": section.id,
+        "title": section.title,
+        "section_type": section.section_type.value,
+        "icon": section.icon,
+        "content_type": section.content_type.value,
+        "order": section.order,
+        "entries": []
+    }
+
+    for work_item in selected_work:
+        entry_id = work_item.get("entry_id")
+        selected_item_ids = work_item.get("items", [])
+        selected_sub_entries = work_item.get("sub_entries", [])
+
+        entry = next((e for e in section.entries if e.id == entry_id), None)
+        if entry:
+            entry_data = {
+                "id": entry.id,
+                "title": entry.title,
+                "subtitle": entry.subtitle,
+                "start_date": entry.start_date,
+                "end_date": entry.end_date,
+                "location": entry.location,
+                "description": entry.description,
+                "content_type": entry.content_type.value,
+                "order": entry.order,
+                "items": [
+                    {
+                        "id": item.id,
+                        "content": item.content,
+                        "order": item.order
+                    }
+                    for item in entry.items if item.id in selected_item_ids
+                ],
+                "sub_entries": []
+            }
+
+            # Handle sub-entries (roles within company) from nested structure
+            for sub_work_item in selected_sub_entries:
+                sub_entry_id = sub_work_item.get("entry_id")
+                sub_selected_items = sub_work_item.get("items", [])
+
+                sub_entry = next((s for s in entry.sub_entries if s.id == sub_entry_id), None)
+                if sub_entry:
+                    entry_data["sub_entries"].append({
+                        "id": sub_entry.id,
+                        "title": sub_entry.title,
+                        "subtitle": sub_entry.subtitle,
+                        "start_date": sub_entry.start_date,
+                        "end_date": sub_entry.end_date,
+                        "location": sub_entry.location,
+                        "description": sub_entry.description,
+                        "content_type": sub_entry.content_type.value,
+                        "order": sub_entry.order,
+                        "items": [
+                            {
+                                "id": item.id,
+                                "content": item.content,
+                                "order": item.order
+                            }
+                            for item in sub_entry.items if item.id in sub_selected_items
+                        ]
+                    })
+
+            section_data["entries"].append(entry_data)
+
+    return section_data
+
+
+def build_skills_snapshot(section: Section, selected_skills: list) -> dict:
+    """Build snapshot for skills section"""
+    section_data = {
+        "id": section.id,
+        "title": section.title,
+        "section_type": section.section_type.value,
+        "icon": section.icon,
+        "content_type": section.content_type.value,
+        "order": section.order,
+        "entries": []
+    }
+
+    for skill_item in selected_skills:
+        entry_id = skill_item.get("entry_id")
+        selected_item_ids = skill_item.get("items", [])
+
+        entry = next((e for e in section.entries if e.id == entry_id), None)
+        if entry:
+            section_data["entries"].append({
+                "id": entry.id,
+                "title": entry.title,
+                "content_type": entry.content_type.value,
+                "order": entry.order,
+                "items": [
+                    {
+                        "id": item.id,
+                        "content": item.content,
+                        "order": item.order
+                    }
+                    for item in entry.items if item.id in selected_item_ids
+                ]
+            })
+
+    return section_data
+
+
+def build_education_snapshot(section: Section, selected_education: list) -> dict:
+    """Build snapshot for education section"""
+    section_data = {
+        "id": section.id,
+        "title": section.title,
+        "section_type": section.section_type.value,
+        "icon": section.icon,
+        "content_type": section.content_type.value,
+        "order": section.order,
+        "entries": []
+    }
+
+    for entry in section.entries:
+        if entry.id in selected_education:
+            section_data["entries"].append({
+                "id": entry.id,
+                "title": entry.title,
+                "subtitle": entry.subtitle,
+                "start_date": entry.start_date,
+                "end_date": entry.end_date,
+                "location": entry.location,
+                "description": entry.description,
+                "content_type": entry.content_type.value,
+                "order": entry.order,
+                "items": [
+                    {
+                        "id": item.id,
+                        "content": item.content,
+                        "order": item.order
+                    }
+                    for item in entry.items
+                ]
+            })
+
+    return section_data
+
+
+def build_generic_entries_snapshot(section: Section, selected_entry_ids: list) -> dict:
+    """Build snapshot for generic sections (projects, certifications, etc.)"""
+    section_data = {
+        "id": section.id,
+        "title": section.title,
+        "section_type": section.section_type.value,
+        "icon": section.icon,
+        "content_type": section.content_type.value,
+        "order": section.order,
+        "entries": []
+    }
+
+    for entry in section.entries:
+        if entry.id in selected_entry_ids:
+            section_data["entries"].append({
+                "id": entry.id,
+                "title": entry.title,
+                "subtitle": entry.subtitle,
+                "start_date": entry.start_date,
+                "end_date": entry.end_date,
+                "description": entry.description,
+                "content_type": entry.content_type.value,
+                "order": entry.order,
+                "items": [
+                    {
+                        "id": item.id,
+                        "content": item.content,
+                        "order": item.order
+                    }
+                    for item in entry.items
+                ]
+            })
+
+    return section_data
+
+
 @app.post("/api/cv/tailored-versions", response_model=TailoredCVResponse)
 async def create_tailored_cv_version(
     request: TailoredCVCreate,
@@ -914,21 +1383,26 @@ async def create_tailored_cv_version(
 ):
     """
     Save a tailored CV version for a specific job application
+    IMPORTANT: This converts ID-based selections into actual content snapshots
+    so the CV remains intact even if master profile is modified later
     """
     try:
-        # Get user's default profile
+        # Get user's default profile with all nested data
         profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
-        # Create tailored CV version
+        # Convert ID-based selected_content to actual content snapshot
+        content_snapshot = convert_ids_to_content_snapshot(db, profile, request.selected_content)
+
+        # Create tailored CV version with content snapshot
         tailored_cv = TailoredCVVersion(
             user_id=current_user.id,
             profile_id=profile.id,
             job_title=request.job_title,
             company_name=request.company_name,
             job_description=request.job_description,
-            selected_content=request.selected_content,
+            selected_content=content_snapshot,  # Store actual content, not IDs
             openai_fit_score=request.openai_fit_score,
             claude_fit_score=request.claude_fit_score,
             openai_ats_score=request.openai_ats_score,
@@ -942,11 +1416,12 @@ async def create_tailored_cv_version(
         db.commit()
         db.refresh(tailored_cv)
 
-        print(f"[DEBUG] Created tailored CV version {tailored_cv.id} for user {current_user.id}")
+        print(f"[DEBUG] Created tailored CV version {tailored_cv.id} with content snapshot")
         return tailored_cv
 
     except Exception as e:
         db.rollback()
+        print(f"[ERROR] Failed to create tailored CV: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1019,6 +1494,47 @@ async def update_tailored_cv_version(
     db.refresh(version)
 
     return version
+
+
+@app.get("/api/cv/tailored-versions/{version_id}/full")
+async def get_tailored_cv_full_data(
+    version_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a tailored CV version with full profile data
+    IMPORTANT: Now returns the stored content snapshot directly (not ID-based lookups)
+    This ensures CV displays exactly as it was saved, independent of master profile changes
+    """
+    version = db.query(TailoredCVVersion).filter(
+        TailoredCVVersion.id == version_id,
+        TailoredCVVersion.user_id == current_user.id
+    ).first()
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Tailored CV version not found")
+
+    # selected_content now contains the actual content snapshot, not IDs
+    content_snapshot = version.selected_content or {}
+
+    return {
+        "cv_version": {
+            "id": version.id,
+            "job_title": version.job_title,
+            "company_name": version.company_name,
+            "job_description": version.job_description,
+            "openai_fit_score": version.openai_fit_score,
+            "claude_fit_score": version.claude_fit_score,
+            "openai_ats_score": version.openai_ats_score,
+            "claude_ats_score": version.claude_ats_score,
+            "notes": version.notes,
+            "status": version.status,
+            "created_at": version.created_at.isoformat(),
+            "updated_at": version.updated_at.isoformat()
+        },
+        "profile": content_snapshot  # Return the snapshot directly
+    }
 
 
 @app.delete("/api/cv/tailored-versions/{version_id}")

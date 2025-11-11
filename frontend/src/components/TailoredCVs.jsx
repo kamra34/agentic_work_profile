@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import CVPreview from './CVPreview';
 import './TailoredCVs.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -356,140 +357,364 @@ function TailoredCVs() {
 }
 
 function CVDetailView({ cv, onBack, onUpdate }) {
-  const [notes, setNotes] = useState(cv.notes || '');
-  const [saving, setSaving] = useState(false);
+  const [fullCVData, setFullCVData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [expandedSections, setExpandedSections] = useState({});
+  const [expandedEntries, setExpandedEntries] = useState({});
 
-  const saveNotes = async () => {
+  useEffect(() => {
+    fetchFullCVData();
+  }, [cv.id]);
+
+  const fetchFullCVData = async () => {
     try {
-      setSaving(true);
+      setLoading(true);
       const token = localStorage.getItem('token');
-
-      const response = await fetch(`${API_URL}/api/cv/tailored-versions/${cv.id}`, {
-        method: 'PUT',
+      const response = await fetch(`${API_URL}/api/cv/tailored-versions/${cv.id}/full`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ...cv,
-          notes: notes
-        })
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save notes');
+        throw new Error('Failed to fetch full CV data');
       }
 
-      alert('✅ Notes saved successfully');
-      onUpdate();
+      const data = await response.json();
+      setFullCVData(data);
+      setError(null);
+
+      // Auto-expand all sections for viewing
+      if (data && data.profile && data.profile.sections) {
+        const expandedSecs = {};
+        const expandedEnts = {};
+        data.profile.sections.forEach(section => {
+          expandedSecs[section.id] = true;
+          section.entries.forEach(entry => {
+            expandedEnts[entry.id] = true;
+            if (entry.sub_entries) {
+              entry.sub_entries.forEach(sub => {
+                expandedEnts[sub.id] = true;
+              });
+            }
+          });
+        });
+        setExpandedSections(expandedSecs);
+        setExpandedEntries(expandedEnts);
+      }
     } catch (err) {
-      alert(`❌ Error: ${err.message}`);
+      setError(err.message);
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
-  return (
-    <div className="cv-detail-container">
-      <div className="detail-header">
-        <button className="btn-back" onClick={onBack}>
-          ← Back to List
-        </button>
-        <h1>{cv.job_title}</h1>
-        {cv.company_name && <h2>{cv.company_name}</h2>}
-      </div>
+  const toggleSection = (sectionId) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId]
+    }));
+  };
 
-      <div className="detail-metadata">
-        <div className="metadata-item">
-          <span className="metadata-label">Created:</span>
-          <span className="metadata-value">{new Date(cv.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-        </div>
-        <div className="metadata-item">
-          <span className="metadata-label">Status:</span>
-          <span className="metadata-value">{cv.status || 'draft'}</span>
-        </div>
-      </div>
+  const toggleEntry = (entryId) => {
+    setExpandedEntries(prev => ({
+      ...prev,
+      [entryId]: !prev[entryId]
+    }));
+  };
 
-      {/* AI Scores */}
-      <div className="detail-scores">
-        <h3>📊 AI Analysis Scores</h3>
-        <div className="scores-grid">
-          <div className="score-card">
-            <h4>Profile Fit Score</h4>
-            <div className="score-values">
-              {cv.openai_fit_score && <div className="score-value openai">🟢 OpenAI: {cv.openai_fit_score}%</div>}
-              {cv.claude_fit_score && <div className="score-value claude">🔵 Claude: {cv.claude_fit_score}%</div>}
-            </div>
+  const getSectionIcon = (sectionType) => {
+    const icons = {
+      'summary': '📝',
+      'work_experience': '💼',
+      'education': '🎓',
+      'skills': '⚡',
+      'projects': '🚀',
+      'certifications': '📜',
+      'awards': '🏆',
+      'publications': '📚',
+      'languages': '🌍',
+      'volunteer': '🤝'
+    };
+    return icons[sectionType] || '📋';
+  };
+
+  const countSectionItems = (section) => {
+    let totalItems = 0;
+
+    if (section.entries) {
+      section.entries.forEach(entry => {
+        // Count items in main entry
+        if (entry.items) {
+          totalItems += entry.items.length;
+        }
+
+        // Count items in sub-entries (for hierarchical work experience)
+        if (entry.sub_entries) {
+          entry.sub_entries.forEach(subEntry => {
+            if (subEntry.items) {
+              totalItems += subEntry.items.length;
+            }
+          });
+        }
+      });
+    }
+
+    return totalItems;
+  };
+
+  const renderAIBadge = (recommendedBy) => {
+    if (!recommendedBy || recommendedBy.length === 0) {
+      return null;
+    }
+
+    const hasOpenAI = recommendedBy.includes('openai');
+    const hasClaude = recommendedBy.includes('claude');
+
+    if (hasOpenAI && hasClaude) {
+      return (
+        <span className="ai-badge ai-badge-both" title="Recommended by both AI models">
+          🟢 GPT-4o + 🔵 Claude
+        </span>
+      );
+    } else if (hasOpenAI) {
+      return (
+        <span className="ai-badge ai-badge-openai" title="Recommended by GPT-4o">
+          🟢 GPT-4o
+        </span>
+      );
+    } else if (hasClaude) {
+      return (
+        <span className="ai-badge ai-badge-claude" title="Recommended by Claude Sonnet">
+          🔵 Claude
+        </span>
+      );
+    }
+
+    return null;
+  };
+
+  const renderSection = (section) => {
+    const isExpanded = expandedSections[section.id];
+    const icon = getSectionIcon(section.section_type);
+    const itemCount = countSectionItems(section);
+
+    return (
+      <div key={section.id} className="section-card">
+        <div className="section-header" onClick={() => toggleSection(section.id)}>
+          <div className="section-header-left">
+            <span className="section-icon">{icon}</span>
+            <h3 className="section-title">{section.title}</h3>
+            {itemCount > 0 && (
+              <span className="item-count-badge">{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
+            )}
           </div>
-          <div className="score-card">
-            <h4>ATS Compatibility Score</h4>
-            <div className="score-values">
-              {cv.openai_ats_score && <div className="score-value openai">🟢 OpenAI: {cv.openai_ats_score}%</div>}
-              {cv.claude_ats_score && <div className="score-value claude">🔵 Claude: {cv.claude_ats_score}%</div>}
-            </div>
+          <div className="section-header-right">
+            <span className="expand-arrow">{isExpanded ? '▼' : '▶'}</span>
           </div>
         </div>
-      </div>
 
-      {/* Selected Content Summary */}
-      <div className="detail-content-summary">
-        <h3>📝 Selected Content</h3>
-        {cv.selected_content && (
-          <div className="content-stats">
-            {cv.selected_content.summary_items && cv.selected_content.summary_items.length > 0 && (
-              <div className="stat-item">
-                <span className="stat-icon">📋</span>
-                <span className="stat-text">{cv.selected_content.summary_items.length} Summary Items</span>
+        {isExpanded && (
+          <div className="section-content">
+            {section.content && (
+              <div className="section-text-content">
+                <p>{section.content}</p>
               </div>
             )}
-            {cv.selected_content.work_experience && cv.selected_content.work_experience.length > 0 && (
-              <div className="stat-item">
-                <span className="stat-icon">💼</span>
-                <span className="stat-text">{cv.selected_content.work_experience.length} Work Experience Entries</span>
-              </div>
-            )}
-            {cv.selected_content.skills && cv.selected_content.skills.length > 0 && (
-              <div className="stat-item">
-                <span className="stat-icon">⚡</span>
-                <span className="stat-text">{cv.selected_content.skills.length} Skills Sections</span>
-              </div>
-            )}
-            {cv.selected_content.education_entries && cv.selected_content.education_entries.length > 0 && (
-              <div className="stat-item">
-                <span className="stat-icon">🎓</span>
-                <span className="stat-text">{cv.selected_content.education_entries.length} Education Entries</span>
+
+            {section.entries && section.entries.length > 0 && (
+              <div className="section-entries">
+                {section.entries.map(entry => renderEntry(entry, section.section_type))}
               </div>
             )}
           </div>
         )}
       </div>
+    );
+  };
 
-      {/* Notes Section */}
-      <div className="detail-notes">
-        <h3>📝 Notes</h3>
-        <textarea
-          className="notes-textarea"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Add notes about this application (interview prep, follow-up tasks, feedback, etc.)..."
-          rows={6}
-        />
-        <button
-          className="btn-save-notes"
-          onClick={saveNotes}
-          disabled={saving}
-        >
-          {saving ? '💾 Saving...' : '💾 Save Notes'}
+  const renderEntry = (entry, sectionType) => {
+    const isExpanded = expandedEntries[entry.id];
+    const hasItems = entry.items && entry.items.length > 0;
+    const hasSubEntries = entry.sub_entries && entry.sub_entries.length > 0;
+    const hasContent = hasItems || hasSubEntries || entry.description;
+
+    return (
+      <div key={entry.id} className="entry-card" data-entry-id={entry.id}>
+        <div className="entry-header" onClick={() => hasContent && toggleEntry(entry.id)}>
+          <div className="entry-header-content">
+            <div className="entry-title-row">
+              <strong className="entry-title">{entry.title}</strong>
+              {entry.subtitle && <span className="entry-subtitle"> - {entry.subtitle}</span>}
+              {entry.reasoning && (
+                <span className="entry-ai-badge-inline">
+                  {renderAIBadge(
+                    [
+                      entry.reasoning.openai ? 'openai' : null,
+                      entry.reasoning.claude ? 'claude' : null
+                    ].filter(Boolean)
+                  )}
+                </span>
+              )}
+            </div>
+            {(entry.start_date || entry.end_date || entry.location) && (
+              <div className="entry-meta">
+                {entry.start_date && <span>{entry.start_date}</span>}
+                {entry.end_date && <span> - {entry.end_date}</span>}
+                {entry.location && <span> | {entry.location}</span>}
+              </div>
+            )}
+          </div>
+          {hasContent && (
+            <span className="expand-arrow">{isExpanded ? '▼' : '▶'}</span>
+          )}
+        </div>
+
+        {isExpanded && hasContent && (
+          <div className="entry-content">
+            {entry.description && (
+              <p className="entry-description">{entry.description}</p>
+            )}
+
+            {entry.reasoning && (entry.reasoning.openai || entry.reasoning.claude) && (
+              <div className="ai-reasoning-section">
+                {entry.reasoning.openai && (
+                  <div className="ai-reasoning-item">
+                    <strong>🟢 GPT-4o:</strong> {entry.reasoning.openai}
+                  </div>
+                )}
+                {entry.reasoning.claude && (
+                  <div className="ai-reasoning-item">
+                    <strong>🔵 Claude:</strong> {entry.reasoning.claude}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {hasItems && (
+              <ul className="entry-items-list">
+                {entry.items.map(item => (
+                  <li key={item.id} className="entry-item" data-item-id={item.id}>
+                    <div className="item-content-row">
+                      <span className="item-text">{item.content}</span>
+                      {item.recommended_by && renderAIBadge(item.recommended_by)}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {hasSubEntries && (
+              <div className="sub-entries">
+                {entry.sub_entries.map(subEntry => renderEntry(subEntry, sectionType))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="cv-detail-container">
+        <div className="loading-message">Loading CV details...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="cv-detail-container">
+        <button className="btn-back" onClick={onBack}>← Back to List</button>
+        <div className="error-message">Error: {error}</div>
+      </div>
+    );
+  }
+
+  if (!fullCVData || !fullCVData.profile) {
+    return (
+      <div className="cv-detail-container">
+        <button className="btn-back" onClick={onBack}>← Back to List</button>
+        <div className="empty-message">No CV data available</div>
+      </div>
+    );
+  }
+
+  const profile = fullCVData.profile;
+
+  return (
+    <div className="cv-detail-view">
+      {/* Header with Back Button and Title */}
+      <div className="cv-detail-header">
+        <button className="btn-back" onClick={onBack}>
+          ← Back to List
         </button>
+        <div className="cv-detail-title-section">
+          <h1>{cv.job_title}</h1>
+          {cv.company_name && <h2 className="cv-company-name">{cv.company_name}</h2>}
+        </div>
       </div>
 
-      {/* Job Description */}
-      {cv.job_description && (
-        <div className="detail-job-description">
-          <h3>📄 Job Description</h3>
-          <pre className="job-description-text">{cv.job_description}</pre>
+      {/* AI Scores Bar */}
+      <div className="ai-scores-bar">
+        <div className="score-item">
+          <span className="score-label">Profile Fit:</span>
+          <span className="score-value">
+            {cv.openai_fit_score ? `🟢 ${cv.openai_fit_score}%` : '🟢 N/A'}
+            {' | '}
+            {cv.claude_fit_score ? `🔵 ${cv.claude_fit_score}%` : '🔵 N/A'}
+          </span>
         </div>
-      )}
+        <div className="score-item">
+          <span className="score-label">ATS Score:</span>
+          <span className="score-value">
+            {cv.openai_ats_score ? `🟢 ${cv.openai_ats_score}%` : '🟢 N/A'}
+            {' | '}
+            {cv.claude_ats_score ? `🔵 ${cv.claude_ats_score}%` : '🔵 N/A'}
+          </span>
+        </div>
+      </div>
+
+      {/* Master Profile-Style Split View */}
+      <div className="profile-split-view">
+        {/* Left Panel - Selected Content with Collapsible Sections */}
+        <div className="profile-editor-panel">
+          <div className="selected-content-header">
+            <h3>Selected Content for This CV</h3>
+            <p className="content-subtitle">Only showing AI-recommended items for this job</p>
+            <div className="ai-legend">
+              <span className="legend-label">AI Model Legend:</span>
+              <span className="legend-item">
+                <span className="ai-badge ai-badge-openai">🟢 GPT-4o</span>
+                <span className="legend-text">OpenAI's recommendation</span>
+              </span>
+              <span className="legend-item">
+                <span className="ai-badge ai-badge-claude">🔵 Claude</span>
+                <span className="legend-text">Anthropic Claude's recommendation</span>
+              </span>
+              <span className="legend-item">
+                <span className="ai-badge ai-badge-both">🟢 GPT-4o + 🔵 Claude</span>
+                <span className="legend-text">Both models agree</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="profile-sections">
+            {profile.sections && profile.sections.length > 0 ? (
+              profile.sections.map(section => renderSection(section))
+            ) : (
+              <div className="empty-state">No content selected</div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Panel - CV Preview */}
+        <div className="profile-preview-panel">
+          <CVPreview profile={profile} />
+        </div>
+      </div>
     </div>
   );
 }

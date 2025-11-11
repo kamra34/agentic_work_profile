@@ -41,6 +41,8 @@ def tailor_cv_with_openai(job_analysis: Dict[str, Any], formatted_profile: str) 
 
     system_prompt = """You are an expert CV tailoring assistant. Your job is to recommend which specific content from a candidate's master profile should be included in a tailored CV for a specific job application.
 
+🚨 URGENT: You MUST include work experience! Look for [SUB_ENTRY_ID:XX] markers in the WORK_EXPERIENCE section and return those IDs! 🚨
+
 CRITICAL INSTRUCTIONS:
 
 **SUMMARY SECTION:**
@@ -50,12 +52,45 @@ CRITICAL INSTRUCTIONS:
 - Choose the summary items that best highlight relevant aspects for this specific role
 - IMPORTANT: Select 5-7 items, not just 1 or 2
 
-**WORK EXPERIENCE:**
-- Recommend SPECIFIC bullet point IDs (you'll see IDs in the profile structure)
-- The candidate has a hierarchical structure: companies → roles/subsections → bullet points
-- For EACH role entry and sub-entry, recommend which specific bullet points to include
-- Select bullets that best match the job requirements and demonstrate relevant skills
-- Be selective - quality over quantity
+**WORK EXPERIENCE - CRITICAL INSTRUCTIONS:**
+The candidate's work experience has a HIERARCHICAL structure:
+- [ENTRY_ID:X] represents a COMPANY (e.g., "Ericsson")
+- [SUB_ENTRY_ID:Y] represents ROLE CATEGORIES within that company (e.g., "Delivery & Stakeholder Management", "Technical Leadership")
+- [ID:Z] represents individual BULLET POINTS under each role category
+
+YOU MUST RETURN SUB_ENTRY_IDs, NOT ENTRY_IDs for work experience!
+
+Example from profile:
+```
+[ENTRY_ID:18] Lead Data Scientist & AI Delivery Lead
+Company: Ericsson
+  [SUB_ENTRY_ID:20] Delivery & Stakeholder Management
+    - [ID:13] Defined delivery roadmaps...
+    - [ID:18] Coordinated with SI partners...
+  [SUB_ENTRY_ID:32] Product Management
+    - [ID:61] Structured large-scale AI projects...
+```
+
+For this, you MUST return:
+```json
+"recommended_work_experience": [
+  {
+    "entry_id": 20,
+    "entry_type": "sub_entry",
+    "recommended_items": [13, 18],
+    "reasoning": "Delivery and stakeholder management experience"
+  },
+  {
+    "entry_id": 32,
+    "entry_type": "sub_entry",
+    "recommended_items": [61],
+    "reasoning": "Product management skills"
+  }
+]
+```
+
+WRONG: {"entry_id": 18, ...}  ❌ This is the parent company, not the role!
+RIGHT: {"entry_id": 20, ...}, {"entry_id": 32, ...}  ✓ These are the actual role categories!
 
 **SKILLS:**
 - The candidate has skill categories/groups
@@ -146,6 +181,8 @@ def tailor_cv_with_claude(job_analysis: Dict[str, Any], formatted_profile: str) 
 
     system_prompt = """You are an expert CV tailoring assistant. Your job is to recommend which specific content from a candidate's master profile should be included in a tailored CV for a specific job application.
 
+🚨 URGENT: You MUST include work experience! Look for [SUB_ENTRY_ID:XX] markers in the WORK_EXPERIENCE section and return those IDs! 🚨
+
 CRITICAL INSTRUCTIONS:
 
 **SUMMARY SECTION:**
@@ -155,12 +192,45 @@ CRITICAL INSTRUCTIONS:
 - Choose the summary items that best highlight relevant aspects for this specific role
 - IMPORTANT: Select 5-7 items, not just 1 or 2
 
-**WORK EXPERIENCE:**
-- Recommend SPECIFIC bullet point IDs (you'll see IDs in the profile structure)
-- The candidate has a hierarchical structure: companies → roles/subsections → bullet points
-- For EACH role entry and sub-entry, recommend which specific bullet points to include
-- Select bullets that best match the job requirements and demonstrate relevant skills
-- Be selective - quality over quantity
+**WORK EXPERIENCE - CRITICAL INSTRUCTIONS:**
+The candidate's work experience has a HIERARCHICAL structure:
+- [ENTRY_ID:X] represents a COMPANY (e.g., "Ericsson")
+- [SUB_ENTRY_ID:Y] represents ROLE CATEGORIES within that company (e.g., "Delivery & Stakeholder Management", "Technical Leadership")
+- [ID:Z] represents individual BULLET POINTS under each role category
+
+YOU MUST RETURN SUB_ENTRY_IDs, NOT ENTRY_IDs for work experience!
+
+Example from profile:
+```
+[ENTRY_ID:18] Lead Data Scientist & AI Delivery Lead
+Company: Ericsson
+  [SUB_ENTRY_ID:20] Delivery & Stakeholder Management
+    - [ID:13] Defined delivery roadmaps...
+    - [ID:18] Coordinated with SI partners...
+  [SUB_ENTRY_ID:32] Product Management
+    - [ID:61] Structured large-scale AI projects...
+```
+
+For this, you MUST return:
+```json
+"recommended_work_experience": [
+  {
+    "entry_id": 20,
+    "entry_type": "sub_entry",
+    "recommended_items": [13, 18],
+    "reasoning": "Delivery and stakeholder management experience"
+  },
+  {
+    "entry_id": 32,
+    "entry_type": "sub_entry",
+    "recommended_items": [61],
+    "reasoning": "Product management skills"
+  }
+]
+```
+
+WRONG: {"entry_id": 18, ...}  ❌ This is the parent company, not the role!
+RIGHT: {"entry_id": 20, ...}, {"entry_id": 32, ...}  ✓ These are the actual role categories!
 
 **SKILLS:**
 - The candidate has skill categories/groups
@@ -339,6 +409,10 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
     openai_work = openai_recs.get("recommended_work_experience", []) if openai_recs else []
     claude_work = claude_recs.get("recommended_work_experience", []) if claude_recs else []
 
+    # DEBUG: Log what AI returned for work experience
+    print(f"[DEBUG] OpenAI work experience recommendations: {openai_work}")
+    print(f"[DEBUG] Claude work experience recommendations: {claude_work}")
+
     # Group by entry_id (both parent and sub-entries)
     work_by_entry = {}
     for exp in openai_work:
@@ -359,10 +433,15 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
     parent_entries = {}
     sub_entries_by_parent = {}
 
+    print(f"[DEBUG] work_by_entry keys: {list(work_by_entry.keys())}")
+    print(f"[DEBUG] entries_lookup has {len(entries_lookup)} entries")
+    print(f"[DEBUG] entries_lookup keys sample: {list(entries_lookup.keys())[:10]}")
+
     for entry_id in work_by_entry.keys():
         if entry_id in entries_lookup:
             entry = entries_lookup[entry_id]
             parent_id = entry.get("parent_entry_id")
+            print(f"[DEBUG] Entry {entry_id}: title={entry.get('title')}, parent_id={parent_id}")
 
             if parent_id is None:
                 # This is a parent entry
@@ -372,6 +451,20 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
                 if parent_id not in sub_entries_by_parent:
                     sub_entries_by_parent[parent_id] = {}
                 sub_entries_by_parent[parent_id][entry_id] = work_by_entry[entry_id]
+
+    # Auto-include parent entries for any recommended sub-entries
+    # This handles the case where AI recommends only sub-entries (role categories)
+    # without explicitly recommending the parent company entry
+    print(f"[DEBUG] Before auto-include: parent_entries keys = {list(parent_entries.keys())}")
+    print(f"[DEBUG] sub_entries_by_parent keys (parent IDs) = {list(sub_entries_by_parent.keys())}")
+
+    for parent_id in sub_entries_by_parent.keys():
+        if parent_id not in parent_entries and parent_id in entries_lookup:
+            # Auto-include parent entry since its sub-entries were recommended
+            print(f"[DEBUG] Auto-including parent entry {parent_id}: {entries_lookup[parent_id].get('title')}")
+            parent_entries[parent_id] = {"openai": None, "claude": None}
+
+    print(f"[DEBUG] After auto-include: parent_entries keys = {list(parent_entries.keys())}")
 
     # Enrich each parent work entry with its sub-entries
     for parent_id, models_data in parent_entries.items():
