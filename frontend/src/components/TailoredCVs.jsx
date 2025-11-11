@@ -760,39 +760,61 @@ function CVDetailView({ cv, onBack, onUpdate }) {
 
   return (
     <div className="cv-detail-view">
-      {/* Header with Back Button and Title */}
+      {/* Header with Title and Back Button */}
       <div className="cv-detail-header">
-        <div className="header-buttons">
-          <button className="btn-back" onClick={onBack}>
-            ← Back to List
-          </button>
-          <button className="btn-download-pdf" onClick={downloadPDF}>
-            📄 Download PDF
-          </button>
-        </div>
+        <button className="btn-back-minimal" onClick={onBack} title="Back to CV List">
+          ← Back
+        </button>
         <div className="cv-detail-title-section">
           <h1>{cv.job_title}</h1>
           {cv.company_name && <h2 className="cv-company-name">{cv.company_name}</h2>}
         </div>
       </div>
 
-      {/* AI Scores Bar */}
+      {/* AI Scores and Actions Bar */}
       <div className="ai-scores-bar">
-        <div className="score-item">
-          <span className="score-label">Profile Fit:</span>
-          <span className="score-value">
-            {cv.openai_fit_score ? `🟢 ${cv.openai_fit_score}%` : '🟢 N/A'}
-            {' | '}
-            {cv.claude_fit_score ? `🔵 ${cv.claude_fit_score}%` : '🔵 N/A'}
-          </span>
+        {/* Initial Evaluation Scores */}
+        <div className="scores-section">
+          <h3 className="scores-section-title">Initial Evaluation</h3>
+          <div className="scores-row">
+            <div className="score-group">
+              <span className="score-label">Profile Fit:</span>
+              <span className="score-value">
+                {cv.openai_fit_score ? `🟢 ${cv.openai_fit_score}%` : '🟢 N/A'}
+                {' | '}
+                {cv.claude_fit_score ? `🔵 ${cv.claude_fit_score}%` : '🔵 N/A'}
+              </span>
+            </div>
+            <div className="score-group">
+              <span className="score-label">ATS Score:</span>
+              <span className="score-value">
+                {cv.openai_ats_score ? `🟢 ${cv.openai_ats_score}%` : '🟢 N/A'}
+                {' | '}
+                {cv.claude_ats_score ? `🔵 ${cv.claude_ats_score}%` : '🔵 N/A'}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="score-item">
-          <span className="score-label">ATS Score:</span>
-          <span className="score-value">
-            {cv.openai_ats_score ? `🟢 ${cv.openai_ats_score}%` : '🟢 N/A'}
-            {' | '}
-            {cv.claude_ats_score ? `🔵 ${cv.claude_ats_score}%` : '🔵 N/A'}
-          </span>
+
+        {/* Re-evaluated Scores Placeholder */}
+        <div className="scores-section">
+          <h3 className="scores-section-title">Re-evaluated (Current CV)</h3>
+          <div className="scores-row">
+            <div className="score-group">
+              <span className="score-label">ATS Score:</span>
+              <span className="score-value score-pending">Not calculated yet</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="scores-actions">
+          <button className="btn-recalculate" onClick={() => alert('Re-calculate ATS functionality coming soon!')} title="Re-calculate ATS score based on visible items">
+            🔄 Re-calculate ATS
+          </button>
+          <button className="btn-download-pdf-bar" onClick={downloadPDF} title="Download CV as PDF">
+            📄 Download PDF
+          </button>
         </div>
       </div>
 
@@ -804,19 +826,9 @@ function CVDetailView({ cv, onBack, onUpdate }) {
             <h3>Selected Content for This CV</h3>
             <p className="content-subtitle">Only showing AI-recommended items for this job</p>
             <div className="ai-legend">
-              <span className="legend-label">AI Model Legend:</span>
-              <span className="legend-item">
-                <span className="ai-badge ai-badge-openai">🟢 GPT-4o</span>
-                <span className="legend-text">OpenAI's recommendation</span>
-              </span>
-              <span className="legend-item">
-                <span className="ai-badge ai-badge-claude">🔵 Claude</span>
-                <span className="legend-text">Anthropic Claude's recommendation</span>
-              </span>
-              <span className="legend-item">
-                <span className="ai-badge ai-badge-both">🟢 GPT-4o + 🔵 Claude</span>
-                <span className="legend-text">Both models agree</span>
-              </span>
+              <span className="legend-compact">🟢 GPT-4o</span>
+              <span className="legend-compact">🔵 Claude</span>
+              <span className="legend-compact">🟢🔵 Both agree</span>
             </div>
           </div>
 
