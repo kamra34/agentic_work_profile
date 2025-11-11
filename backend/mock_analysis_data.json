@@ -1,0 +1,153 @@
+{
+  "job_analysis": {
+    "job_description": "Senior Leadership Role - Head of Data & AI\n\nWe are seeking an experienced leader to drive our data and AI strategy...",
+    "analyses": [
+      {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "analysis": {
+          "job_category": "Leadership",
+          "job_level": "Senior/Executive",
+          "technical_skills": [
+            "AI/ML Strategy",
+            "Data Architecture",
+            "Microsoft Azure",
+            "Databricks",
+            "Data Lake/Lakehouse",
+            "MLOps",
+            "GenAI/LLM",
+            "Python",
+            "SQL"
+          ],
+          "soft_skills": [
+            "Strategic Leadership",
+            "Team Building",
+            "Stakeholder Management",
+            "Communication",
+            "Mentoring"
+          ],
+          "education_requirements": "PhD or Master's in Computer Science, Data Science, or related field",
+          "experience_requirements": "7-10+ years of leadership experience in AI/ML and data science",
+          "preferred_qualifications": [
+            "Experience in regulated industries (financial services)",
+            "Azure and Databricks expertise",
+            "Data governance experience"
+          ]
+        }
+      },
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "analysis": {
+          "job_category": "Leadership",
+          "job_level": "Senior/Executive",
+          "technical_skills": [
+            "AI/ML Leadership",
+            "Data Platform Architecture",
+            "Microsoft Azure",
+            "Databricks",
+            "Data Governance",
+            "MLOps",
+            "GenAI/LLM",
+            "Python",
+            "SQL"
+          ],
+          "soft_skills": [
+            "Strategic Vision",
+            "Executive Communication",
+            "Team Leadership",
+            "Cross-functional Collaboration",
+            "Change Management"
+          ],
+          "education_requirements": "PhD preferred in relevant technical field",
+          "experience_requirements": "7-10+ years leading AI/ML teams in enterprise environments",
+          "preferred_qualifications": [
+            "Financial services experience",
+            "Enterprise data platform experience",
+            "Regulatory compliance knowledge"
+          ]
+        }
+      }
+    ]
+  },
+  "fit_analysis": {
+    "job_analysis": {},
+    "user_profile_summary": {},
+    "fit_analyses": [
+      {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "fit_analysis": {
+          "fit_percentage": 78,
+          "fit_summary": "The candidate is a strong match for the leadership role in data and AI, meeting most of the key requirements. However, there are notable gaps in specific technical expertise and industry experience that could impact their suitability for the role.",
+          "strengths": [
+            "PhD in Electrical Engineering with a focus on AI and analytics",
+            "Extensive leadership experience in AI and data science",
+            "Strong skills in AI/ML model development and operationalization",
+            "Proven track record in strategic leadership and team building"
+          ],
+          "critical_gaps": [
+            "Lacks explicit experience with Microsoft Azure and Databricks",
+            "Limited evidence of experience in regulated industries, particularly financial services",
+            "No direct mention of data lake/lakehouse platform expertise"
+          ],
+          "experience_match": "The candidate has over 10 years of relevant leadership experience, which aligns well with the senior-level requirement.",
+          "technical_skills_match": 70,
+          "ats_compatibility": {
+            "keyword_match": 75,
+            "skills_coverage": 68,
+            "has_metrics": true,
+            "action_verbs_score": 82,
+            "overall_ats_score": 76,
+            "ats_notes": "Strong keyword presence and action verbs. Resume includes quantifiable achievements. Could improve by adding more Azure/Databricks specific terms."
+          },
+          "recommendation": {
+            "should_apply": true,
+            "reasoning": "The candidate should apply as they meet most of the key requirements and have a strong leadership background in AI. However, they should be prepared to address gaps in specific technical expertise and industry experience during the application process."
+          }
+        }
+      },
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "fit_analysis": {
+          "fit_percentage": 72,
+          "fit_summary": "Strong technical match with solid AI/ML leadership experience, but significant gaps in required Microsoft Azure expertise and data architecture fundamentals. Candidate has AWS experience but lacks the specific Azure/Databricks platform knowledge that is central to this role.",
+          "strengths": [
+            "Excellent AI/ML leadership experience with 5+ years leading cross-functional teams",
+            "Strong hands-on experience with GenAI, LLM implementations, and agent-based systems",
+            "Proven track record in operationalizing AI/ML models from prototype to production",
+            "PhD in relevant field (Electrical Engineering/Automatic Control) with strong analytical foundation",
+            "Demonstrated people leadership, mentoring, and team building capabilities",
+            "Experience with MLOps, CI/CD, and cloud deployment practices",
+            "Strong stakeholder management and executive communication skills",
+            "Research background with peer-reviewed publications shows deep technical expertise"
+          ],
+          "critical_gaps": [
+            "No demonstrated experience with Microsoft Azure (has AWS experience instead)",
+            "No specific Databricks platform experience mentioned",
+            "Lacks explicit data architecture and data lake/lakehouse platform expertise",
+            "No experience in regulated industries, particularly financial services",
+            "Missing the required 7-10+ years of leadership experience (appears to have ~5 years)",
+            "No mention of data governance, quality, and compliance experience",
+            "Limited evidence of building data platforms and pipelines at enterprise scale"
+          ],
+          "experience_match": "Moderate - Has 5+ years of AI/ML leadership but falls short of the required 7-10+ years. Leadership experience is solid but not at the senior level required.",
+          "technical_skills_match": 50,
+          "ats_compatibility": {
+            "keyword_match": 65,
+            "skills_coverage": 55,
+            "has_metrics": true,
+            "action_verbs_score": 78,
+            "overall_ats_score": 67,
+            "ats_notes": "Good use of action verbs and metrics, but missing critical keywords like 'Azure', 'Databricks', 'financial services', and 'data governance'. ATS systems heavily weighted toward these terms may rank this resume lower."
+          },
+          "recommendation": {
+            "should_apply": false,
+            "reasoning": "While the candidate has strong AI/ML experience, the significant gaps in required Azure/Databricks expertise and the experience level mismatch make this role a stretch. The candidate would be better suited for roles that leverage their AWS experience or mid-level leadership positions."
+          }
+        }
+      }
+    ]
+  }
+}

@@ -303,12 +303,19 @@ class TailoredCVUpdate(BaseModel):
 
 class TailoredCVResponse(BaseModel):
     id: int
+    user_id: int
+    profile_id: int
     job_title: str
     company_name: Optional[str]
+    job_description: Optional[str]
     openai_fit_score: Optional[int]
     claude_fit_score: Optional[int]
     openai_ats_score: Optional[int]
     claude_ats_score: Optional[int]
+    selected_content: Dict[str, Any]
+    openai_recommendations: Optional[Dict[str, Any]]
+    claude_recommendations: Optional[Dict[str, Any]]
+    notes: Optional[str]
     status: str
     created_at: datetime
     updated_at: datetime

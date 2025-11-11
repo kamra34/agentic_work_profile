@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import ProfileManagement from './ProfileManagement';
+import TailoredCVs from './TailoredCVs';
 import './Dashboard.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -177,6 +178,7 @@ function TailorCVView() {
   const [progressDetails, setProgressDetails] = useState('');
   const [tailoring, setTailoring] = useState(false);
   const [tailoringRecs, setTailoringRecs] = useState(null);
+  const [savingTailoredCV, setSavingTailoredCV] = useState(false);
   const [testMode, setTestMode] = useState(false);
 
   // Expandable sections state
@@ -282,11 +284,12 @@ function TailorCVView() {
         if (fitResponse.ok) {
           const fitData = await fitResponse.json();
 
-          // DEBUG: Log the response to check for input_data
+          // DEBUG: Log the response structure
           console.log('[DEBUG] Fit Analysis Response Keys:', Object.keys(fitData));
-          console.log('[DEBUG] Has input_data?', 'input_data' in fitData);
-          if (fitData.input_data) {
-            console.log('[DEBUG] input_data keys:', Object.keys(fitData.input_data));
+          console.log('[DEBUG] Full fitData structure:', JSON.stringify(fitData, null, 2));
+          console.log('[DEBUG] Has analyses?', 'analyses' in fitData);
+          if (fitData.analyses) {
+            console.log('[DEBUG] Analyses:', fitData.analyses);
           }
 
           const fitEndTime = Date.now();
@@ -386,6 +389,108 @@ function TailorCVView() {
       setError(err.message || 'Failed to get CV tailoring recommendations');
     } finally {
       setTailoring(false);
+    }
+  };
+
+  const handleSaveTailoredCV = async () => {
+    if (!tailoringRecs || !tailoringRecs.enriched_recommendations) {
+      alert('No tailoring recommendations to save');
+      return;
+    }
+
+    // Prompt for job title and company name
+    const jobTitle = prompt('Enter job title:', '');
+    if (!jobTitle) return;
+
+    const companyName = prompt('Enter company name (optional):', '');
+
+    setSavingTailoredCV(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('token');
+
+      // Build selected_content from enriched_recommendations
+      const enriched = tailoringRecs.enriched_recommendations;
+      const selectedContent = {
+        summary_items: enriched.summary ? enriched.summary.map(item => item.id) : [],
+        work_experience: enriched.work_experience ? enriched.work_experience.map(entry => ({
+          entry_id: entry.id,
+          items: entry.items ? entry.items.map(item => item.id) : [],
+          sub_entries: entry.sub_entries ? entry.sub_entries.map(sub => ({
+            entry_id: sub.id,
+            items: sub.items ? sub.items.map(item => item.id) : []
+          })) : []
+        })) : [],
+        skills: enriched.skills ? enriched.skills.map(entry => ({
+          entry_id: entry.id,
+          items: entry.items ? entry.items.map(item => item.id) : []
+        })) : [],
+        education_entries: enriched.education ? enriched.education.map(entry => entry.id) : [],
+        project_entries: enriched.projects ? enriched.projects.map(entry => entry.id) : [],
+        certification_entries: enriched.certifications ? enriched.certifications.map(entry => entry.id) : [],
+        award_entries: enriched.awards ? enriched.awards.map(entry => entry.id) : [],
+        publication_entries: enriched.publications ? enriched.publications.map(entry => entry.id) : [],
+        language_entries: enriched.languages ? enriched.languages.map(entry => entry.id) : []
+      };
+
+      // Extract scores from fitAnalysis
+      // Note: The API returns fit_analyses (not analyses) with fit_analysis (not analysis) inside
+      const openai_fit_result = fitAnalysis?.fit_analyses?.find(a => a.provider === 'openai')?.fit_analysis;
+      const claude_fit_result = fitAnalysis?.fit_analyses?.find(a => a.provider === 'anthropic')?.fit_analysis;
+
+      const openai_fit_score = openai_fit_result?.fit_percentage;
+      const claude_fit_score = claude_fit_result?.fit_percentage;
+      const openai_ats_score = openai_fit_result?.ats_compatibility?.overall_ats_score;
+      const claude_ats_score = claude_fit_result?.ats_compatibility?.overall_ats_score;
+
+      // Debug logging
+      console.log('[DEBUG] Saving CV with scores:', {
+        openai_fit_score,
+        claude_fit_score,
+        openai_ats_score,
+        claude_ats_score,
+        fitAnalysis: fitAnalysis
+      });
+
+      // Warn if scores are missing
+      if (!openai_fit_score && !claude_fit_score && !openai_ats_score && !claude_ats_score) {
+        console.warn('[WARNING] No AI scores found. Did you run "Analyze with AI" first?');
+      }
+
+      const response = await fetch(`${API_URL}/api/cv/tailored-versions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          job_title: jobTitle,
+          company_name: companyName || null,
+          job_description: jobDescription || null,
+          selected_content: selectedContent,
+          openai_fit_score,
+          claude_fit_score,
+          openai_ats_score,
+          claude_ats_score,
+          openai_recommendations: tailoringRecs.tailoring_recommendations?.find(r => r.provider === 'openai')?.recommendations,
+          claude_recommendations: tailoringRecs.tailoring_recommendations?.find(r => r.provider === 'anthropic')?.recommendations
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to save tailored CV');
+      }
+
+      const data = await response.json();
+      alert(`✅ Tailored CV saved successfully!\n\nJob: ${jobTitle}\nCompany: ${companyName || 'N/A'}\nVersion ID: ${data.id}`);
+      console.log('Saved tailored CV:', data);
+    } catch (err) {
+      setError(err.message || 'Failed to save tailored CV');
+      alert(`❌ Failed to save: ${err.message}`);
+    } finally {
+      setSavingTailoredCV(false);
     }
   };
 
@@ -1002,8 +1107,19 @@ Requirements:
         {tailoringRecs && (tailoringRecs.enriched_recommendations || tailoringRecs.tailoring_recommendations) && (
           <div className="tailoring-review-container">
             <div className="tailoring-review-header">
-              <h2>📝 AI-Recommended Content for This Role</h2>
-              <p>Review the specific content recommended by OpenAI and Claude. Items recommended by both models are highlighted.</p>
+              <div className="tailoring-header-content">
+                <div>
+                  <h2>📝 AI-Recommended Content for This Role</h2>
+                  <p>Review the specific content recommended by OpenAI and Claude. Items recommended by both models are highlighted.</p>
+                </div>
+                <button
+                  className="save-tailored-cv-btn"
+                  onClick={handleSaveTailoredCV}
+                  disabled={savingTailoredCV}
+                >
+                  {savingTailoredCV ? '💾 Saving...' : '💾 Save This Tailored CV'}
+                </button>
+              </div>
             </div>
 
             {/* Data Viewer for CV Tailoring */}
@@ -1622,29 +1738,9 @@ function ExportCVView() {
   );
 }
 
-// Saved CVs View Component (Placeholder)
+// Saved CVs View Component
 function SavedCVsView() {
-  return (
-    <div className="placeholder-view">
-      <div className="placeholder-content">
-        <div className="placeholder-icon">💾</div>
-        <h2>Your Saved CVs</h2>
-        <p className="placeholder-description">
-          This feature is under development. Soon you'll be able to:
-        </p>
-        <ul className="placeholder-list">
-          <li>View all your saved CV versions</li>
-          <li>Track which CV was used for which application</li>
-          <li>See creation and modification dates</li>
-          <li>Duplicate and modify existing CVs</li>
-          <li>Organize CVs by job type or company</li>
-        </ul>
-        <div className="placeholder-cta">
-          <p>Start creating tailored CVs to build your collection!</p>
-        </div>
-      </div>
-    </div>
-  );
+  return <TailoredCVs />;
 }
 
 export default Dashboard;

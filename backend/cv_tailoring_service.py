@@ -44,10 +44,11 @@ def tailor_cv_with_openai(job_analysis: Dict[str, Any], formatted_profile: str) 
 CRITICAL INSTRUCTIONS:
 
 **SUMMARY SECTION:**
-- The candidate has existing summary items in their profile (you'll see IDs)
-- SELECT 5-7 of the candidate's existing summary items that best fit this job
-- Recommend by item_id, just like work experience bullets
-- Choose summaries that highlight the most relevant aspects for this specific role
+- The candidate has existing summary items in their profile (you'll see item IDs in the Summary section)
+- YOU MUST SELECT EXACTLY 5-7 ITEM IDs from the candidate's existing summary items
+- Return these as an array of item_ids: "recommended_summary": [123, 456, 789, ...]
+- Choose the summary items that best highlight relevant aspects for this specific role
+- IMPORTANT: Select 5-7 items, not just 1 or 2
 
 **WORK EXPERIENCE:**
 - Recommend SPECIFIC bullet point IDs (you'll see IDs in the profile structure)
@@ -72,7 +73,7 @@ CRITICAL INSTRUCTIONS:
 
 Your recommendations must be in this JSON structure:
 {
-  "recommended_summary": [<item_id>, <item_id>, ...],  // 5-7 summary item IDs from the candidate's existing summaries
+  "recommended_summary": [123, 456, 789, 101, 112, 131, 145],  // EXACTLY 5-7 item IDs from Summary section
   "recommended_work_experience": [
     {
       "entry_id": <entry_id>,
@@ -148,10 +149,11 @@ def tailor_cv_with_claude(job_analysis: Dict[str, Any], formatted_profile: str) 
 CRITICAL INSTRUCTIONS:
 
 **SUMMARY SECTION:**
-- The candidate has existing summary items in their profile (you'll see IDs)
-- SELECT 5-7 of the candidate's existing summary items that best fit this job
-- Recommend by item_id, just like work experience bullets
-- Choose summaries that highlight the most relevant aspects for this specific role
+- The candidate has existing summary items in their profile (you'll see item IDs in the Summary section)
+- YOU MUST SELECT EXACTLY 5-7 ITEM IDs from the candidate's existing summary items
+- Return these as an array of item_ids: "recommended_summary": [123, 456, 789, ...]
+- Choose the summary items that best highlight relevant aspects for this specific role
+- IMPORTANT: Select 5-7 items, not just 1 or 2
 
 **WORK EXPERIENCE:**
 - Recommend SPECIFIC bullet point IDs (you'll see IDs in the profile structure)
@@ -176,7 +178,7 @@ CRITICAL INSTRUCTIONS:
 
 Your recommendations must be in this JSON structure:
 {
-  "recommended_summary": [<item_id>, <item_id>, ...],  // 5-7 summary item IDs from the candidate's existing summaries
+  "recommended_summary": [123, 456, 789, 101, 112, 131, 145],  // EXACTLY 5-7 item IDs from Summary section
   "recommended_work_experience": [
     {
       "entry_id": <entry_id>,
@@ -378,7 +380,7 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
             entry_info["items"] = []
             entry_info["sub_entries"] = []
 
-            # Collect items directly attached to parent entry
+            # Collect items directly attached to parent entry (not items from sub-entries)
             openai_items = set(models_data["openai"].get("recommended_items", []) if models_data["openai"] else [])
             claude_items = set(models_data["claude"].get("recommended_items", []) if models_data["claude"] else [])
             all_parent_items = openai_items | claude_items
@@ -386,12 +388,14 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
             for item_id in all_parent_items:
                 if item_id in items_lookup:
                     item_data = items_lookup[item_id].copy()
-                    item_data["recommended_by"] = []
-                    if item_id in openai_items:
-                        item_data["recommended_by"].append("openai")
-                    if item_id in claude_items:
-                        item_data["recommended_by"].append("claude")
-                    entry_info["items"].append(item_data)
+                    # Only include if this item actually belongs to the parent entry (not a sub-entry)
+                    if item_data["entry_id"] == parent_id:
+                        item_data["recommended_by"] = []
+                        if item_id in openai_items:
+                            item_data["recommended_by"].append("openai")
+                        if item_id in claude_items:
+                            item_data["recommended_by"].append("claude")
+                        entry_info["items"].append(item_data)
 
             # Add sub-entries (e.g., "Delivery & Stakeholder Management", "Product Management")
             if parent_id in sub_entries_by_parent:

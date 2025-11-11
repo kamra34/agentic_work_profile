@@ -1277,7 +1277,8 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
             <>
               {entry.description && <p className="entry-description">{entry.description}</p>}
 
-              {entry.items && entry.items.length > 0 && (
+              {/* Only show direct bullet points for non-work-experience OR sub-entries (level > 0) */}
+          {(!canHaveBulletGroups || level > 0) && entry.items && entry.items.length > 0 && (
             <ul className="items-list">
               {entry.items.map(item => (
                 <li key={item.id} className="item" data-item-id={item.id}>
@@ -1322,30 +1323,33 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
             </ul>
           )}
 
-          {showAddItem ? (
-            <div className="add-item-form">
-              <input
-                type="text"
-                placeholder="Enter bullet point..."
-                autoFocus
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && e.target.value.trim()) {
-                    addItem(e.target.value);
-                  }
-                }}
-                onBlur={(e) => {
-                  if (e.target.value.trim()) {
-                    addItem(e.target.value);
-                  } else {
-                    setShowAddItem(false);
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            <button className="btn-add-item" onClick={() => setShowAddItem(true)}>
-              + Add Bullet Point
-            </button>
+          {/* Only show Add Bullet Point button for non-work-experience OR sub-entries (level > 0) */}
+          {(!canHaveBulletGroups || level > 0) && (
+            showAddItem ? (
+              <div className="add-item-form">
+                <input
+                  type="text"
+                  placeholder="Enter bullet point..."
+                  autoFocus
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                      addItem(e.target.value);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (e.target.value.trim()) {
+                      addItem(e.target.value);
+                    } else {
+                      setShowAddItem(false);
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <button className="btn-add-item" onClick={() => setShowAddItem(true)}>
+                + Add Bullet Point
+              </button>
+            )
           )}
 
           {entry.sub_entries && entry.sub_entries.length > 0 && (
@@ -1395,14 +1399,18 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
                 </div>
               ) : (
                 <button className="btn-add-bullet-group" onClick={() => setShowAddBulletGroup(true)}>
-                  + Add Bullet Group (Optional)
+                  {sectionType === 'work_experience'
+                    ? '+ Add Bullet Group (Required)'
+                    : '+ Add Bullet Group (Optional)'}
                 </button>
               )}
               <p className="help-text">
-                💡 Tip: {
+                💡 {
                   sectionType === 'education'
-                    ? 'Add bullet groups to organize details by category (e.g., "Coursework", "Research", "Honors")'
-                    : 'Add bullet groups to organize achievements by category (e.g., "Technical Leadership", "Delivery Management")'
+                    ? 'Tip: Add bullet groups to organize details by category (e.g., "Coursework", "Research", "Honors")'
+                    : sectionType === 'work_experience'
+                    ? 'Required: Organize your achievements into categories (e.g., "Technical Leadership", "Delivery Management"). Bullet points must be added under these groups.'
+                    : 'Tip: Add bullet groups to organize achievements by category'
                 }
               </p>
             </div>

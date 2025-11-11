@@ -1,0 +1,1018 @@
+{
+  "job_analysis": {
+    "Job Category": "Technical Leadership",
+    "Key Requirements": {
+      "Education": [
+        "Advanced degree in a quantitative field (e.g., PhD/MS in EE, CS, Statistics, or related)"
+      ],
+      "Experience": [
+        "6–10+ years across DS/ML/AI",
+        "2+ years leading teams or programs (people and delivery)"
+      ],
+      "Technical Skills": [
+        "Python",
+        "Familiarity with R/MATLAB",
+        "SQL",
+        "Modern data tooling",
+        "AWS (Bedrock, SageMaker, Lambda, Step Functions) or equivalent clouds",
+        "Production experience with retrieval systems (vector indexes, chunking, metadata, eval)",
+        "MLOps: containers, CI/CD, experiment tracking, model monitoring, rollback strategies"
+      ],
+      "Soft Skills": [
+        "Strong communicator",
+        "Writes clearly",
+        "Avoids jargon",
+        "Can defend decisions with evidence"
+      ]
+    },
+    "Technical Skills": [
+      "Python",
+      "R",
+      "MATLAB",
+      "SQL",
+      "AWS (Bedrock, SageMaker, Lambda, Step Functions)",
+      "Cloud technologies",
+      "Retrieval systems",
+      "MLOps",
+      "Containers",
+      "CI/CD",
+      "Experiment tracking",
+      "Model monitoring",
+      "Rollback strategies"
+    ],
+    "Soft Skills": [
+      "Strong communication",
+      "Clear writing",
+      "Avoiding jargon",
+      "Evidence-based decision making"
+    ],
+    "Education Requirements": [
+      "Advanced degree in a quantitative field (e.g., PhD/MS in EE, CS, Statistics, or related)"
+    ],
+    "Experience Requirements": [
+      "6–10+ years across DS/ML/AI",
+      "2+ years leading teams or programs"
+    ],
+    "Responsibilities": [
+      "Leading teams or programs in DS/ML/AI",
+      "Hands-on work with Python, SQL, and data tooling",
+      "Working with AWS or equivalent cloud technologies",
+      "Managing production retrieval systems",
+      "Implementing MLOps practices"
+    ],
+    "Preferred Qualifications": [
+      "Familiarity with R/MATLAB"
+    ],
+    "Job Level": "Senior",
+    "Domain/Industry": "Data Science/Machine Learning/Artificial Intelligence"
+  },
+  "input_data": {
+    "job_analysis": {
+      "Job Category": "Technical Leadership",
+      "Key Requirements": {
+        "Education": [
+          "Advanced degree in a quantitative field (e.g., PhD/MS in EE, CS, Statistics, or related)"
+        ],
+        "Experience": [
+          "6–10+ years across DS/ML/AI",
+          "2+ years leading teams or programs (people and delivery)"
+        ],
+        "Technical Skills": [
+          "Python",
+          "Familiarity with R/MATLAB",
+          "SQL",
+          "Modern data tooling",
+          "AWS (Bedrock, SageMaker, Lambda, Step Functions) or equivalent clouds",
+          "Production experience with retrieval systems (vector indexes, chunking, metadata, eval)",
+          "MLOps: containers, CI/CD, experiment tracking, model monitoring, rollback strategies"
+        ],
+        "Soft Skills": [
+          "Strong communicator",
+          "Writes clearly",
+          "Avoids jargon",
+          "Can defend decisions with evidence"
+        ]
+      },
+      "Technical Skills": [
+        "Python",
+        "R",
+        "MATLAB",
+        "SQL",
+        "AWS (Bedrock, SageMaker, Lambda, Step Functions)",
+        "Cloud technologies",
+        "Retrieval systems",
+        "MLOps",
+        "Containers",
+        "CI/CD",
+        "Experiment tracking",
+        "Model monitoring",
+        "Rollback strategies"
+      ],
+      "Soft Skills": [
+        "Strong communication",
+        "Clear writing",
+        "Avoiding jargon",
+        "Evidence-based decision making"
+      ],
+      "Education Requirements": [
+        "Advanced degree in a quantitative field (e.g., PhD/MS in EE, CS, Statistics, or related)"
+      ],
+      "Experience Requirements": [
+        "6–10+ years across DS/ML/AI",
+        "2+ years leading teams or programs"
+      ],
+      "Responsibilities": [
+        "Leading teams or programs in DS/ML/AI",
+        "Hands-on work with Python, SQL, and data tooling",
+        "Working with AWS or equivalent cloud technologies",
+        "Managing production retrieval systems",
+        "Implementing MLOps practices"
+      ],
+      "Preferred Qualifications": [
+        "Familiarity with R/MATLAB"
+      ],
+      "Job Level": "Senior",
+      "Domain/Industry": "Data Science/Machine Learning/Artificial Intelligence"
+    },
+    "formatted_profile": "================================================================================\nUSER PROFILE\n================================================================================\n\nProfile Title: sa\nTotal Sections: 4\n\n\n================================================================================\nSECTION: SUMMARY\n================================================================================\nTitle: Summary\n\nEntries: 1\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:26] Summary\n\n  Key Points:\n    • [ID:29] Technical program lead who takes ML and AI work from idea to production. I manage delivery and still write Python, build on AWS, and ship search driven systems. I explain trade-offs clearly to both leaders and engineers.\n    • [ID:30] Cross-functional technical leader with expertise in translating business requirements into production ML/LLM solutions. Led teams of ML engineers and data scientists while maintaining hands-on contributions to AWS-based AI systems, RAG implementations, and automated ML workflows with strong focus on evidence-based decision making.\n    • [ID:31] Cross-functional team lead for ML engineers, solution architects, UI/UX, and data scientists; turns high-level goals into measurable workstreams.\n    • [ID:37] Stakeholder translator who gathers business needs and lands them as concrete ML/LLM solutions; comfortable presenting to executives.\n    • [ID:38] Hands-on architect of LLM and Agentic AI pipelines on AWS (Bedrock, SageMaker, Step Functions, Lambda), including RAG for contract insights.\n    • [ID:39] Platform integrator across Snowflake, Azure Blob, and downstream analytics; designs clean data flows that teams can operate reliably.\n    • [ID:40] Automation mindset—builds and optimizes ML/LLM workflows to improve scalability, reliability, and run-time efficiency without over-engineering.\n    • [ID:41] Award-recognized contributor, multiple Impact and Key Contributor awards for advancing practical AI outcomes inside Ericsson.\n    • [ID:42] People developer—mentors juniors and supervises MSc theses; sets clear expectations, reviews work, and grows ownership.\n    • [ID:43] Research-grounded problem solver with publications in IEEE venues; expert in statistical estimation, testing, and signal processing.\n    • [ID:44] Clear, honest communicator who keeps claims verifiable, explains trade-offs plainly, and avoids jargon for faster agreement.\n    • [ID:45] Program leadership over digital contract AI initiatives from roadmap to rollout; manages partners and internal dependencies.\n    • [ID:46] Product structuring—breaks large initiatives into sequenced workstreams with milestones teams can actually hit.\n    • [ID:47] Risk & scope control—keeps delivery realistic, negotiates scope early, and documents decisions so teams stay aligned.\n    • [ID:48] Change enablement—pairs new AI capability with adoptable workflows, documentation, and training for business users.\n    • [ID:49] LLM engineering—designs RAG, prompt/memory strategies, and evaluation loops; builds agentic flows that call real systems.\n    • [ID:50] Integrate data from data lakes, warehouses, SaaS apps, and file stores into the products teams use.\n    • [ID:51] MLOps & infra—containers, CI/CD, and cloud deployment practices that keep pipelines observable and maintainable. \n    • [ID:52] Data science leader combining advanced quantitative background (PhD Electrical Engineering) with proven program management skills across 10+ years in ML/AI. Fluent in Python, R, MATLAB, SQL with production experience in vector indexes, chunking strategies, and AWS-based ML pipelines including SageMaker and Bedrock.\n    • [ID:53] Align leaders across functions; explain trade-offs in plain terms and land decisions.\n    • [ID:54] Partner coordination with SIs; clarifies interfaces, acceptance criteria, and delivery cadence to remove friction\n    • [ID:55] Mentor and grow people; set goals, review work, and help juniors take on bigger pieces.\n    • [ID:56] Build retrieval and grounding so answers cite the right sources and return in clean structured outputs that other systems can read.\n    • [ID:57] Peer-reviewed publications (IEEE Transactions); comfortable reading, reasoning about, and applying new methods.\n    • [ID:93] Guide research to practice by testing ideas, measuring gains, and folding the useful ones into products.\n    • [ID:94] Designed agentic flows with tool-calling (search, DB read/write, file ops) and schema-checked outputs; added confidence gates and human review for edge cases.\n\n================================================================================\nSECTION: WORK_EXPERIENCE\n================================================================================\nTitle: Work Experience\n\nEntries: 3\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:18] Lead Data Scientist & AI Delivery Lead\n  Company: Ericsson\n  Dates: Nov 2019 - Present\n  Location: Stockholm, Sweden\n\n  Role Categories (5):\n    • [SUB_ENTRY_ID:20] Delivery & Stakeholder Management\n      - [ID:13] Defined delivery roadmaps, aligning sourcing, legal, and sales priorities with AI capabilities.\n      - [ID:18] Coordinated with SI partners to ensure on‑time delivery, scope alignment, and integration with Ericsson systems.\n      - [ID:59] Collected and translated business requirements into actionable AI/ML solutions, ensuring stakeholder alignment.\n      - [ID:60] Oversaw integration of data flows across Snowflake, Azure Blob, and downstream analytics platforms.\n    • [SUB_ENTRY_ID:32] Product Management\n      - [ID:61] Structured large‑scale AI projects into actionable workstreams with measurable milestones.\n      - [ID:62] Led cross‑functional teams (ML engineers, solution architects, UI/UX designers, and data scientists).\n      - [ID:63] Oversaw technical requirements while contributing hands‑on to ML and LLM‑based pipelines.\n    • [SUB_ENTRY_ID:33] Technical Leadership\n      - [ID:64] Guided teams in applying data science and LLM methodologies to complex enterprise challenges.\n      - [ID:65] Mentored contributors from software engineers to solution architects.\n    • [SUB_ENTRY_ID:34] Technical Contribution\n      - [ID:66] Developed and optimized advanced ML, simulation, and LLM‑based pipelines for large‑scale contract analysis.\n      - [ID:67] Automated data workflows, significantly improving scalability and efficiency.\n      - [ID:68] Built an LLM‑based contract insights system on AWS (Bedrock, SageMaker, Step Functions) with RAG for real‑time querying.\n      - [ID:69] Designed and deployed Agentic AI solutions on AWS for in‑house contract analysis systems.\n      - [ID:95] Orchestrated agent workflow (retrieve → verify → tool-call → synthesize → write-back) with structured outputs and guardrails; reduced low-confidence responses\n    • [SUB_ENTRY_ID:35] Key Achievements\n      - [ID:70] Delivery Impact: Successfully managed end‑to‑end delivery of digital contract AI programs.\n      - [ID:71] Leadership Recognition: Awarded multiple Impact and Key Contributor Awards for driving innovative AI solutions.\n      - [ID:72] Mentorship: Supervised MSc thesis students and mentored junior team members.\n\n  Key Points:\n    • [ID:58] Directed AI and data science programs with a mix of strategic delivery leadership and hands‑on technical contributions.\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:21] Researcher\n  Company: Linköping University\n  Dates: Feb 2015 - Nov 2019\n  Location: Linköping, Sweden\n\n  Key Points:\n    • [ID:73] Engaged in advanced research in machine learning and signal processing, balancing teaching responsibilities and academic research.\n    • [ID:74] Conducted research on Bayesian and non‑Bayesian methods for parameter estimation and statistical testing, designing and implementing advanced statistical and machine learning algorithms for localization and positioning challenges.\n    • [ID:75] Co‑supervised Master’s theses guiding students through complex research projects.\n    • [ID:76] Authored three journal articles in esteemed publications, including IEEE Transactions on Signal Processing and Transactions on Vehicular Technologies.\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:36] Data Analytics Engineer\n  Company: VTT, Technical Research Center of Finland\n  Dates: Mar 2013 - Jan 2015\n  Location: Oulu, Finland\n\n  Key Points:\n    • [ID:77] Advanced from Research Trainee to Data Analytics Engineer, focusing on network performance analysis and the quality of multimedia applications experience.\n    • [ID:78] Collaborated on the development of network probes in C++, later transitioning the system to JAVA for data analysis and report generation.\n    • [ID:79] Contributed as a team member in projects assessing the quality of experience for multimedia applications, involving innovative experiments like brain signal analysis.\n    • [ID:80] Actively participated in international projects, including EU Celtic plus QuEEN and an ESA telemedicine project, developing tools for Quality of Experience (QoE) estimation.\n    • [ID:81] Led the translation of a critical network probe from C++ to Java and contributed to developing a tool that integrated user experience with technical network data, enabling advanced QoE assessment methods\n    • [ID:82] Contributed to high‑profile EU and ESA projects.\n\n================================================================================\nSECTION: EDUCATION\n================================================================================\nTitle: Education\n\nEntries: 2\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:27] PhD in Automatic Control\n  Company: Linköping University\n  Dates: Feb 2015 - Nov 2019\n  Location: Linköping, Sweden\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:28] M.Sc. in Information Technology\n  Company: Tampere University\n  Dates: Aug 2011 - Jun 2013\n  Location: Tampere, Finland\n\n================================================================================\nSECTION: SKILLS\n================================================================================\nTitle: Skills\n\nEntries: 2\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:30] Technical Skills\n\n  Key Points:\n    • [ID:34] Python, R, MATLAB, SQL\n    • [ID:83] Machine Learning, Generative AI, AI Agents\n    • [ID:84] Data Visualization with Tableau, Power BI\n    • [ID:85] Containerization and Orchestration\n    • [ID:86] CI/CD pipelines, MLOps practices\n    • [ID:87] Structured outputs (JSON/Pydantic), tool-calling/functions, agent workflows\n\n  ──────────────────────────────────────────────────────────────────────\n  [ENTRY_ID:31] Professional Skills\n\n  Key Points:\n    • [ID:35] Strong organizational, management and leadership skills.\n    • [ID:36] Strong strategic project planning skills\n    • [ID:88] Strong machine learning skills with 10+ years of experience\n    • [ID:89] Strong project management skills, including project structuring and managing multiple work streams\n    • [ID:90] Strong analytical skills and statistical knowledge\n\n================================================================================\n"
+  },
+  "tailoring_recommendations": [
+    {
+      "provider": "openai",
+      "model": "gpt-4o",
+      "recommendations": {
+        "recommended_summary": [
+          29,
+          30,
+          38,
+          52,
+          44,
+          51,
+          42
+        ],
+        "recommended_work_experience": [
+          {
+            "entry_id": 18,
+            "entry_type": "parent",
+            "recommended_items": [
+              58
+            ],
+            "reasoning": "Highlights leadership and technical contributions in AI/ML, aligning with the job's focus on technical leadership and hands-on skills."
+          },
+          {
+            "entry_id": 18,
+            "entry_type": "sub_entry",
+            "recommended_items": [
+              13,
+              59,
+              60,
+              61,
+              63,
+              68,
+              69
+            ],
+            "reasoning": "Showcases experience in delivery management, technical leadership, and hands-on work with AWS and ML pipelines, aligning with job requirements."
+          },
+          {
+            "entry_id": 21,
+            "entry_type": "parent",
+            "recommended_items": [
+              73,
+              74,
+              76
+            ],
+            "reasoning": "Demonstrates advanced research experience and publication record, supporting the requirement for an advanced degree and evidence-based decision making."
+          },
+          {
+            "entry_id": 36,
+            "entry_type": "parent",
+            "recommended_items": [
+              77,
+              81
+            ],
+            "reasoning": "Provides background in data analysis and technical development, relevant for understanding complex systems and integration."
+          }
+        ],
+        "recommended_skills": [
+          {
+            "entry_id": 30,
+            "recommended_items": [
+              34,
+              85,
+              86,
+              87
+            ],
+            "reasoning": "Includes key technical skills such as Python, SQL, MLOps, and containerization, which are directly mentioned in the job requirements."
+          },
+          {
+            "entry_id": 31,
+            "recommended_items": [
+              35,
+              88,
+              89
+            ],
+            "reasoning": "Highlights leadership, project management, and machine learning skills, aligning with the job's focus on technical leadership and experience."
+          }
+        ],
+        "recommended_education": [
+          27,
+          28
+        ],
+        "recommended_projects": [],
+        "recommended_certifications": [],
+        "recommended_awards": [],
+        "recommended_publications": [],
+        "recommended_languages": [],
+        "overall_strategy": "The strategy focuses on highlighting the candidate's leadership and technical skills in AI/ML, aligning with the job's requirements for technical leadership and hands-on experience. Emphasis is placed on relevant work experience, skills, and education that demonstrate the ability to lead teams and manage complex AI/ML projects.",
+        "key_keywords_to_include": [
+          "Python",
+          "AWS",
+          "MLOps",
+          "Technical Leadership",
+          "AI/ML",
+          "SQL",
+          "Cloud Technologies",
+          "Evidence-based Decision Making"
+        ],
+        "estimated_page_count": 2
+      }
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "recommendations": {
+        "recommended_summary": [
+          52,
+          30,
+          38,
+          51,
+          42,
+          44,
+          45
+        ],
+        "recommended_work_experience": [
+          {
+            "entry_id": 18,
+            "entry_type": "parent",
+            "recommended_items": [
+              58
+            ],
+            "reasoning": "High-level summary that positions candidate as both technical leader and hands-on contributor"
+          },
+          {
+            "entry_id": 20,
+            "entry_type": "sub_entry",
+            "recommended_items": [
+              13,
+              18,
+              59
+            ],
+            "reasoning": "Demonstrates program leadership and stakeholder management skills required for technical leadership role"
+          },
+          {
+            "entry_id": 32,
+            "entry_type": "sub_entry",
+            "recommended_items": [
+              61,
+              62,
+              63
+            ],
+            "reasoning": "Shows experience leading cross-functional teams and managing technical programs - key requirement"
+          },
+          {
+            "entry_id": 33,
+            "entry_type": "sub_entry",
+            "recommended_items": [
+              64,
+              65
+            ],
+            "reasoning": "Direct evidence of technical leadership and mentoring capabilities"
+          },
+          {
+            "entry_id": 34,
+            "entry_type": "sub_entry",
+            "recommended_items": [
+              66,
+              67,
+              68,
+              69,
+              95
+            ],
+            "reasoning": "Hands-on technical work with Python, AWS, ML/LLM pipelines, and production systems - matches all key technical requirements"
+          },
+          {
+            "entry_id": 35,
+            "entry_type": "sub_entry",
+            "recommended_items": [
+              70,
+              71,
+              72
+            ],
+            "reasoning": "Quantifiable achievements in delivery, recognition, and people development"
+          },
+          {
+            "entry_id": 21,
+            "entry_type": "parent",
+            "recommended_items": [
+              73,
+              74,
+              75,
+              76
+            ],
+            "reasoning": "Academic research background demonstrates advanced quantitative skills and mentoring experience"
+          },
+          {
+            "entry_id": 36,
+            "entry_type": "parent",
+            "recommended_items": [
+              77,
+              78,
+              81
+            ],
+            "reasoning": "Early career technical progression and hands-on development experience"
+          }
+        ],
+        "recommended_skills": [
+          {
+            "entry_id": 30,
+            "recommended_items": [
+              34,
+              83,
+              85,
+              86,
+              87
+            ],
+            "reasoning": "Direct matches for Python, R, MATLAB, SQL, ML/AI, containers, CI/CD, MLOps"
+          },
+          {
+            "entry_id": 31,
+            "recommended_items": [
+              35,
+              88,
+              89
+            ],
+            "reasoning": "Leadership skills, 10+ years ML experience, and project management capabilities"
+          }
+        ],
+        "recommended_education": [
+          27,
+          28
+        ],
+        "recommended_projects": [],
+        "recommended_certifications": [],
+        "recommended_awards": [],
+        "recommended_publications": [],
+        "recommended_languages": [],
+        "overall_strategy": "Position candidate as ideal technical leader with 10+ years DS/ML/AI experience, 4+ years leading teams, advanced quantitative PhD, and hands-on expertise in exact technologies mentioned (Python, SQL, AWS, MLOps, retrieval systems). Emphasize both strategic leadership and technical depth, with strong evidence-based communication skills.",
+        "key_keywords_to_include": [
+          "Python",
+          "SQL",
+          "AWS",
+          "Bedrock",
+          "SageMaker",
+          "Step Functions",
+          "Lambda",
+          "MLOps",
+          "CI/CD",
+          "containers",
+          "retrieval systems",
+          "vector indexes",
+          "RAG",
+          "technical leadership",
+          "cross-functional teams",
+          "PhD",
+          "quantitative",
+          "evidence-based decision making"
+        ],
+        "estimated_page_count": 2
+      }
+    }
+  ],
+  "enriched_recommendations": {
+    "summary": [
+      {
+        "id": 38,
+        "content": "Hands-on architect of LLM and Agentic AI pipelines on AWS (Bedrock, SageMaker, Step Functions, Lambda), including RAG for contract insights.",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ]
+      },
+      {
+        "id": 42,
+        "content": "People developer—mentors juniors and supervises MSc theses; sets clear expectations, reviews work, and grows ownership.",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ]
+      },
+      {
+        "id": 44,
+        "content": "Clear, honest communicator who keeps claims verifiable, explains trade-offs plainly, and avoids jargon for faster agreement.",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ]
+      },
+      {
+        "id": 45,
+        "content": "Program leadership over digital contract AI initiatives from roadmap to rollout; manages partners and internal dependencies.",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "claude"
+        ]
+      },
+      {
+        "id": 51,
+        "content": "MLOps & infra—containers, CI/CD, and cloud deployment practices that keep pipelines observable and maintainable. ",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ]
+      },
+      {
+        "id": 52,
+        "content": "Data science leader combining advanced quantitative background (PhD Electrical Engineering) with proven program management skills across 10+ years in ML/AI. Fluent in Python, R, MATLAB, SQL with production experience in vector indexes, chunking strategies, and AWS-based ML pipelines including SageMaker and Bedrock.",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ]
+      },
+      {
+        "id": 29,
+        "content": "Technical program lead who takes ML and AI work from idea to production. I manage delivery and still write Python, build on AWS, and ship search driven systems. I explain trade-offs clearly to both leaders and engineers.",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "openai"
+        ]
+      },
+      {
+        "id": 30,
+        "content": "Cross-functional technical leader with expertise in translating business requirements into production ML/LLM solutions. Led teams of ML engineers and data scientists while maintaining hands-on contributions to AWS-based AI systems, RAG implementations, and automated ML workflows with strong focus on evidence-based decision making.",
+        "entry_id": 26,
+        "section_type": "summary",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ]
+      }
+    ],
+    "work_experience": [
+      {
+        "id": 18,
+        "title": "Lead Data Scientist & AI Delivery Lead",
+        "subtitle": "Ericsson",
+        "date_range": "Nov 2019 - Present",
+        "location": "Stockholm, Sweden",
+        "description": "",
+        "parent_entry_id": null,
+        "section_type": "work_experience",
+        "items": [
+          {
+            "id": 58,
+            "content": "Directed AI and data science programs with a mix of strategic delivery leadership and hands‑on technical contributions.",
+            "entry_id": 18,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "claude"
+            ]
+          }
+        ],
+        "sub_entries": [
+          {
+            "id": 20,
+            "title": "Delivery & Stakeholder Management",
+            "subtitle": null,
+            "date_range": null,
+            "location": null,
+            "description": null,
+            "parent_entry_id": 18,
+            "section_type": "work_experience",
+            "items": [
+              {
+                "id": 18,
+                "content": "Coordinated with SI partners to ensure on‑time delivery, scope alignment, and integration with Ericsson systems.",
+                "entry_id": 20,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 59,
+                "content": "Collected and translated business requirements into actionable AI/ML solutions, ensuring stakeholder alignment.",
+                "entry_id": 20,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 13,
+                "content": "Defined delivery roadmaps, aligning sourcing, legal, and sales priorities with AI capabilities.",
+                "entry_id": 20,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              }
+            ],
+            "reasoning": {
+              "openai": null,
+              "claude": "Demonstrates program leadership and stakeholder management skills required for technical leadership role"
+            }
+          },
+          {
+            "id": 32,
+            "title": "Product Management",
+            "subtitle": null,
+            "date_range": null,
+            "location": null,
+            "description": null,
+            "parent_entry_id": 18,
+            "section_type": "work_experience",
+            "items": [
+              {
+                "id": 61,
+                "content": "Structured large‑scale AI projects into actionable workstreams with measurable milestones.",
+                "entry_id": 32,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 62,
+                "content": "Led cross‑functional teams (ML engineers, solution architects, UI/UX designers, and data scientists).",
+                "entry_id": 32,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 63,
+                "content": "Oversaw technical requirements while contributing hands‑on to ML and LLM‑based pipelines.",
+                "entry_id": 32,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              }
+            ],
+            "reasoning": {
+              "openai": null,
+              "claude": "Shows experience leading cross-functional teams and managing technical programs - key requirement"
+            }
+          },
+          {
+            "id": 33,
+            "title": "Technical Leadership",
+            "subtitle": null,
+            "date_range": null,
+            "location": null,
+            "description": null,
+            "parent_entry_id": 18,
+            "section_type": "work_experience",
+            "items": [
+              {
+                "id": 64,
+                "content": "Guided teams in applying data science and LLM methodologies to complex enterprise challenges.",
+                "entry_id": 33,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 65,
+                "content": "Mentored contributors from software engineers to solution architects.",
+                "entry_id": 33,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              }
+            ],
+            "reasoning": {
+              "openai": null,
+              "claude": "Direct evidence of technical leadership and mentoring capabilities"
+            }
+          },
+          {
+            "id": 34,
+            "title": "Technical Contribution",
+            "subtitle": null,
+            "date_range": null,
+            "location": null,
+            "description": null,
+            "parent_entry_id": 18,
+            "section_type": "work_experience",
+            "items": [
+              {
+                "id": 66,
+                "content": "Developed and optimized advanced ML, simulation, and LLM‑based pipelines for large‑scale contract analysis.",
+                "entry_id": 34,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 67,
+                "content": "Automated data workflows, significantly improving scalability and efficiency.",
+                "entry_id": 34,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 68,
+                "content": "Built an LLM‑based contract insights system on AWS (Bedrock, SageMaker, Step Functions) with RAG for real‑time querying.",
+                "entry_id": 34,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 69,
+                "content": "Designed and deployed Agentic AI solutions on AWS for in‑house contract analysis systems.",
+                "entry_id": 34,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 95,
+                "content": "Orchestrated agent workflow (retrieve → verify → tool-call → synthesize → write-back) with structured outputs and guardrails; reduced low-confidence responses",
+                "entry_id": 34,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              }
+            ],
+            "reasoning": {
+              "openai": null,
+              "claude": "Hands-on technical work with Python, AWS, ML/LLM pipelines, and production systems - matches all key technical requirements"
+            }
+          },
+          {
+            "id": 35,
+            "title": "Key Achievements",
+            "subtitle": null,
+            "date_range": null,
+            "location": null,
+            "description": null,
+            "parent_entry_id": 18,
+            "section_type": "work_experience",
+            "items": [
+              {
+                "id": 72,
+                "content": "Mentorship: Supervised MSc thesis students and mentored junior team members.",
+                "entry_id": 35,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 70,
+                "content": "Delivery Impact: Successfully managed end‑to‑end delivery of digital contract AI programs.",
+                "entry_id": 35,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              },
+              {
+                "id": 71,
+                "content": "Leadership Recognition: Awarded multiple Impact and Key Contributor Awards for driving innovative AI solutions.",
+                "entry_id": 35,
+                "section_type": "work_experience",
+                "recommended_by": [
+                  "claude"
+                ]
+              }
+            ],
+            "reasoning": {
+              "openai": null,
+              "claude": "Quantifiable achievements in delivery, recognition, and people development"
+            }
+          }
+        ],
+        "reasoning": {
+          "openai": "Showcases experience in delivery management, technical leadership, and hands-on work with AWS and ML pipelines, aligning with job requirements.",
+          "claude": "High-level summary that positions candidate as both technical leader and hands-on contributor"
+        }
+      },
+      {
+        "id": 21,
+        "title": "Researcher",
+        "subtitle": "Linköping University",
+        "date_range": "Feb 2015 - Nov 2019",
+        "location": "Linköping, Sweden",
+        "description": "",
+        "parent_entry_id": null,
+        "section_type": "work_experience",
+        "items": [
+          {
+            "id": 73,
+            "content": "Engaged in advanced research in machine learning and signal processing, balancing teaching responsibilities and academic research.",
+            "entry_id": 21,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 74,
+            "content": "Conducted research on Bayesian and non‑Bayesian methods for parameter estimation and statistical testing, designing and implementing advanced statistical and machine learning algorithms for localization and positioning challenges.",
+            "entry_id": 21,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 75,
+            "content": "Co‑supervised Master’s theses guiding students through complex research projects.",
+            "entry_id": 21,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "claude"
+            ]
+          },
+          {
+            "id": 76,
+            "content": "Authored three journal articles in esteemed publications, including IEEE Transactions on Signal Processing and Transactions on Vehicular Technologies.",
+            "entry_id": 21,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          }
+        ],
+        "sub_entries": [],
+        "reasoning": {
+          "openai": "Demonstrates advanced research experience and publication record, supporting the requirement for an advanced degree and evidence-based decision making.",
+          "claude": "Academic research background demonstrates advanced quantitative skills and mentoring experience"
+        }
+      },
+      {
+        "id": 36,
+        "title": "Data Analytics Engineer",
+        "subtitle": "VTT, Technical Research Center of Finland",
+        "date_range": "Mar 2013 - Jan 2015",
+        "location": "Oulu, Finland",
+        "description": "",
+        "parent_entry_id": null,
+        "section_type": "work_experience",
+        "items": [
+          {
+            "id": 81,
+            "content": "Led the translation of a critical network probe from C++ to Java and contributed to developing a tool that integrated user experience with technical network data, enabling advanced QoE assessment methods",
+            "entry_id": 36,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 77,
+            "content": "Advanced from Research Trainee to Data Analytics Engineer, focusing on network performance analysis and the quality of multimedia applications experience.",
+            "entry_id": 36,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 78,
+            "content": "Collaborated on the development of network probes in C++, later transitioning the system to JAVA for data analysis and report generation.",
+            "entry_id": 36,
+            "section_type": "work_experience",
+            "recommended_by": [
+              "claude"
+            ]
+          }
+        ],
+        "sub_entries": [],
+        "reasoning": {
+          "openai": "Provides background in data analysis and technical development, relevant for understanding complex systems and integration.",
+          "claude": "Early career technical progression and hands-on development experience"
+        }
+      }
+    ],
+    "skills": [
+      {
+        "id": 30,
+        "title": "Technical Skills",
+        "subtitle": "",
+        "date_range": null,
+        "location": "",
+        "description": "",
+        "parent_entry_id": null,
+        "section_type": "skills",
+        "items": [
+          {
+            "id": 34,
+            "content": "Python, R, MATLAB, SQL",
+            "entry_id": 30,
+            "section_type": "skills",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 83,
+            "content": "Machine Learning, Generative AI, AI Agents",
+            "entry_id": 30,
+            "section_type": "skills",
+            "recommended_by": [
+              "claude"
+            ]
+          },
+          {
+            "id": 85,
+            "content": "Containerization and Orchestration",
+            "entry_id": 30,
+            "section_type": "skills",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 86,
+            "content": "CI/CD pipelines, MLOps practices",
+            "entry_id": 30,
+            "section_type": "skills",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 87,
+            "content": "Structured outputs (JSON/Pydantic), tool-calling/functions, agent workflows",
+            "entry_id": 30,
+            "section_type": "skills",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          }
+        ],
+        "reasoning": {
+          "openai": "Includes key technical skills such as Python, SQL, MLOps, and containerization, which are directly mentioned in the job requirements.",
+          "claude": "Direct matches for Python, R, MATLAB, SQL, ML/AI, containers, CI/CD, MLOps"
+        }
+      },
+      {
+        "id": 31,
+        "title": "Professional Skills",
+        "subtitle": "",
+        "date_range": null,
+        "location": "",
+        "description": "",
+        "parent_entry_id": null,
+        "section_type": "skills",
+        "items": [
+          {
+            "id": 35,
+            "content": "Strong organizational, management and leadership skills.",
+            "entry_id": 31,
+            "section_type": "skills",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 88,
+            "content": "Strong machine learning skills with 10+ years of experience",
+            "entry_id": 31,
+            "section_type": "skills",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          },
+          {
+            "id": 89,
+            "content": "Strong project management skills, including project structuring and managing multiple work streams",
+            "entry_id": 31,
+            "section_type": "skills",
+            "recommended_by": [
+              "openai",
+              "claude"
+            ]
+          }
+        ],
+        "reasoning": {
+          "openai": "Highlights leadership, project management, and machine learning skills, aligning with the job's focus on technical leadership and experience.",
+          "claude": "Leadership skills, 10+ years ML experience, and project management capabilities"
+        }
+      }
+    ],
+    "education": [
+      {
+        "id": 27,
+        "title": "PhD in Automatic Control",
+        "subtitle": "Linköping University",
+        "date_range": "Feb 2015 - Nov 2019",
+        "location": "Linköping, Sweden",
+        "description": "",
+        "parent_entry_id": null,
+        "section_type": "education",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ],
+        "items": []
+      },
+      {
+        "id": 28,
+        "title": "M.Sc. in Information Technology",
+        "subtitle": "Tampere University",
+        "date_range": "Aug 2011 - Jun 2013",
+        "location": "Tampere, Finland",
+        "description": "",
+        "parent_entry_id": null,
+        "section_type": "education",
+        "recommended_by": [
+          "openai",
+          "claude"
+        ],
+        "items": []
+      }
+    ],
+    "projects": [],
+    "certifications": [],
+    "awards": [],
+    "publications": [],
+    "languages": [],
+    "overall_strategy": {
+      "openai": "The strategy focuses on highlighting the candidate's leadership and technical skills in AI/ML, aligning with the job's requirements for technical leadership and hands-on experience. Emphasis is placed on relevant work experience, skills, and education that demonstrate the ability to lead teams and manage complex AI/ML projects.",
+      "claude": "Position candidate as ideal technical leader with 10+ years DS/ML/AI experience, 4+ years leading teams, advanced quantitative PhD, and hands-on expertise in exact technologies mentioned (Python, SQL, AWS, MLOps, retrieval systems). Emphasize both strategic leadership and technical depth, with strong evidence-based communication skills."
+    },
+    "key_keywords": {
+      "openai": [
+        "Python",
+        "AWS",
+        "MLOps",
+        "Technical Leadership",
+        "AI/ML",
+        "SQL",
+        "Cloud Technologies",
+        "Evidence-based Decision Making"
+      ],
+      "claude": [
+        "Python",
+        "SQL",
+        "AWS",
+        "Bedrock",
+        "SageMaker",
+        "Step Functions",
+        "Lambda",
+        "MLOps",
+        "CI/CD",
+        "containers",
+        "retrieval systems",
+        "vector indexes",
+        "RAG",
+        "technical leadership",
+        "cross-functional teams",
+        "PhD",
+        "quantitative",
+        "evidence-based decision making"
+      ]
+    },
+    "estimated_pages": {
+      "openai": 2,
+      "claude": 2
+    }
+  }
+}
