@@ -206,27 +206,54 @@ class TailoredCVVersion(Base):
     openai_ats_score = Column(Integer, nullable=True)  # 0-100
     claude_ats_score = Column(Integer, nullable=True)  # 0-100
 
-    # Selected content (stored as JSON with item IDs)
+    # Selected content (stored as JSON with ACTUAL CONTENT SNAPSHOT, not IDs)
+    # This ensures CV remains intact even if master profile is modified later
     selected_content = Column(JSON, nullable=False)
-    # Structure:
+    # Structure - Complete snapshot of selected profile sections:
     # {
-    #   "summary_items": [item_id1, item_id2, ...],
-    #   "work_experience": [{
-    #     "entry_id": entry_id,
-    #     "items": [item_id1, item_id2, ...]
-    #   }],
-    #   "skills": [{
-    #     "entry_id": entry_id,
-    #     "items": [item_id1, item_id2, ...]
-    #   }],
-    #   "education_entries": [entry_id1, entry_id2, ...],
-    #   "project_entries": [entry_id1, entry_id2, ...],
-    #   "certification_entries": [entry_id1, entry_id2, ...]
+    #   "contact_info": {...},
+    #   "sections": [
+    #     {
+    #       "title": "Summary",
+    #       "section_type": "summary",
+    #       "icon": "📝",
+    #       "content_type": "bullets",
+    #       "order": 0,
+    #       "entries": [
+    #         {
+    #           "title": "Summary",
+    #           "items": [
+    #             {"content": "Actual bullet text...", "order": 0},
+    #             ...
+    #           ]
+    #         }
+    #       ]
+    #     },
+    #     {
+    #       "title": "Work Experience",
+    #       "section_type": "work_experience",
+    #       "entries": [
+    #         {
+    #           "title": "Job Title",
+    #           "subtitle": "Company Name",
+    #           "start_date": "Jan 2020",
+    #           "end_date": "Present",
+    #           "location": "City, State",
+    #           "description": "...",
+    #           "items": [{"content": "Achievement...", "order": 0}, ...],
+    #           "sub_entries": [...]  # For roles within company
+    #         }
+    #       ]
+    #     }
+    #   ]
     # }
 
     # AI recommendations (for reference)
     openai_recommendations = Column(JSON, nullable=True)
     claude_recommendations = Column(JSON, nullable=True)
+
+    # Job analysis from both AI models
+    job_analysis = Column(JSON, nullable=True)  # Stores analysis.analyses array with both OpenAI and Claude job requirement analyses
 
     # Metadata
     notes = Column(Text, nullable=True)  # User's notes about this application

@@ -491,7 +491,8 @@ function TailorCVView() {
           openai_ats_score,
           claude_ats_score,
           openai_recommendations: tailoringRecs.tailoring_recommendations?.find(r => r.provider === 'openai')?.recommendations,
-          claude_recommendations: tailoringRecs.tailoring_recommendations?.find(r => r.provider === 'anthropic')?.recommendations
+          claude_recommendations: tailoringRecs.tailoring_recommendations?.find(r => r.provider === 'anthropic')?.recommendations,
+          job_analysis: analysis?.analyses || null
         })
       });
 

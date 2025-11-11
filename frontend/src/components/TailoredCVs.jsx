@@ -362,6 +362,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
   const [error, setError] = useState(null);
   const [expandedSections, setExpandedSections] = useState({});
   const [expandedEntries, setExpandedEntries] = useState({});
+  const [jobAnalysisExpanded, setJobAnalysisExpanded] = useState(false);
 
   useEffect(() => {
     fetchFullCVData();
@@ -493,6 +494,43 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     }
 
     return null;
+  };
+
+  const renderAnalysisSection = (title, content) => {
+    if (!content) return null;
+
+    if (Array.isArray(content)) {
+      return (
+        <div style={{ marginBottom: '1rem' }}>
+          <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#2d3748' }}>{title}:</strong>
+          <ul style={{ margin: '0', paddingLeft: '1.5rem', color: '#4a5568' }}>
+            {content.map((item, idx) => (
+              <li key={idx} style={{ marginBottom: '0.25rem' }}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      );
+    } else if (typeof content === 'object') {
+      return (
+        <div style={{ marginBottom: '1rem' }}>
+          <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#2d3748' }}>{title}:</strong>
+          <ul style={{ margin: '0', paddingLeft: '1.5rem', color: '#4a5568' }}>
+            {Object.entries(content).map(([key, value]) => (
+              <li key={key} style={{ marginBottom: '0.25rem' }}>
+                <strong>{key}:</strong> {value}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    } else {
+      return (
+        <div style={{ marginBottom: '1rem' }}>
+          <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#2d3748' }}>{title}:</strong>
+          <p style={{ margin: '0', color: '#4a5568', lineHeight: '1.6' }}>{content}</p>
+        </div>
+      );
+    }
   };
 
   const renderSection = (section) => {
@@ -676,6 +714,77 @@ function CVDetailView({ cv, onBack, onUpdate }) {
           </span>
         </div>
       </div>
+
+      {/* Job Requirements Analysis Section */}
+      {cv.job_analysis && cv.job_analysis.length > 0 && (
+        <div style={{ background: 'white', margin: '0 2rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div
+            style={{
+              padding: '1rem 1.5rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              borderBottom: jobAnalysisExpanded ? '1px solid #e2e8f0' : 'none'
+            }}
+            onClick={() => setJobAnalysisExpanded(!jobAnalysisExpanded)}
+          >
+            <span style={{ color: '#a0aec0', fontSize: '0.8rem' }}>
+              {jobAnalysisExpanded ? '▼' : '▶'}
+            </span>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: '#2d3748' }}>
+              Job Requirements Analysis
+            </h3>
+            <span style={{
+              marginLeft: 'auto',
+              fontSize: '0.85rem',
+              color: '#718096',
+              fontStyle: 'italic'
+            }}>
+              Powered by OpenAI GPT-4o and Anthropic Claude Sonnet 4.5
+            </span>
+          </div>
+
+          {jobAnalysisExpanded && (
+            <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+              {cv.job_analysis.map((result, idx) => (
+                <div key={idx} style={{
+                  background: '#f7fafc',
+                  borderRadius: '8px',
+                  padding: '1.5rem',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  <h4 style={{
+                    margin: '0 0 1rem 0',
+                    fontSize: '1.05rem',
+                    fontWeight: 600,
+                    color: result.provider === 'openai' ? '#059669' : '#4f46e5'
+                  }}>
+                    {result.provider === 'openai' ? '🟢 OpenAI GPT-4o' : '🔵 Anthropic Claude Sonnet 4.5'}
+                  </h4>
+
+                  {result.error ? (
+                    <div style={{ color: '#dc3545', padding: '1rem', background: '#fff', borderRadius: '6px' }}>
+                      ⚠️ Error: {result.error}
+                    </div>
+                  ) : result.analysis && (
+                    <div>
+                      {renderAnalysisSection('Job Category & Level',
+                        `${result.analysis.job_category || result.analysis['Job Category'] || 'N/A'} - ${result.analysis.job_level || result.analysis['Job Level'] || 'N/A'}`
+                      )}
+                      {renderAnalysisSection('Technical Skills', result.analysis.technical_skills || result.analysis['Technical Skills'])}
+                      {renderAnalysisSection('Soft Skills', result.analysis.soft_skills || result.analysis['Soft Skills'])}
+                      {renderAnalysisSection('Required Experience', result.analysis.required_experience || result.analysis['Required Experience'])}
+                      {renderAnalysisSection('Nice to Have', result.analysis.nice_to_have || result.analysis['Nice to Have'])}
+                      {renderAnalysisSection('Key Responsibilities', result.analysis.key_responsibilities || result.analysis['Key Responsibilities'])}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Master Profile-Style Split View */}
       <div className="profile-split-view">

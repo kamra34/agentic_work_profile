@@ -1409,6 +1409,7 @@ async def create_tailored_cv_version(
             claude_ats_score=request.claude_ats_score,
             openai_recommendations=request.openai_recommendations,
             claude_recommendations=request.claude_recommendations,
+            job_analysis=request.job_analysis,
             notes=request.notes
         )
 
