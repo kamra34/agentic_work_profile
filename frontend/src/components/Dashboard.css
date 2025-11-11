@@ -201,15 +201,15 @@
 /* Steps Grid */
 .steps-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 2rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
   margin-bottom: 4rem;
 }
 
 .step-card {
   background: white;
-  border-radius: 12px;
-  padding: 2rem;
+  border-radius: 10px;
+  padding: 1.5rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   transition: all 0.3s;
   position: relative;
@@ -238,39 +238,40 @@
 }
 
 .step-number {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .step-content h3 {
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 0.5rem 0;
   color: #1a202c;
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   font-weight: 600;
 }
 
 .step-content p {
   color: #4a5568;
-  line-height: 1.6;
-  margin: 0 0 1.5rem 0;
+  line-height: 1.5;
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
 }
 
 .step-btn {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  font-size: 0.95rem;
+  padding: 0.625rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -2592,3 +2593,414 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ========================================
+   MODERN DASHBOARD REDESIGN STYLES
+   ======================================== */
+
+/* Coming Soon Badge for Application Tracker */
+.sidebar-item .badge-coming-soon {
+  background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+  color: white;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.sidebar-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sidebar-item:disabled:hover {
+  background: none;
+  color: #4a5568;
+  border-left-color: transparent;
+}
+
+/* Modern Home View - Workflow Container */
+.workflow-container {
+  margin-bottom: 4rem;
+}
+
+.workflow-heading {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #2d3748;
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+/* Enhanced Step Cards with Icons */
+.step-card {
+  position: relative;
+  overflow: visible;
+}
+
+.step-icon {
+  font-size: 2.25rem;
+  margin-bottom: 0.75rem;
+  display: block;
+  text-align: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.step-card.step-4 {
+  position: relative;
+}
+
+.step-card.step-4::after {
+  content: 'COMING SOON';
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+  color: white;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.step-card.step-4 {
+  opacity: 0.85;
+  border: 2px dashed #cbd5e0;
+}
+
+.step-btn:disabled {
+  background: #cbd5e0;
+  color: #718096;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.step-btn:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Quick Stats Section */
+.quick-stats-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-top: 3rem;
+  padding-top: 3rem;
+  border-top: 2px solid #e2e8f0;
+}
+
+.stat-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.15);
+  border-color: #667eea;
+}
+
+.stat-number {
+  font-size: 3rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 0.25rem;
+}
+
+.stat-description {
+  font-size: 0.85rem;
+  color: #a0aec0;
+}
+
+/* Review & Finalize Header */
+.review-finalize-wrapper {
+  min-height: 100%;
+}
+
+.review-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2.5rem 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.review-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem 0;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.review-subtitle {
+  font-size: 1.05rem;
+  opacity: 0.95;
+  line-height: 1.6;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Placeholder View for Application Tracker */
+.placeholder-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 200px);
+  padding: 3rem 2rem;
+}
+
+.placeholder-content {
+  max-width: 700px;
+  text-align: center;
+  background: white;
+  padding: 3rem 2.5rem;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.placeholder-icon {
+  font-size: 5rem;
+  margin-bottom: 1.5rem;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+}
+
+.placeholder-content h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0 0 1rem 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.placeholder-description {
+  font-size: 1.1rem;
+  color: #4a5568;
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.placeholder-list {
+  text-align: left;
+  list-style: none;
+  padding: 0;
+  margin: 2rem 0;
+}
+
+.placeholder-list li {
+  padding: 0.875rem 0;
+  border-bottom: 1px solid #e2e8f0;
+  color: #2d3748;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.placeholder-list li:last-child {
+  border-bottom: none;
+}
+
+.placeholder-cta {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 2px solid #e2e8f0;
+}
+
+.placeholder-cta h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #667eea;
+  margin-bottom: 0.75rem;
+}
+
+.placeholder-cta p {
+  font-size: 1rem;
+  color: #4a5568;
+  line-height: 1.6;
+}
+
+.placeholder-cta strong {
+  color: #667eea;
+  font-weight: 600;
+}
+
+/* Enhanced Features Section */
+.features-section h2 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #2d3748;
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+/* Responsive adjustments for new 4-step workflow */
+/* 13-inch screens and similar (1280-1440px) - Keep 4 columns but compact */
+@media (min-width: 1281px) and (max-width: 1600px) {
+  .home-view {
+    padding: 2.5rem 1.5rem;
+  }
+
+  .steps-grid {
+    gap: 1rem;
+  }
+
+  .step-card {
+    padding: 1.25rem;
+  }
+
+  .step-content h3 {
+    font-size: 1rem;
+  }
+
+  .step-content p {
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  .step-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .step-number {
+    width: 36px;
+    height: 36px;
+    font-size: 1.15rem;
+    margin-bottom: 0.75rem;
+  }
+}
+
+/* Tablets and smaller laptops - 2 columns */
+@media (max-width: 1280px) {
+  .steps-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  .workflow-heading {
+    font-size: 1.5rem;
+  }
+
+  .step-icon {
+    font-size: 2rem;
+  }
+
+  .step-content h3 {
+    font-size: 1rem;
+  }
+
+  .step-content p {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .steps-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-title {
+    font-size: 1.875rem;
+  }
+
+  .welcome-subtitle {
+    font-size: 1rem;
+  }
+
+  .workflow-heading {
+    font-size: 1.25rem;
+  }
+
+  .quick-stats-section {
+    grid-template-columns: 1fr;
+  }
+
+  .review-header {
+    padding: 2rem 1.5rem;
+  }
+
+  .review-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .review-subtitle {
+    font-size: 0.95rem;
+  }
+
+  .placeholder-icon {
+    font-size: 3.5rem;
+  }
+
+  .placeholder-content h2 {
+    font-size: 1.5rem;
+  }
+}
+
+/* Enhanced sidebar section titles with icons */
+.sidebar-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Smooth transitions for all interactive elements */
+.sidebar-item,
+.step-btn,
+.stat-card,
+.feature-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Add subtle animation to step numbers */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(102, 126, 234, 0);
+  }
+}
+
+.step-number {
+  animation: pulse-glow 3s infinite;
+}
+
+/* Enhance tailor CV view header */
+.tailor-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 2rem;
+}
+
+.tailor-subtitle {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #4a5568;
+  max-width: 900px;
+}
+

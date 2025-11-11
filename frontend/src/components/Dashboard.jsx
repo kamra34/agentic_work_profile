@@ -66,12 +66,12 @@ function Dashboard({ user, onLogout }) {
               onClick={() => setActiveTab('home')}
             >
               <span className="icon">🏠</span>
-              <span className="label">Home</span>
+              <span className="label">Dashboard</span>
             </button>
           </div>
 
           <div className="sidebar-section">
-            <div className="sidebar-section-title">Build Your Profile</div>
+            <div className="sidebar-section-title">📋 Profile Management</div>
             <button
               className={`sidebar-item ${activeTab === 'profile' ? 'active' : ''}`}
               onClick={() => setActiveTab('profile')}
@@ -83,32 +83,34 @@ function Dashboard({ user, onLogout }) {
           </div>
 
           <div className="sidebar-section">
-            <div className="sidebar-section-title">AI-Powered CV</div>
+            <div className="sidebar-section-title">🎯 CV Creation</div>
             <button
               className={`sidebar-item ${activeTab === 'tailor' ? 'active' : ''}`}
               onClick={() => setActiveTab('tailor')}
             >
-              <span className="icon">🎯</span>
-              <span className="label">Tailor CV</span>
+              <span className="icon">🤖</span>
+              <span className="label">Job Analysis & Tailoring</span>
               <span className="badge badge-ai">AI</span>
             </button>
             <button
-              className={`sidebar-item ${activeTab === 'export' ? 'active' : ''}`}
-              onClick={() => setActiveTab('export')}
+              className={`sidebar-item ${activeTab === 'review' ? 'active' : ''}`}
+              onClick={() => setActiveTab('review')}
             >
-              <span className="icon">📄</span>
-              <span className="label">Export CV</span>
+              <span className="icon">💾</span>
+              <span className="label">Review & Finalize</span>
             </button>
           </div>
 
           <div className="sidebar-section">
-            <div className="sidebar-section-title">My CVs</div>
+            <div className="sidebar-section-title">📊 Applications</div>
             <button
-              className={`sidebar-item ${activeTab === 'saved' ? 'active' : ''}`}
-              onClick={() => setActiveTab('saved')}
+              className={`sidebar-item ${activeTab === 'applications' ? 'active' : ''}`}
+              onClick={() => setActiveTab('applications')}
+              disabled
             >
-              <span className="icon">💾</span>
-              <span className="label">Saved CVs</span>
+              <span className="icon">📈</span>
+              <span className="label">Application Tracker</span>
+              <span className="badge badge-coming-soon">Coming Soon</span>
             </button>
           </div>
         </aside>
@@ -117,83 +119,119 @@ function Dashboard({ user, onLogout }) {
           {activeTab === 'home' && <HomeView onNavigate={setActiveTab} />}
           {activeTab === 'profile' && <ProfileManagement />}
           {activeTab === 'tailor' && <TailorCVView />}
-          {activeTab === 'export' && <ExportCVView />}
-          {activeTab === 'saved' && <SavedCVsView />}
+          {activeTab === 'review' && <ReviewFinalizeView />}
+          {activeTab === 'applications' && <ApplicationsView />}
         </main>
       </div>
     </div>
   );
 }
 
-// Home View Component
+// Home View Component - Modern Dashboard Design
 function HomeView({ onNavigate }) {
   return (
     <div className="home-view">
       <div className="welcome-section">
         <h1 className="welcome-title">Welcome to Your AI-Powered CV Builder</h1>
         <p className="welcome-subtitle">
-          Create a master profile of all your skills and experiences, then let AI tailor perfect CVs for each job application.
+          Your intelligent assistant for creating tailored CVs that land interviews. Build once, customize infinitely.
         </p>
       </div>
 
-      <div className="steps-grid">
-        <div className="step-card step-1">
-          <div className="step-number">1</div>
-          <div className="step-content">
-            <h3>Build Your Master Profile</h3>
-            <p>Add all your work experiences, education, skills, projects, and achievements. This is your complete professional portfolio - don't worry about length or relevance yet.</p>
-            <button className="step-btn" onClick={() => onNavigate('profile')}>
-              Start Building →
-            </button>
+      <div className="workflow-container">
+        <h2 className="workflow-heading">Your CV Creation Workflow</h2>
+        <div className="steps-grid">
+          <div className="step-card step-1">
+            <div className="step-number">1</div>
+            <div className="step-icon">📝</div>
+            <div className="step-content">
+              <h3>Build Master Profile</h3>
+              <p>Create your comprehensive professional profile once. Add all experiences, skills, projects, and achievements - your complete career story in one place.</p>
+              <button className="step-btn" onClick={() => onNavigate('profile')}>
+                Go to Master Profile →
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="step-card step-2">
-          <div className="step-number">2</div>
-          <div className="step-content">
-            <h3>Analyze Job Requirements with AI</h3>
-            <p>Paste a job description and let AI analyze the requirements using both OpenAI GPT-4o and Anthropic Claude Sonnet 4.5. Get detailed insights about required skills, education, experience level, and job category (technical, managerial, leadership, etc.).</p>
-            <button className="step-btn" onClick={() => onNavigate('tailor')}>
-              Analyze Job with AI →
-            </button>
+          <div className="step-card step-2">
+            <div className="step-number">2</div>
+            <div className="step-icon">🤖</div>
+            <div className="step-content">
+              <h3>AI Analysis & Tailoring</h3>
+              <p>Paste a job description and get dual-AI analysis (OpenAI + Claude). AI intelligently selects the best-fit items from your profile for the specific role.</p>
+              <button className="step-btn" onClick={() => onNavigate('tailor')}>
+                Analyze & Tailor →
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="step-card step-3">
-          <div className="step-number">3</div>
-          <div className="step-content">
-            <h3>Export & Apply</h3>
-            <p>Download your tailored CV as a professional PDF, perfectly optimized for the specific role. Save multiple versions for different applications.</p>
-            <button className="step-btn" onClick={() => onNavigate('export')}>
-              Export CV →
-            </button>
+          <div className="step-card step-3">
+            <div className="step-number">3</div>
+            <div className="step-icon">💾</div>
+            <div className="step-content">
+              <h3>Review & Finalize</h3>
+              <p>Preview AI selections, toggle visibility, re-evaluate ATS scores, and download your professionally formatted PDF ready for application.</p>
+              <button className="step-btn" onClick={() => onNavigate('review')}>
+                Review CVs →
+              </button>
+            </div>
+          </div>
+
+          <div className="step-card step-4">
+            <div className="step-number">4</div>
+            <div className="step-icon">📈</div>
+            <div className="step-content">
+              <h3>Track Applications</h3>
+              <p>Monitor all your applications in one dashboard. Track status from Applied to Interview to Offer, with scores and notes for each opportunity.</p>
+              <button className="step-btn" disabled>
+                Coming Soon
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="features-section">
-        <h2>Why Use AI-Powered CV Tailoring?</h2>
+        <h2>Why Choose AI-Powered CV Tailoring?</h2>
         <div className="features-grid">
           <div className="feature-card">
             <div className="feature-icon">🎯</div>
-            <h4>Intelligent Matching</h4>
-            <p>AI analyzes job requirements and recommends the most relevant experiences from your profile.</p>
+            <h4>Dual-AI Intelligence</h4>
+            <p>Get unbiased recommendations from both OpenAI GPT-4o and Claude Sonnet 4.5. Items selected by both models = strongest matches.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">⚡</div>
-            <h4>Save Time</h4>
-            <p>No more manually customizing CVs for each application. Let AI do the heavy lifting.</p>
+            <h4>10x Faster</h4>
+            <p>No more spending hours customizing CVs. AI analyzes job requirements and selects your best-fit content in seconds.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">📊</div>
-            <h4>Fit Score</h4>
-            <p>See how well your profile matches the job requirements and identify gaps.</p>
+            <h4>Smart Scoring</h4>
+            <p>Real-time Profile Fit and ATS Compatibility scores show exactly how well you match each role before applying.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">✨</div>
-            <h4>Professional Output</h4>
-            <p>Generate clean, ATS-friendly PDFs that get past automated screening systems.</p>
+            <h4>ATS-Optimized</h4>
+            <p>Professional PDFs designed to pass Applicant Tracking Systems while maintaining visual appeal for human recruiters.</p>
           </div>
+        </div>
+      </div>
+
+      <div className="quick-stats-section">
+        <div className="stat-card">
+          <div className="stat-number">2</div>
+          <div className="stat-label">AI Models</div>
+          <div className="stat-description">OpenAI + Claude</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-number">∞</div>
+          <div className="stat-label">CV Versions</div>
+          <div className="stat-description">Unlimited tailoring</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-number">100%</div>
+          <div className="stat-label">Your Content</div>
+          <div className="stat-description">AI selects, never creates</div>
         </div>
       </div>
     </div>
@@ -643,9 +681,9 @@ function TailorCVView() {
   return (
     <div className="tailor-cv-view">
       <div className="tailor-header">
-        <h1>AI-Powered Job Description Analysis</h1>
+        <h1>🤖 Job Analysis & CV Tailoring</h1>
         <p className="tailor-subtitle">
-          Paste a job description below and let our AI analyze the requirements, skills, and qualifications needed for the role.
+          Paste any job description below. Our dual-AI system (OpenAI + Claude) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role.
         </p>
       </div>
 
@@ -1756,34 +1794,47 @@ function renderAnalysisSection(title, content) {
   );
 }
 
-// Export CV View Component (Placeholder)
-function ExportCVView() {
+// Review & Finalize View Component - Renamed from SavedCVsView
+function ReviewFinalizeView() {
   return (
-    <div className="placeholder-view">
-      <div className="placeholder-content">
-        <div className="placeholder-icon">📄</div>
-        <h2>Export Your CV</h2>
-        <p className="placeholder-description">
-          This feature is under development. Soon you'll be able to:
+    <div className="review-finalize-wrapper">
+      <div className="review-header">
+        <h1>💾 Review & Finalize Your CVs</h1>
+        <p className="review-subtitle">
+          View your AI-tailored CVs, toggle item visibility, re-evaluate ATS scores, preview the final output, and download professional PDFs ready for your applications.
         </p>
-        <ul className="placeholder-list">
-          <li>Download CVs as professional PDFs</li>
-          <li>Choose from multiple templates and layouts</li>
-          <li>Customize colors, fonts, and styling</li>
-          <li>Export in ATS-friendly formats</li>
-          <li>Generate cover letters from your profile</li>
-        </ul>
-        <div className="placeholder-cta">
-          <p>For now, you can preview your CV in the Master Profile section.</p>
-        </div>
       </div>
+      <TailoredCVs />
     </div>
   );
 }
 
-// Saved CVs View Component
-function SavedCVsView() {
-  return <TailoredCVs />;
+// Applications View Component - Placeholder for future Application Tracker
+function ApplicationsView() {
+  return (
+    <div className="placeholder-view">
+      <div className="placeholder-content">
+        <div className="placeholder-icon">📈</div>
+        <h2>Application Tracker</h2>
+        <p className="placeholder-description">
+          Your centralized dashboard for tracking all job applications is coming soon! This feature will include:
+        </p>
+        <ul className="placeholder-list">
+          <li>📊 Visual dashboard with application status pipeline (Applied → Interview → Offer)</li>
+          <li>📋 Complete application history with company names, job titles, and dates</li>
+          <li>🎯 Profile Fit and ATS scores for each application</li>
+          <li>📄 Download the exact CV version you applied with</li>
+          <li>📝 Add notes, interview dates, and follow-up reminders</li>
+          <li>📈 Analytics and insights on your job search progress</li>
+          <li>🔔 Status change notifications and deadline reminders</li>
+        </ul>
+        <div className="placeholder-cta">
+          <h3>What you can do now:</h3>
+          <p>Use <strong>Review & Finalize</strong> to manage your CV drafts and download PDFs. Once you apply for a job, you'll be able to track it here.</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default Dashboard;
