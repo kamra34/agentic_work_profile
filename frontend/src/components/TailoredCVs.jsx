@@ -364,6 +364,10 @@ function CVDetailView({ cv, onBack, onUpdate }) {
   const [expandedEntries, setExpandedEntries] = useState({});
   const [previewMode, setPreviewMode] = useState('cv'); // 'cv', 'openai', 'claude'
   const [hiddenItems, setHiddenItems] = useState({}); // Track hidden items by ID
+  const [reEvaluatedScores, setReEvaluatedScores] = useState(null); // Re-calculated ATS scores
+  const [recalculating, setRecalculating] = useState(false); // Loading state for recalculation
+  const [showDebugData, setShowDebugData] = useState(false); // Show formatted data sent to AI
+  const [debugFormattedData, setDebugFormattedData] = useState(null); // Formatted data from backend
 
   useEffect(() => {
     fetchFullCVData();
@@ -478,6 +482,89 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     } catch (error) {
       console.error('Error downloading PDF:', error);
       alert('Failed to download PDF. Please try again.');
+    }
+  };
+
+  const previewAIInput = async () => {
+    try {
+      const token = localStorage.getItem('token');
+
+      // Get visible items (non-hidden)
+      const hiddenItemIds = Object.keys(hiddenItems)
+        .filter(id => hiddenItems[id])
+        .map(id => parseInt(id));
+
+      const response = await fetch(
+        `${API_URL}/api/cv/tailored-versions/${cv.id}/preview-ai-input`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            hidden_items: hiddenItemIds
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to preview AI input');
+      }
+
+      const data = await response.json();
+      setDebugFormattedData(data.formatted_cv_content);
+      setShowDebugData(true);
+    } catch (error) {
+      console.error('Error previewing AI input:', error);
+      alert('Failed to preview AI input. Please try again.');
+    }
+  };
+
+  const recalculateATS = async () => {
+    try {
+      setRecalculating(true);
+      const token = localStorage.getItem('token');
+
+      // Get visible items (non-hidden)
+      const hiddenItemIds = Object.keys(hiddenItems)
+        .filter(id => hiddenItems[id])
+        .map(id => parseInt(id));
+
+      const response = await fetch(
+        `${API_URL}/api/cv/tailored-versions/${cv.id}/recalculate-ats`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            hidden_items: hiddenItemIds
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to recalculate ATS scores');
+      }
+
+      const data = await response.json();
+      setReEvaluatedScores({
+        openai_ats: data.openai_ats_score,
+        claude_ats: data.claude_ats_score
+      });
+
+      // Store the formatted data for debugging
+      if (data.formatted_cv_content) {
+        setDebugFormattedData(data.formatted_cv_content);
+      }
+    } catch (error) {
+      console.error('Error recalculating ATS:', error);
+      alert(`Failed to recalculate ATS scores: ${error.message}`);
+    } finally {
+      setRecalculating(false);
     }
   };
 
@@ -775,48 +862,109 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       <div className="ai-scores-bar">
         {/* Initial Evaluation Scores */}
         <div className="scores-section">
-          <h3 className="scores-section-title">Initial Evaluation</h3>
-          <div className="scores-row">
-            <div className="score-group">
+          <div className="scores-section-header">
+            <h3 className="scores-section-title">Initial Evaluation</h3>
+          </div>
+          <div className="scores-content">
+            <div className="score-item">
               <span className="score-label">Profile Fit:</span>
-              <span className="score-value">
-                {cv.openai_fit_score ? `🟢 ${cv.openai_fit_score}%` : '🟢 N/A'}
-                {' | '}
-                {cv.claude_fit_score ? `🔵 ${cv.claude_fit_score}%` : '🔵 N/A'}
-              </span>
+              <div className="score-values">
+                <span className="score-badge score-openai">
+                  {cv.openai_fit_score ? `${cv.openai_fit_score}%` : 'N/A'}
+                </span>
+                <span className="score-badge score-claude">
+                  {cv.claude_fit_score ? `${cv.claude_fit_score}%` : 'N/A'}
+                </span>
+              </div>
             </div>
-            <div className="score-group">
+            <div className="score-item">
               <span className="score-label">ATS Score:</span>
-              <span className="score-value">
-                {cv.openai_ats_score ? `🟢 ${cv.openai_ats_score}%` : '🟢 N/A'}
-                {' | '}
-                {cv.claude_ats_score ? `🔵 ${cv.claude_ats_score}%` : '🔵 N/A'}
-              </span>
+              <div className="score-values">
+                <span className="score-badge score-openai">
+                  {cv.openai_ats_score ? `${cv.openai_ats_score}%` : 'N/A'}
+                </span>
+                <span className="score-badge score-claude">
+                  {cv.claude_ats_score ? `${cv.claude_ats_score}%` : 'N/A'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Re-evaluated Scores Placeholder */}
-        <div className="scores-section">
-          <h3 className="scores-section-title">Re-evaluated (Current CV)</h3>
-          <div className="scores-row">
-            <div className="score-group">
+        {/* Re-evaluated Scores */}
+        <div className="scores-section scores-section-reevaluated">
+          <div className="scores-section-header">
+            <h3 className="scores-section-title">Re-evaluated (Current CV)</h3>
+          </div>
+          <div className="scores-content">
+            <div className="score-item">
               <span className="score-label">ATS Score:</span>
-              <span className="score-value score-pending">Not calculated yet</span>
+              <div className="score-values">
+                {reEvaluatedScores ? (
+                  <>
+                    <span className="score-badge score-openai">
+                      {reEvaluatedScores.openai_ats ? `${reEvaluatedScores.openai_ats}%` : 'N/A'}
+                    </span>
+                    <span className="score-badge score-claude">
+                      {reEvaluatedScores.claude_ats ? `${reEvaluatedScores.claude_ats}%` : 'N/A'}
+                    </span>
+                  </>
+                ) : (
+                  <span className="score-placeholder">Click refresh to calculate</span>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="scores-actions">
-          <button className="btn-recalculate" onClick={() => alert('Re-calculate ATS functionality coming soon!')} title="Re-calculate ATS score based on visible items">
-            🔄 Re-calculate ATS
+        {/* Actions Section */}
+        <div className="scores-section-actions">
+          <button
+            className={`btn-recalculate-modern ${recalculating ? 'recalculating' : ''}`}
+            onClick={recalculateATS}
+            disabled={recalculating}
+            title="Re-calculate ATS score based on visible items"
+          >
+            <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+            {recalculating ? 'Calculating...' : 'Refresh Scores'}
           </button>
-          <button className="btn-download-pdf-bar" onClick={downloadPDF} title="Download CV as PDF">
-            📄 Download PDF
+
+          <button className="btn-download-modern" onClick={downloadPDF} title="Download CV as PDF">
+            <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            Download PDF
           </button>
+
+          {debugFormattedData && (
+            <button
+              className="btn-toggle-debug"
+              onClick={() => setShowDebugData(!showDebugData)}
+              title="Toggle AI input data display"
+            >
+              <svg className="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points={showDebugData ? "18 15 12 9 6 15" : "6 9 12 15 18 9"}/>
+              </svg>
+              AI Input
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Debug Data Display */}
+      {showDebugData && debugFormattedData && (
+        <div className="debug-data-panel">
+          <div className="debug-data-header">
+            <h4>📋 Data Sent to AI Models for Re-evaluation</h4>
+            <p>This is the exact formatted text sent to both OpenAI and Claude for ATS scoring</p>
+          </div>
+          <pre className="debug-data-content">
+            {debugFormattedData}
+          </pre>
+        </div>
+      )}
 
       {/* Master Profile-Style Split View */}
       <div className="profile-split-view">

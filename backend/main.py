@@ -1644,6 +1644,447 @@ async def download_tailored_cv_pdf(
         )
 
 
+@app.post("/api/cv/tailored-versions/{version_id}/preview-ai-input")
+async def preview_ai_input_data(
+    version_id: int,
+    request: PDFDownloadRequest,  # Reuse same schema - it has hidden_items
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Preview the formatted data that will be sent to AI models WITHOUT calling the LLMs
+    This is useful for debugging and verifying the data before spending API credits
+    """
+    try:
+        # Get the tailored CV version
+        version = db.query(TailoredCVVersion).filter(
+            TailoredCVVersion.id == version_id,
+            TailoredCVVersion.user_id == current_user.id
+        ).first()
+
+        if not version:
+            raise HTTPException(status_code=404, detail="Tailored CV version not found")
+
+        # Check if job_analysis exists
+        if not version.job_analysis:
+            return {
+                "formatted_cv_content": "ERROR: No job analysis found for this CV. Job requirements are needed for ATS scoring.",
+                "has_job_analysis": False,
+                "cv_id": version_id
+            }
+
+        # Filter out hidden items from the selected_content (same logic as recalculate)
+        filtered_content = version.selected_content.copy()
+        hidden_items_set = set(request.hidden_items)
+
+        # Filter items from sections
+        if 'sections' in filtered_content:
+            filtered_sections = []
+            for section in filtered_content['sections']:
+                filtered_section = section.copy()
+                filtered_entries = []
+
+                for entry in section.get('entries', []):
+                    filtered_entry = entry.copy()
+
+                    # Filter entry-level items
+                    if 'items' in entry:
+                        filtered_entry['items'] = [
+                            item for item in entry['items']
+                            if item['id'] not in hidden_items_set
+                        ]
+
+                    # Filter sub-entry items
+                    if 'sub_entries' in entry:
+                        filtered_sub_entries = []
+                        for sub_entry in entry['sub_entries']:
+                            filtered_sub_entry = sub_entry.copy()
+                            if 'items' in sub_entry:
+                                filtered_sub_entry['items'] = [
+                                    item for item in sub_entry['items']
+                                    if item['id'] not in hidden_items_set
+                                ]
+                            if filtered_sub_entry.get('items'):
+                                filtered_sub_entries.append(filtered_sub_entry)
+                        filtered_entry['sub_entries'] = filtered_sub_entries
+
+                    # Only include entry if it has visible content
+                    has_visible_items = (
+                        filtered_entry.get('items') or
+                        filtered_entry.get('sub_entries') or
+                        entry.get('description') or
+                        entry.get('title')
+                    )
+                    if has_visible_items:
+                        filtered_entries.append(filtered_entry)
+
+                filtered_section['entries'] = filtered_entries
+                if filtered_entries:
+                    filtered_sections.append(filtered_section)
+
+            filtered_content['sections'] = filtered_sections
+
+        # Create formatted profile from filtered content
+        from format_profile_for_ai import format_cv_content_for_ai
+        formatted_cv = format_cv_content_for_ai(filtered_content)
+
+        # Add job analysis info to the output
+        job_analysis_summary = f"\n\n{'='*80}\nJOB REQUIREMENTS ANALYSIS\n{'='*80}\n"
+        if isinstance(version.job_analysis, list):
+            for analysis_obj in version.job_analysis:
+                provider = analysis_obj.get('provider', 'unknown')
+                provider_name = 'OpenAI GPT-4o' if provider == 'openai' else 'Anthropic Claude' if provider == 'anthropic' else provider
+
+                job_analysis_summary += f"\n{'─'*80}\n"
+                job_analysis_summary += f"Provider: {provider_name}\n"
+                job_analysis_summary += f"{'─'*80}\n"
+
+                # Check if there's an actual error (not just error: None)
+                if analysis_obj.get('error'):
+                    job_analysis_summary += f"Error: {analysis_obj['error']}\n"
+                    continue
+
+                analysis = analysis_obj.get('analysis', {})
+
+                # Skip if analysis is empty
+                if not analysis:
+                    job_analysis_summary += "No analysis data available\n"
+                    continue
+
+                # Job Category & Level
+                job_category = analysis.get('job_category') or analysis.get('Job Category', '')
+                job_level = analysis.get('job_level') or analysis.get('Job Level', '')
+                if job_category or job_level:
+                    job_analysis_summary += f"\nJob Category & Level: {job_category} - {job_level}\n"
+
+                # Technical Skills
+                tech_skills = analysis.get('technical_skills') or analysis.get('Technical Skills')
+                if tech_skills:
+                    job_analysis_summary += f"\nTechnical Skills:\n"
+                    if isinstance(tech_skills, list):
+                        for skill in tech_skills:
+                            job_analysis_summary += f"  • {skill}\n"
+                    else:
+                        job_analysis_summary += f"  {tech_skills}\n"
+
+                # Soft Skills
+                soft_skills = analysis.get('soft_skills') or analysis.get('Soft Skills')
+                if soft_skills:
+                    job_analysis_summary += f"\nSoft Skills:\n"
+                    if isinstance(soft_skills, list):
+                        for skill in soft_skills:
+                            job_analysis_summary += f"  • {skill}\n"
+                    else:
+                        job_analysis_summary += f"  {soft_skills}\n"
+
+                # Required Experience
+                req_exp = analysis.get('required_experience') or analysis.get('Required Experience')
+                if req_exp:
+                    job_analysis_summary += f"\nRequired Experience:\n"
+                    if isinstance(req_exp, list):
+                        for exp in req_exp:
+                            job_analysis_summary += f"  • {exp}\n"
+                    else:
+                        job_analysis_summary += f"  {req_exp}\n"
+
+                # Experience Requirements
+                exp_req = analysis.get('experience_requirements') or analysis.get('Experience Requirements')
+                if exp_req:
+                    job_analysis_summary += f"\nExperience Requirements:\n"
+                    if isinstance(exp_req, list):
+                        for req in exp_req:
+                            job_analysis_summary += f"  • {req}\n"
+                    else:
+                        job_analysis_summary += f"  {exp_req}\n"
+
+                # Education Requirements
+                edu_req = analysis.get('education_requirements') or analysis.get('Education Requirements')
+                if edu_req:
+                    job_analysis_summary += f"\nEducation Requirements:\n"
+                    if isinstance(edu_req, list):
+                        for req in edu_req:
+                            job_analysis_summary += f"  • {req}\n"
+                    else:
+                        job_analysis_summary += f"  {edu_req}\n"
+
+                # Key Responsibilities
+                key_resp = analysis.get('key_responsibilities') or analysis.get('Key Responsibilities') or analysis.get('responsibilities') or analysis.get('Responsibilities')
+                if key_resp:
+                    job_analysis_summary += f"\nKey Responsibilities:\n"
+                    if isinstance(key_resp, list):
+                        for resp in key_resp:
+                            job_analysis_summary += f"  • {resp}\n"
+                    else:
+                        job_analysis_summary += f"  {key_resp}\n"
+
+                # Nice to Have / Preferred Qualifications
+                nice_to_have = analysis.get('nice_to_have') or analysis.get('Nice to Have') or analysis.get('preferred_qualifications') or analysis.get('Preferred Qualifications')
+                if nice_to_have:
+                    job_analysis_summary += f"\nNice to Have / Preferred:\n"
+                    if isinstance(nice_to_have, list):
+                        for item in nice_to_have:
+                            job_analysis_summary += f"  • {item}\n"
+                    else:
+                        job_analysis_summary += f"  {nice_to_have}\n"
+
+                # Domain/Industry
+                domain = analysis.get('domain_industry') or analysis.get('Domain/Industry')
+                if domain:
+                    job_analysis_summary += f"\nDomain/Industry: {domain}\n"
+
+        else:
+            job_analysis_summary += str(version.job_analysis)
+
+        full_output = formatted_cv + job_analysis_summary
+
+        return {
+            "formatted_cv_content": full_output,
+            "has_job_analysis": True,
+            "job_analysis_count": len(version.job_analysis) if isinstance(version.job_analysis, list) else 0
+        }
+
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] Preview AI input failed: {error_details}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error previewing AI input: {str(e)}"
+        )
+
+
+@app.post("/api/cv/tailored-versions/{version_id}/recalculate-ats")
+async def recalculate_ats_scores(
+    version_id: int,
+    request: PDFDownloadRequest,  # Reuse same schema - it has hidden_items
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Re-calculate ATS scores based on currently visible items in the CV
+    This allows users to see how hiding/showing items affects their ATS score
+    """
+    try:
+        # Get the tailored CV version
+        version = db.query(TailoredCVVersion).filter(
+            TailoredCVVersion.id == version_id,
+            TailoredCVVersion.user_id == current_user.id
+        ).first()
+
+        if not version:
+            raise HTTPException(status_code=404, detail="Tailored CV version not found")
+
+        # Check if job_analysis exists
+        if not version.job_analysis:
+            raise HTTPException(
+                status_code=400,
+                detail="No job analysis found for this CV. Job requirements are needed for ATS scoring."
+            )
+
+        # Filter out hidden items from the selected_content
+        filtered_content = version.selected_content.copy()
+        hidden_items_set = set(request.hidden_items)
+
+        # Filter items from sections
+        if 'sections' in filtered_content:
+            filtered_sections = []
+            for section in filtered_content['sections']:
+                filtered_section = section.copy()
+                filtered_entries = []
+
+                for entry in section.get('entries', []):
+                    filtered_entry = entry.copy()
+
+                    # Filter entry-level items
+                    if 'items' in entry:
+                        filtered_entry['items'] = [
+                            item for item in entry['items']
+                            if item['id'] not in hidden_items_set
+                        ]
+
+                    # Filter sub-entry items
+                    if 'sub_entries' in entry:
+                        filtered_sub_entries = []
+                        for sub_entry in entry['sub_entries']:
+                            filtered_sub_entry = sub_entry.copy()
+                            if 'items' in sub_entry:
+                                filtered_sub_entry['items'] = [
+                                    item for item in sub_entry['items']
+                                    if item['id'] not in hidden_items_set
+                                ]
+                            # Only include sub-entry if it has visible items
+                            if filtered_sub_entry.get('items'):
+                                filtered_sub_entries.append(filtered_sub_entry)
+                        filtered_entry['sub_entries'] = filtered_sub_entries
+
+                    # Only include entry if it has visible content
+                    has_visible_items = (
+                        filtered_entry.get('items') or
+                        filtered_entry.get('sub_entries') or
+                        entry.get('description') or
+                        entry.get('title')
+                    )
+                    if has_visible_items:
+                        filtered_entries.append(filtered_entry)
+
+                filtered_section['entries'] = filtered_entries
+                if filtered_entries:  # Only include section if it has entries
+                    filtered_sections.append(filtered_section)
+
+            filtered_content['sections'] = filtered_sections
+
+        # Create formatted profile from filtered content
+        from format_profile_for_ai import format_cv_content_for_ai
+        formatted_cv = format_cv_content_for_ai(filtered_content)
+
+        # Re-analyze fit with both AI models using the filtered CV
+        result = analyze_profile_fit_dual(version.job_analysis, formatted_cv)
+
+        # Extract scores from fit_analyses array
+        openai_ats = None
+        claude_ats = None
+        openai_fit = None
+        claude_fit = None
+
+        for analysis in result.get('fit_analyses', []):
+            provider = analysis.get('provider')
+            if provider == 'openai' and 'error' not in analysis:
+                fit_data = analysis.get('fit_analysis', {})
+                openai_fit = fit_data.get('fit_percentage')
+                ats_compat = fit_data.get('ats_compatibility', {})
+                openai_ats = ats_compat.get('overall_ats_score')
+            elif provider == 'anthropic' and 'error' not in analysis:
+                fit_data = analysis.get('fit_analysis', {})
+                claude_fit = fit_data.get('fit_percentage')
+                ats_compat = fit_data.get('ats_compatibility', {})
+                claude_ats = ats_compat.get('overall_ats_score')
+
+        # Format job analysis for debugging (same as preview endpoint)
+        job_analysis_summary = f"\n\n{'='*80}\nJOB REQUIREMENTS ANALYSIS\n{'='*80}\n"
+        if isinstance(version.job_analysis, list):
+            for analysis_obj in version.job_analysis:
+                provider = analysis_obj.get('provider', 'unknown')
+                provider_name = 'OpenAI GPT-4o' if provider == 'openai' else 'Anthropic Claude' if provider == 'anthropic' else provider
+
+                job_analysis_summary += f"\n{'─'*80}\n"
+                job_analysis_summary += f"Provider: {provider_name}\n"
+                job_analysis_summary += f"{'─'*80}\n"
+
+                # Check if there's an actual error (not just error: None)
+                if analysis_obj.get('error'):
+                    job_analysis_summary += f"Error: {analysis_obj['error']}\n"
+                    continue
+
+                analysis = analysis_obj.get('analysis', {})
+
+                # Skip if analysis is empty
+                if not analysis:
+                    job_analysis_summary += "No analysis data available\n"
+                    continue
+
+                # Job Category & Level
+                job_category = analysis.get('job_category') or analysis.get('Job Category', '')
+                job_level = analysis.get('job_level') or analysis.get('Job Level', '')
+                if job_category or job_level:
+                    job_analysis_summary += f"\nJob Category & Level: {job_category} - {job_level}\n"
+
+                # Technical Skills
+                tech_skills = analysis.get('technical_skills') or analysis.get('Technical Skills')
+                if tech_skills:
+                    job_analysis_summary += f"\nTechnical Skills:\n"
+                    if isinstance(tech_skills, list):
+                        for skill in tech_skills:
+                            job_analysis_summary += f"  • {skill}\n"
+                    else:
+                        job_analysis_summary += f"  {tech_skills}\n"
+
+                # Soft Skills
+                soft_skills = analysis.get('soft_skills') or analysis.get('Soft Skills')
+                if soft_skills:
+                    job_analysis_summary += f"\nSoft Skills:\n"
+                    if isinstance(soft_skills, list):
+                        for skill in soft_skills:
+                            job_analysis_summary += f"  • {skill}\n"
+                    else:
+                        job_analysis_summary += f"  {soft_skills}\n"
+
+                # Required Experience
+                req_exp = analysis.get('required_experience') or analysis.get('Required Experience')
+                if req_exp:
+                    job_analysis_summary += f"\nRequired Experience:\n"
+                    if isinstance(req_exp, list):
+                        for exp in req_exp:
+                            job_analysis_summary += f"  • {exp}\n"
+                    else:
+                        job_analysis_summary += f"  {req_exp}\n"
+
+                # Experience Requirements
+                exp_req = analysis.get('experience_requirements') or analysis.get('Experience Requirements')
+                if exp_req:
+                    job_analysis_summary += f"\nExperience Requirements:\n"
+                    if isinstance(exp_req, list):
+                        for req in exp_req:
+                            job_analysis_summary += f"  • {req}\n"
+                    else:
+                        job_analysis_summary += f"  {exp_req}\n"
+
+                # Education Requirements
+                edu_req = analysis.get('education_requirements') or analysis.get('Education Requirements')
+                if edu_req:
+                    job_analysis_summary += f"\nEducation Requirements:\n"
+                    if isinstance(edu_req, list):
+                        for req in edu_req:
+                            job_analysis_summary += f"  • {req}\n"
+                    else:
+                        job_analysis_summary += f"  {edu_req}\n"
+
+                # Key Responsibilities
+                key_resp = analysis.get('key_responsibilities') or analysis.get('Key Responsibilities') or analysis.get('responsibilities') or analysis.get('Responsibilities')
+                if key_resp:
+                    job_analysis_summary += f"\nKey Responsibilities:\n"
+                    if isinstance(key_resp, list):
+                        for resp in key_resp:
+                            job_analysis_summary += f"  • {resp}\n"
+                    else:
+                        job_analysis_summary += f"  {key_resp}\n"
+
+                # Nice to Have / Preferred Qualifications
+                nice_to_have = analysis.get('nice_to_have') or analysis.get('Nice to Have') or analysis.get('preferred_qualifications') or analysis.get('Preferred Qualifications')
+                if nice_to_have:
+                    job_analysis_summary += f"\nNice to Have / Preferred:\n"
+                    if isinstance(nice_to_have, list):
+                        for item in nice_to_have:
+                            job_analysis_summary += f"  • {item}\n"
+                    else:
+                        job_analysis_summary += f"  {nice_to_have}\n"
+
+                # Domain/Industry
+                domain = analysis.get('domain_industry') or analysis.get('Domain/Industry')
+                if domain:
+                    job_analysis_summary += f"\nDomain/Industry: {domain}\n"
+
+        full_output = formatted_cv + job_analysis_summary
+
+        print(f"[DEBUG] Recalculated scores - OpenAI ATS: {openai_ats}, Claude ATS: {claude_ats}")
+
+        return {
+            "openai_ats_score": openai_ats,
+            "claude_ats_score": claude_ats,
+            "openai_fit_score": openai_fit,
+            "claude_fit_score": claude_fit,
+            "formatted_cv_content": full_output  # Include CV + job analysis for debugging
+        }
+
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] ATS recalculation failed: {error_details}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error recalculating ATS scores: {str(e)}"
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
