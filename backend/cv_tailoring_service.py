@@ -339,7 +339,8 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
                 "id": entry_id,
                 "title": entry.get("title"),
                 "subtitle": entry.get("subtitle"),
-                "date_range": entry.get("date_range"),
+                "start_date": entry.get("start_date"),
+                "end_date": entry.get("end_date"),
                 "location": entry.get("location"),
                 "description": entry.get("description"),
                 "parent_entry_id": entry.get("parent_entry_id"),  # Store parent relationship
