@@ -362,7 +362,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
   const [error, setError] = useState(null);
   const [expandedSections, setExpandedSections] = useState({});
   const [expandedEntries, setExpandedEntries] = useState({});
-  const [jobAnalysisExpanded, setJobAnalysisExpanded] = useState(false);
+  const [previewMode, setPreviewMode] = useState('cv'); // 'cv', 'openai', 'claude'
 
   useEffect(() => {
     fetchFullCVData();
@@ -715,77 +715,6 @@ function CVDetailView({ cv, onBack, onUpdate }) {
         </div>
       </div>
 
-      {/* Job Requirements Analysis Section */}
-      {cv.job_analysis && cv.job_analysis.length > 0 && (
-        <div style={{ background: 'white', margin: '0 2rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-          <div
-            style={{
-              padding: '1rem 1.5rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              borderBottom: jobAnalysisExpanded ? '1px solid #e2e8f0' : 'none'
-            }}
-            onClick={() => setJobAnalysisExpanded(!jobAnalysisExpanded)}
-          >
-            <span style={{ color: '#a0aec0', fontSize: '0.8rem' }}>
-              {jobAnalysisExpanded ? '▼' : '▶'}
-            </span>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: '#2d3748' }}>
-              Job Requirements Analysis
-            </h3>
-            <span style={{
-              marginLeft: 'auto',
-              fontSize: '0.85rem',
-              color: '#718096',
-              fontStyle: 'italic'
-            }}>
-              Powered by OpenAI GPT-4o and Anthropic Claude Sonnet 4.5
-            </span>
-          </div>
-
-          {jobAnalysisExpanded && (
-            <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-              {cv.job_analysis.map((result, idx) => (
-                <div key={idx} style={{
-                  background: '#f7fafc',
-                  borderRadius: '8px',
-                  padding: '1.5rem',
-                  border: '1px solid #e2e8f0'
-                }}>
-                  <h4 style={{
-                    margin: '0 0 1rem 0',
-                    fontSize: '1.05rem',
-                    fontWeight: 600,
-                    color: result.provider === 'openai' ? '#059669' : '#4f46e5'
-                  }}>
-                    {result.provider === 'openai' ? '🟢 OpenAI GPT-4o' : '🔵 Anthropic Claude Sonnet 4.5'}
-                  </h4>
-
-                  {result.error ? (
-                    <div style={{ color: '#dc3545', padding: '1rem', background: '#fff', borderRadius: '6px' }}>
-                      ⚠️ Error: {result.error}
-                    </div>
-                  ) : result.analysis && (
-                    <div>
-                      {renderAnalysisSection('Job Category & Level',
-                        `${result.analysis.job_category || result.analysis['Job Category'] || 'N/A'} - ${result.analysis.job_level || result.analysis['Job Level'] || 'N/A'}`
-                      )}
-                      {renderAnalysisSection('Technical Skills', result.analysis.technical_skills || result.analysis['Technical Skills'])}
-                      {renderAnalysisSection('Soft Skills', result.analysis.soft_skills || result.analysis['Soft Skills'])}
-                      {renderAnalysisSection('Required Experience', result.analysis.required_experience || result.analysis['Required Experience'])}
-                      {renderAnalysisSection('Nice to Have', result.analysis.nice_to_have || result.analysis['Nice to Have'])}
-                      {renderAnalysisSection('Key Responsibilities', result.analysis.key_responsibilities || result.analysis['Key Responsibilities'])}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Master Profile-Style Split View */}
       <div className="profile-split-view">
         {/* Left Panel - Selected Content with Collapsible Sections */}
@@ -819,9 +748,153 @@ function CVDetailView({ cv, onBack, onUpdate }) {
           </div>
         </div>
 
-        {/* Right Panel - CV Preview */}
+        {/* Right Panel - CV Preview / Job Analysis */}
         <div className="profile-preview-panel">
-          <CVPreview profile={profile} />
+          {/* View Toggle */}
+          <div style={{
+            display: 'flex',
+            gap: '0.5rem',
+            marginBottom: '1.5rem',
+            padding: '0.5rem',
+            background: 'white',
+            borderRadius: '8px',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)'
+          }}>
+            <button
+              onClick={() => setPreviewMode('cv')}
+              style={{
+                flex: 1,
+                padding: '0.75rem 1rem',
+                border: previewMode === 'cv' ? '2px solid #667eea' : '2px solid #e2e8f0',
+                background: previewMode === 'cv' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'white',
+                color: previewMode === 'cv' ? 'white' : '#718096',
+                borderRadius: '6px',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              📄 CV Preview
+            </button>
+            <button
+              onClick={() => setPreviewMode('openai')}
+              disabled={!cv.job_analysis || cv.job_analysis.length === 0}
+              style={{
+                flex: 1,
+                padding: '0.75rem 1rem',
+                border: previewMode === 'openai' ? '2px solid #059669' : '2px solid #e2e8f0',
+                background: previewMode === 'openai' ? '#059669' : 'white',
+                color: previewMode === 'openai' ? 'white' : '#718096',
+                borderRadius: '6px',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                cursor: (!cv.job_analysis || cv.job_analysis.length === 0) ? 'not-allowed' : 'pointer',
+                opacity: (!cv.job_analysis || cv.job_analysis.length === 0) ? 0.5 : 1,
+                transition: 'all 0.3s ease'
+              }}
+            >
+              🟢 GPT-4o Analysis
+            </button>
+            <button
+              onClick={() => setPreviewMode('claude')}
+              disabled={!cv.job_analysis || cv.job_analysis.length === 0}
+              style={{
+                flex: 1,
+                padding: '0.75rem 1rem',
+                border: previewMode === 'claude' ? '2px solid #4f46e5' : '2px solid #e2e8f0',
+                background: previewMode === 'claude' ? '#4f46e5' : 'white',
+                color: previewMode === 'claude' ? 'white' : '#718096',
+                borderRadius: '6px',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                cursor: (!cv.job_analysis || cv.job_analysis.length === 0) ? 'not-allowed' : 'pointer',
+                opacity: (!cv.job_analysis || cv.job_analysis.length === 0) ? 0.5 : 1,
+                transition: 'all 0.3s ease'
+              }}
+            >
+              🔵 Claude Analysis
+            </button>
+          </div>
+
+          {/* Conditional Content */}
+          {previewMode === 'cv' && <CVPreview profile={profile} />}
+
+          {previewMode === 'openai' && cv.job_analysis && cv.job_analysis.length > 0 && (
+            <div style={{ background: 'white', borderRadius: '8px', padding: '2rem', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+              {(() => {
+                const openaiAnalysis = cv.job_analysis.find(a => a.provider === 'openai');
+                if (!openaiAnalysis) {
+                  return <div style={{ textAlign: 'center', color: '#718096', padding: '2rem' }}>No OpenAI analysis available</div>;
+                }
+                if (openaiAnalysis.error) {
+                  return (
+                    <div style={{ color: '#dc3545', padding: '1rem', background: '#fff5f5', borderRadius: '6px', border: '1px solid #feb2b2' }}>
+                      ⚠️ Error: {openaiAnalysis.error}
+                    </div>
+                  );
+                }
+                return (
+                  <div>
+                    <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.5rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      🟢 OpenAI GPT-4o Job Requirements Analysis
+                    </h3>
+                    {renderAnalysisSection('Job Category & Level',
+                      `${openaiAnalysis.analysis.job_category || openaiAnalysis.analysis['Job Category'] || 'N/A'} - ${openaiAnalysis.analysis.job_level || openaiAnalysis.analysis['Job Level'] || 'N/A'}`
+                    )}
+                    {renderAnalysisSection('Technical Skills', openaiAnalysis.analysis.technical_skills || openaiAnalysis.analysis['Technical Skills'])}
+                    {renderAnalysisSection('Soft Skills', openaiAnalysis.analysis.soft_skills || openaiAnalysis.analysis['Soft Skills'])}
+                    {renderAnalysisSection('Required Experience', openaiAnalysis.analysis.required_experience || openaiAnalysis.analysis['Required Experience'])}
+                    {renderAnalysisSection('Experience Requirements', openaiAnalysis.analysis.experience_requirements || openaiAnalysis.analysis['Experience Requirements'])}
+                    {renderAnalysisSection('Education Requirements', openaiAnalysis.analysis.education_requirements || openaiAnalysis.analysis['Education Requirements'])}
+                    {renderAnalysisSection('Nice to Have', openaiAnalysis.analysis.nice_to_have || openaiAnalysis.analysis['Nice to Have'])}
+                    {renderAnalysisSection('Preferred Qualifications', openaiAnalysis.analysis.preferred_qualifications || openaiAnalysis.analysis['Preferred Qualifications'])}
+                    {renderAnalysisSection('Key Responsibilities', openaiAnalysis.analysis.key_responsibilities || openaiAnalysis.analysis['Key Responsibilities'])}
+                    {renderAnalysisSection('Responsibilities', openaiAnalysis.analysis.responsibilities || openaiAnalysis.analysis['Responsibilities'])}
+                    {renderAnalysisSection('Domain/Industry', openaiAnalysis.analysis.domain_industry || openaiAnalysis.analysis['Domain/Industry'])}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {previewMode === 'claude' && cv.job_analysis && cv.job_analysis.length > 0 && (
+            <div style={{ background: 'white', borderRadius: '8px', padding: '2rem', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+              {(() => {
+                const claudeAnalysis = cv.job_analysis.find(a => a.provider === 'anthropic');
+                if (!claudeAnalysis) {
+                  return <div style={{ textAlign: 'center', color: '#718096', padding: '2rem' }}>No Claude analysis available</div>;
+                }
+                if (claudeAnalysis.error) {
+                  return (
+                    <div style={{ color: '#dc3545', padding: '1rem', background: '#fff5f5', borderRadius: '6px', border: '1px solid #feb2b2' }}>
+                      ⚠️ Error: {claudeAnalysis.error}
+                    </div>
+                  );
+                }
+                return (
+                  <div>
+                    <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.5rem', fontWeight: 700, color: '#4f46e5', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      🔵 Anthropic Claude Sonnet 4.5 Job Requirements Analysis
+                    </h3>
+                    {renderAnalysisSection('Job Category & Level',
+                      `${claudeAnalysis.analysis.job_category || claudeAnalysis.analysis['Job Category'] || 'N/A'} - ${claudeAnalysis.analysis.job_level || claudeAnalysis.analysis['Job Level'] || 'N/A'}`
+                    )}
+                    {renderAnalysisSection('Technical Skills', claudeAnalysis.analysis.technical_skills || claudeAnalysis.analysis['Technical Skills'])}
+                    {renderAnalysisSection('Soft Skills', claudeAnalysis.analysis.soft_skills || claudeAnalysis.analysis['Soft Skills'])}
+                    {renderAnalysisSection('Required Experience', claudeAnalysis.analysis.required_experience || claudeAnalysis.analysis['Required Experience'])}
+                    {renderAnalysisSection('Experience Requirements', claudeAnalysis.analysis.experience_requirements || claudeAnalysis.analysis['Experience Requirements'])}
+                    {renderAnalysisSection('Education Requirements', claudeAnalysis.analysis.education_requirements || claudeAnalysis.analysis['Education Requirements'])}
+                    {renderAnalysisSection('Nice to Have', claudeAnalysis.analysis.nice_to_have || claudeAnalysis.analysis['Nice to Have'])}
+                    {renderAnalysisSection('Preferred Qualifications', claudeAnalysis.analysis.preferred_qualifications || claudeAnalysis.analysis['Preferred Qualifications'])}
+                    {renderAnalysisSection('Key Responsibilities', claudeAnalysis.analysis.key_responsibilities || claudeAnalysis.analysis['Key Responsibilities'])}
+                    {renderAnalysisSection('Responsibilities', claudeAnalysis.analysis.responsibilities || claudeAnalysis.analysis['Responsibilities'])}
+                    {renderAnalysisSection('Domain/Industry', claudeAnalysis.analysis.domain_industry || claudeAnalysis.analysis['Domain/Industry'])}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
       </div>
     </div>
