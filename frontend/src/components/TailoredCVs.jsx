@@ -363,6 +363,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
   const [expandedSections, setExpandedSections] = useState({});
   const [expandedEntries, setExpandedEntries] = useState({});
   const [previewMode, setPreviewMode] = useState('cv'); // 'cv', 'openai', 'claude'
+  const [hiddenItems, setHiddenItems] = useState({}); // Track hidden items by ID
 
   useEffect(() => {
     fetchFullCVData();
@@ -422,6 +423,13 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     setExpandedEntries(prev => ({
       ...prev,
       [entryId]: !prev[entryId]
+    }));
+  };
+
+  const toggleItemVisibility = (itemId) => {
+    setHiddenItems(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
     }));
   };
 
@@ -635,6 +643,24 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 {entry.items.map(item => (
                   <li key={item.id} className="entry-item" data-item-id={item.id}>
                     <div className="item-content-row">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleItemVisibility(item.id);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '1.1rem',
+                          padding: '0 0.5rem',
+                          opacity: hiddenItems[item.id] ? 0.3 : 1,
+                          transition: 'opacity 0.2s'
+                        }}
+                        title={hiddenItems[item.id] ? 'Show in CV preview' : 'Hide from CV preview'}
+                      >
+                        {hiddenItems[item.id] ? '👁️‍🗨️' : '👁️'}
+                      </button>
                       <span className="item-text">{item.content}</span>
                       {item.recommended_by && renderAIBadge(item.recommended_by)}
                     </div>
@@ -818,7 +844,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
           </div>
 
           {/* Conditional Content */}
-          {previewMode === 'cv' && <CVPreview profile={profile} />}
+          {previewMode === 'cv' && <CVPreview profile={profile} hiddenItems={hiddenItems} />}
 
           {previewMode === 'openai' && cv.job_analysis && cv.job_analysis.length > 0 && (
             <div style={{ background: 'white', borderRadius: '8px', padding: '2rem', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
