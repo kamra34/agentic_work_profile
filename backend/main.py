@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
@@ -28,7 +28,8 @@ from schemas import (
     JobAnalysisRequest, JobAnalysisResponse,
     ProfileFitRequest, ProfileFitResponse,
     CVTailoringRequest, CVTailoringResponse,
-    TailoredCVCreate, TailoredCVUpdate, TailoredCVResponse
+    TailoredCVCreate, TailoredCVUpdate, TailoredCVResponse,
+    PDFDownloadRequest
 )
 from file_utils import extract_text_from_file
 from openai_service import parse_cv_with_openai
@@ -37,6 +38,7 @@ from ai_editor_service import edit_with_openai, edit_with_claude, chat_with_ai
 from job_analysis_service import analyze_job_description_dual
 from profile_fit_service import analyze_profile_fit_dual
 from cv_tailoring_service import tailor_cv_dual
+from pdf_service import generate_cv_pdf
 
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://kami:4444@eu1.pitunnel.com:20877/work_profile")
@@ -1569,6 +1571,77 @@ async def delete_tailored_cv_version(
     db.commit()
 
     return {"message": "Tailored CV version deleted successfully"}
+
+
+@app.post("/api/cv/tailored-versions/{version_id}/download-pdf")
+async def download_tailored_cv_pdf(
+    version_id: int,
+    request: PDFDownloadRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Download a tailored CV as a PDF
+
+    Args:
+        version_id: ID of the tailored CV version
+        request: PDF download request with hidden_items and template_name
+
+    Returns:
+        PDF file as a streaming response
+    """
+    # Get the tailored CV version
+    version = db.query(TailoredCVVersion).filter(
+        TailoredCVVersion.id == version_id,
+        TailoredCVVersion.user_id == current_user.id
+    ).first()
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Tailored CV version not found")
+
+    # Prepare CV data for PDF generation
+    # Add user's full name to contact_info if not present
+    selected_content = version.selected_content.copy() if version.selected_content else {}
+    contact_info = selected_content.get('contact_info', {})
+
+    # Ensure full_name is in contact_info
+    if 'full_name' not in contact_info:
+        contact_info['full_name'] = current_user.full_name
+        selected_content['contact_info'] = contact_info
+
+    cv_data = {
+        "id": version.id,
+        "job_title": version.job_title,
+        "company_name": version.company_name,
+        "selected_content": selected_content,
+        "openai_fit_score": version.openai_fit_score,
+        "claude_fit_score": version.claude_fit_score,
+        "openai_ats_score": version.openai_ats_score,
+        "claude_ats_score": version.claude_ats_score,
+    }
+
+    # Generate PDF
+    try:
+        pdf_buffer = generate_cv_pdf(cv_data, request.hidden_items, request.template_name)
+
+        # Create filename
+        job_title_safe = version.job_title.replace(" ", "_").replace("/", "-")
+        company_safe = (version.company_name or "Company").replace(" ", "_").replace("/", "-")
+        filename = f"CV_{job_title_safe}_{company_safe}.pdf"
+
+        # Return PDF as streaming response
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating PDF: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

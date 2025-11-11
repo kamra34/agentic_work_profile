@@ -302,6 +302,10 @@ class TailoredCVUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
 
+class PDFDownloadRequest(BaseModel):
+    hidden_items: List[int] = []
+    template_name: str = "modern"
+
 class TailoredCVResponse(BaseModel):
     id: int
     user_id: int

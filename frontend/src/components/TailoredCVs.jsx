@@ -433,6 +433,54 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     }));
   };
 
+  const downloadPDF = async () => {
+    try {
+      const token = localStorage.getItem('token');
+
+      // Get list of hidden item IDs
+      const hiddenItemIds = Object.keys(hiddenItems)
+        .filter(id => hiddenItems[id])
+        .map(id => parseInt(id));
+
+      const response = await fetch(
+        `${API_URL}/api/cv/tailored-versions/${cv.id}/download-pdf`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            hidden_items: hiddenItemIds,
+            template_name: 'modern'
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CV_${cv.job_title.replace(/\s+/g, '_')}_${cv.company_name?.replace(/\s+/g, '_') || 'Company'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      alert('Failed to download PDF. Please try again.');
+    }
+  };
+
   const getSectionIcon = (sectionType) => {
     const icons = {
       'summary': '📝',
@@ -714,9 +762,14 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     <div className="cv-detail-view">
       {/* Header with Back Button and Title */}
       <div className="cv-detail-header">
-        <button className="btn-back" onClick={onBack}>
-          ← Back to List
-        </button>
+        <div className="header-buttons">
+          <button className="btn-back" onClick={onBack}>
+            ← Back to List
+          </button>
+          <button className="btn-download-pdf" onClick={downloadPDF}>
+            📄 Download PDF
+          </button>
+        </div>
         <div className="cv-detail-title-section">
           <h1>{cv.job_title}</h1>
           {cv.company_name && <h2 className="cv-company-name">{cv.company_name}</h2>}
