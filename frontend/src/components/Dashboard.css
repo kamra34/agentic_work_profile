@@ -19,10 +19,31 @@
   margin: 0 auto;
 }
 
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .navbar-left h2 {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 600;
+}
+
+.navbar-versions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.version-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .navbar-right {

@@ -1387,6 +1387,16 @@ async def create_tailored_cv_version(
     so the CV remains intact even if master profile is modified later
     """
     try:
+        # Debug: Log received request data
+        print(f"[DEBUG] Received request data:")
+        print(f"  - job_title: {request.job_title}")
+        print(f"  - company_name: {request.company_name}")
+        print(f"  - job_description length: {len(request.job_description) if request.job_description else 0}")
+        print(f"  - selected_content keys: {list(request.selected_content.keys()) if request.selected_content else None}")
+        print(f"  - job_analysis provided: {request.job_analysis is not None}")
+        if request.job_analysis:
+            print(f"  - job_analysis length: {len(request.job_analysis) if isinstance(request.job_analysis, list) else 'not a list'}")
+
         # Get user's default profile with all nested data
         profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
         if not profile:

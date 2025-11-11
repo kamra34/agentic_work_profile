@@ -31,12 +31,37 @@ function ProfileManagement() {
   const [loading, setLoading] = useState(true);
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [newProfileTitle, setNewProfileTitle] = useState('');
+  const [backendVersion, setBackendVersion] = useState('loading...');
+  const [frontendVersion, setFrontendVersion] = useState('loading...');
   const sectionRefs = useRef({});
   const sectionExpandHandlers = useRef({});
 
   useEffect(() => {
     fetchProfiles();
+    fetchVersions();
   }, []);
+
+  const fetchVersions = async () => {
+    try {
+      // Fetch backend version
+      const backendResponse = await fetch(`${API_URL}/api/version`);
+      if (backendResponse.ok) {
+        const backendData = await backendResponse.json();
+        setBackendVersion(backendData.version);
+      }
+
+      // Fetch frontend version
+      const frontendResponse = await fetch('/VERSION');
+      if (frontendResponse.ok) {
+        const frontendText = await frontendResponse.text();
+        setFrontendVersion(frontendText.trim());
+      }
+    } catch (error) {
+      console.error('Error fetching versions:', error);
+      setBackendVersion('error');
+      setFrontendVersion('error');
+    }
+  };
 
   const fetchProfiles = async () => {
     try {
@@ -143,8 +168,16 @@ function ProfileManagement() {
   return (
     <div className="profile-management">
       <div className="profile-header">
-        <h2>Profile Management</h2>
-        <p className="profile-subtitle">Create and organize your professional profiles manually</p>
+        <div className="header-content">
+          <div>
+            <h2>Profile Management</h2>
+            <p className="profile-subtitle">Create and organize your professional profiles manually</p>
+          </div>
+          <div className="version-info">
+            <span className="version-badge">Frontend: v{frontendVersion}</span>
+            <span className="version-badge">Backend: v{backendVersion}</span>
+          </div>
+        </div>
       </div>
 
       <div className="profile-selector">
@@ -928,7 +961,7 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
     >
       <div className="section-card-header" onClick={() => setExpanded(!expanded)}>
         <div className="section-info">
-          <span className="drag-handle" title="Drag to reorder">⋮⋮</span>
+          <span className="drag-handle" title="Drag to reorder" onClick={(e) => e.stopPropagation()}>⋮⋮</span>
           <span className="section-icon">{section.icon}</span>
           <span className="section-title">{section.title}</span>
           <span className="section-type-badge">{contentType}</span>
@@ -1035,6 +1068,7 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
                         sectionType={section.section_type}
                         maxNesting={sectionConfig?.maxNesting || 1}
                         onUpdate={onUpdate}
+                        allEntries={section.entries.filter(e => !e.parent_entry_id)}
                       />
                     ))}
                 </div>
@@ -1058,7 +1092,7 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
   );
 }
 
-function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpdate }) {
+function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpdate, allEntries = [] }) {
   const [expanded, setExpanded] = useState(false);
   const [showAddSubEntry, setShowAddSubEntry] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
@@ -1066,6 +1100,8 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
   const [isEditing, setIsEditing] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
   const [editingItemContent, setEditingItemContent] = useState('');
+  const [draggedEntryId, setDraggedEntryId] = useState(null);
+  const [draggedItemId, setDraggedItemId] = useState(null);
 
   // For work experience and education: level 0 = job/degree, level 1 = bullet group
   const canHaveBulletGroups = (sectionType === 'work_experience' || sectionType === 'education') && level === 0;
@@ -1237,10 +1273,110 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
     }
   };
 
+  // Reorder entries (works for both top-level entries and sub-entries)
+  const reorderEntries = async (draggedId, targetId, parentId = null) => {
+    try {
+      const token = localStorage.getItem('token');
+
+      // Find entries to reorder based on parent
+      const entriesToReorder = parentId
+        ? allEntries.filter(e => e.parent_entry_id === parentId)
+        : allEntries.filter(e => !e.parent_entry_id);
+
+      const draggedIndex = entriesToReorder.findIndex(e => e.id === draggedId);
+      const targetIndex = entriesToReorder.findIndex(e => e.id === targetId);
+
+      if (draggedIndex === -1 || targetIndex === -1) return;
+
+      // Reorder locally
+      const newEntries = [...entriesToReorder];
+      const [draggedEntry] = newEntries.splice(draggedIndex, 1);
+      newEntries.splice(targetIndex, 0, draggedEntry);
+
+      // Update order values
+      const updates = newEntries.map((entry, index) => ({
+        id: entry.id,
+        order: index
+      }));
+
+      // Send batch update to backend
+      await fetch(`${API_URL}/api/entries/reorder`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ updates })
+      });
+
+      await onUpdate();
+    } catch (err) {
+      console.error('Error reordering entries:', err);
+    }
+  };
+
+  // Reorder items within an entry
+  const reorderItems = async (draggedItemId, targetItemId) => {
+    try {
+      const token = localStorage.getItem('token');
+
+      const items = entry.items || [];
+      const draggedIndex = items.findIndex(i => i.id === draggedItemId);
+      const targetIndex = items.findIndex(i => i.id === targetItemId);
+
+      if (draggedIndex === -1 || targetIndex === -1) return;
+
+      // Reorder locally
+      const newItems = [...items];
+      const [draggedItem] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, draggedItem);
+
+      // Update order values
+      const updates = newItems.map((item, index) => ({
+        id: item.id,
+        order: index
+      }));
+
+      // Send batch update to backend
+      await fetch(`${API_URL}/api/items/reorder`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ updates })
+      });
+
+      await onUpdate();
+    } catch (err) {
+      console.error('Error reordering items:', err);
+    }
+  };
+
   return (
-    <div className={`entry-card level-${level}`} data-entry-id={entry.id}>
+    <div
+      className={`entry-card level-${level} ${draggedEntryId === entry.id ? 'dragging' : ''}`}
+      data-entry-id={entry.id}
+      draggable="true"
+      onDragStart={(e) => {
+        e.stopPropagation();
+        setDraggedEntryId(entry.id);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (draggedEntryId && draggedEntryId !== entry.id) {
+          reorderEntries(draggedEntryId, entry.id, entry.parent_entry_id);
+        }
+      }}
+      onDragEnd={(e) => {
+        e.stopPropagation();
+        setDraggedEntryId(null);
+      }}
+    >
       <div className="entry-header" onClick={() => setExpanded(!expanded)}>
         <div className="entry-info">
+          <span className="drag-handle" title="Drag to reorder" onClick={(e) => e.stopPropagation()}>⋮⋮</span>
           <span className="expand-arrow">{expanded ? '▼' : '▶'}</span>
           <div>
             <div className="entry-title">{entry.title}</div>
@@ -1281,7 +1417,28 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
           {(!canHaveBulletGroups || level > 0) && entry.items && entry.items.length > 0 && (
             <ul className="items-list">
               {entry.items.map(item => (
-                <li key={item.id} className="item" data-item-id={item.id}>
+                <li
+                  key={item.id}
+                  className={`item ${draggedItemId === item.id ? 'dragging' : ''}`}
+                  data-item-id={item.id}
+                  draggable="true"
+                  onDragStart={(e) => {
+                    e.stopPropagation();
+                    setDraggedItemId(item.id);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (draggedItemId && draggedItemId !== item.id) {
+                      reorderItems(draggedItemId, item.id);
+                    }
+                  }}
+                  onDragEnd={(e) => {
+                    e.stopPropagation();
+                    setDraggedItemId(null);
+                  }}
+                >
+                  <span className="drag-handle-item" title="Drag to reorder">⋮</span>
                   {editingItemId === item.id ? (
                     <input
                       type="text"
@@ -1304,7 +1461,7 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
                       }}
                     />
                   ) : (
-                    <span>{item.content}</span>
+                    <span className="item-content">{item.content}</span>
                   )}
                   <div className="item-actions">
                     <button
@@ -1366,6 +1523,7 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
                   maxNesting={maxNesting}
                   level={level + 1}
                   onUpdate={onUpdate}
+                  allEntries={entry.sub_entries}
                 />
               ))}
             </div>
@@ -1640,6 +1798,7 @@ function SummaryBulletList({ section, onUpdate }) {
   const [newBullet, setNewBullet] = useState('');
   const [editingItemId, setEditingItemId] = useState(null);
   const [editingItemContent, setEditingItemContent] = useState('');
+  const [draggedItemId, setDraggedItemId] = useState(null);
 
   // Get or create the summary entry
   const summaryEntry = section.entries?.[0];
@@ -1734,6 +1893,43 @@ function SummaryBulletList({ section, onUpdate }) {
     }
   };
 
+  const reorderItems = async (draggedItemId, targetItemId) => {
+    try {
+      const token = localStorage.getItem('token');
+
+      const items = summaryEntry?.items || [];
+      const draggedIndex = items.findIndex(i => i.id === draggedItemId);
+      const targetIndex = items.findIndex(i => i.id === targetItemId);
+
+      if (draggedIndex === -1 || targetIndex === -1) return;
+
+      // Reorder locally
+      const newItems = [...items];
+      const [draggedItem] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, draggedItem);
+
+      // Update order values
+      const updates = newItems.map((item, index) => ({
+        id: item.id,
+        order: index
+      }));
+
+      // Send batch update to backend
+      await fetch(`${API_URL}/api/items/reorder`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ updates })
+      });
+
+      await onUpdate();
+    } catch (err) {
+      console.error('Error reordering items:', err);
+    }
+  };
+
   return (
     <div className="summary-bullet-list">
       <h4>Summary Bullets</h4>
@@ -1741,7 +1937,28 @@ function SummaryBulletList({ section, onUpdate }) {
       {summaryEntry?.items && summaryEntry.items.length > 0 && (
         <ul className="summary-bullets">
           {summaryEntry.items.map(item => (
-            <li key={item.id} className="summary-bullet-item" data-item-id={item.id}>
+            <li
+              key={item.id}
+              className={`summary-bullet-item ${draggedItemId === item.id ? 'dragging' : ''}`}
+              data-item-id={item.id}
+              draggable="true"
+              onDragStart={(e) => {
+                e.stopPropagation();
+                setDraggedItemId(item.id);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (draggedItemId && draggedItemId !== item.id) {
+                  reorderItems(draggedItemId, item.id);
+                }
+              }}
+              onDragEnd={(e) => {
+                e.stopPropagation();
+                setDraggedItemId(null);
+              }}
+            >
+              <span className="drag-handle-item" title="Drag to reorder">⋮</span>
               {editingItemId === item.id ? (
                 <input
                   type="text"

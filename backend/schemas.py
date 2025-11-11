@@ -292,7 +292,7 @@ class TailoredCVCreate(BaseModel):
     claude_ats_score: Optional[int] = None
     openai_recommendations: Optional[Dict[str, Any]] = None
     claude_recommendations: Optional[Dict[str, Any]] = None
-    job_analysis: Optional[Dict[str, Any]] = None
+    job_analysis: Optional[List[Dict[str, Any]]] = None
     notes: Optional[str] = None
 
 class TailoredCVUpdate(BaseModel):
@@ -316,7 +316,7 @@ class TailoredCVResponse(BaseModel):
     selected_content: Dict[str, Any]
     openai_recommendations: Optional[Dict[str, Any]]
     claude_recommendations: Optional[Dict[str, Any]]
-    job_analysis: Optional[Dict[str, Any]]
+    job_analysis: Optional[List[Dict[str, Any]]]
     notes: Optional[str]
     status: str
     created_at: datetime

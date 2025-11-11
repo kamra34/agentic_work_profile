@@ -96,9 +96,11 @@ function CVPreview({ profile, onSectionClick }) {
           </div>
         ) : summarySection.entries && summarySection.entries.length > 0 ? (
           <div className="cv-summary-bullets">
-            {summarySection.entries[0]?.items?.map((item, idx) => (
+            {summarySection.entries.flatMap(entry =>
+              entry.items || []
+            ).map((item, idx) => (
               <div
-                key={item.id}
+                key={item.id || idx}
                 className="cv-bullet"
                 onDoubleClick={(e) => {
                   e.stopPropagation();

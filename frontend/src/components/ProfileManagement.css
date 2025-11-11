@@ -32,6 +32,13 @@
   margin-bottom: 2rem;
 }
 
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+}
+
 .profile-header h2 {
   margin: 0 0 0.5rem 0;
   color: #2d3748;
@@ -42,6 +49,24 @@
   color: #718096;
   margin: 0;
   font-size: 1.1rem;
+}
+
+.version-info {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.version-badge {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  white-space: nowrap;
 }
 
 .loading {
@@ -351,6 +376,31 @@
   border-radius: 6px;
   margin-bottom: 0.5rem;
   transition: all 0.2s;
+  gap: 0.5rem;
+  cursor: move;
+}
+
+.summary-bullet-item.dragging {
+  opacity: 0.4;
+  border: 2px solid #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.summary-bullet-item .drag-handle-item {
+  cursor: grab;
+  color: #a0aec0;
+  font-size: 0.9rem;
+  transition: color 0.2s;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.summary-bullet-item .drag-handle-item:active {
+  cursor: grabbing;
+}
+
+.summary-bullet-item:hover .drag-handle-item {
+  color: #667eea;
 }
 
 .summary-bullet-item:hover {
@@ -700,6 +750,7 @@
   border-radius: 8px;
   overflow: hidden;
   transition: all 0.2s;
+  cursor: move;
 }
 
 .entry-card.level-0 {
@@ -714,6 +765,12 @@
 .entry-card:hover {
   border-color: #cbd5e0;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.entry-card.dragging {
+  opacity: 0.4;
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .entry-header {
@@ -735,6 +792,23 @@
   align-items: flex-start;
   gap: 0.75rem;
   flex: 1;
+}
+
+.entry-info .drag-handle {
+  cursor: grab;
+  color: #a0aec0;
+  font-size: 1rem;
+  margin-top: 0.25rem;
+  transition: color 0.2s;
+  user-select: none;
+}
+
+.entry-info .drag-handle:active {
+  cursor: grabbing;
+}
+
+.entry-card:hover .drag-handle {
+  color: #667eea;
 }
 
 .expand-arrow {
@@ -794,7 +868,36 @@
   background: #f7fafc;
   border-radius: 6px;
   transition: all 0.2s;
-  gap: 1rem;
+  gap: 0.5rem;
+  cursor: move;
+}
+
+.item.dragging {
+  opacity: 0.4;
+  border: 2px solid #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.item .drag-handle-item {
+  cursor: grab;
+  color: #a0aec0;
+  font-size: 0.9rem;
+  transition: color 0.2s;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.item .drag-handle-item:active {
+  cursor: grabbing;
+}
+
+.item:hover .drag-handle-item {
+  color: #667eea;
+}
+
+.item .item-content {
+  flex: 1;
+  min-width: 0;
 }
 
 .item:hover {
