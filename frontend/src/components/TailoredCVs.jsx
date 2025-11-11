@@ -652,14 +652,16 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                           background: 'none',
                           border: 'none',
                           cursor: 'pointer',
-                          fontSize: '1.1rem',
-                          padding: '0 0.5rem',
-                          opacity: hiddenItems[item.id] ? 0.3 : 1,
-                          transition: 'opacity 0.2s'
+                          fontSize: '1rem',
+                          padding: '0 0.5rem 0 0',
+                          color: hiddenItems[item.id] ? '#cbd5e0' : '#2d3748',
+                          fontWeight: hiddenItems[item.id] ? 'normal' : 'bold',
+                          transition: 'all 0.2s',
+                          lineHeight: 1
                         }}
                         title={hiddenItems[item.id] ? 'Show in CV preview' : 'Hide from CV preview'}
                       >
-                        {hiddenItems[item.id] ? '👁️‍🗨️' : '👁️'}
+                        👁
                       </button>
                       <span className="item-text">{item.content}</span>
                       {item.recommended_by && renderAIBadge(item.recommended_by)}

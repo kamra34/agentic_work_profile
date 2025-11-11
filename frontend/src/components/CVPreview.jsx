@@ -98,7 +98,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
           <div className="cv-summary-bullets">
             {summarySection.entries.flatMap(entry =>
               entry.items || []
-            ).map((item, idx) => (
+            ).filter(item => !hiddenItems[item.id]).map((item, idx) => (
               <div
                 key={item.id || idx}
                 className="cv-bullet"
