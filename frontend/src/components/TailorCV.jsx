@@ -16,8 +16,14 @@ function TailorCV() {
   const [loading, setLoading] = useState(true);
 
   // Step 1: Job Details
-  const [jobDescription, setJobDescription] = useState('');
-  const [jobTitle, setJobTitle] = useState('');
+  const [jobDescription, setJobDescription] = useState(`• Advanced degree in a quantitative field (e.g., PhD/MS in EE, CS, Statistics, or related).
+• 6–10+ years across DS/ML/AI with 2+ years leading teams or programs (people and delivery).
+• Hands-on depth with Python (and familiarity with R/MATLAB a plus), SQL, and modern data tooling.
+• Demonstrated experience on AWS (Bedrock, SageMaker, Lambda, Step Functions) or equivalent clouds.
+• Production experience with retrieval systems (vector indexes, chunking, metadata, eval).
+• Fluency in MLOps: containers, CI/CD, experiment tracking, model monitoring, rollback strategies.
+• Strong communicator who writes clearly, avoids jargon, and can defend decisions with evidence.`);
+  const [jobTitle, setJobTitle] = useState('Senior Data Scientist');
   const [companyName, setCompanyName] = useState('');
 
   // Step 2: AI Analysis Results
