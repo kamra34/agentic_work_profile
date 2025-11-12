@@ -331,6 +331,7 @@ function TailorCV() {
             claudeAnalysis={claudeAnalysis}
             scores={scores}
             scoring={scoring}
+            profile={profile}
             onNext={() => setCurrentStep(3)}
             onBack={() => setCurrentStep(1)}
           />
@@ -441,11 +442,18 @@ function Step1JobDetails({ jobDescription, setJobDescription, jobTitle, setJobTi
 // Step 2: AI Analysis
 // ============================================================================
 
-function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, scores, scoring, onNext, onBack }) {
+function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, scores, scoring, profile, onNext, onBack }) {
   const [selectedTab, setSelectedTab] = useState('openai');
 
   const currentAnalysis = selectedTab === 'openai' ? openaiAnalysis : claudeAnalysis;
   const currentScores = scores?.[selectedTab];
+
+  // Generate profile preview for AI input display
+  const profilePreview = profile?.nodes ?
+    profile.nodes.slice(0, 3).map(node =>
+      `- ${node.node_type}: ${node.title || node.content || 'Untitled'}`
+    ).join('\n') + `\n... (${profile.nodes.length} total sections)`
+    : 'Loading profile...';
 
   return (
     <div className="wizard-step step-2">
@@ -455,12 +463,21 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
       </div>
 
       <div className="step-body">
-        {/* AI Input Display */}
+        {/* AI Input Display - Job Analysis */}
         <AIInputDisplay
-          title="Input Sent to AI Models"
+          title="Step 1: Job Analysis Input"
           content={`Job Description:\n${jobDescription}\n\nPrompt: Analyze this job description and extract key requirements including technical skills, soft skills, experience, education, certifications, must-haves, and nice-to-haves.`}
           defaultExpanded={false}
         />
+
+        {/* AI Input Display - Scoring (only show after scoring starts) */}
+        {(scoring || scores) && (
+          <AIInputDisplay
+            title="Step 2: Profile Scoring Input"
+            content={`Job Requirements:\n${currentAnalysis?.analysis ? JSON.stringify(currentAnalysis.analysis.requirements, null, 2) : 'Analyzing...'}\n\nYour Profile:\n${profilePreview}\n\nPrompt: Score how well this profile matches the job requirements. Provide:\n1. Profile Fit Score (0-100): How well experience and skills match\n2. ATS Score (0-100): Keyword matching and format compatibility\n3. Strengths, gaps, and recommendations`}
+            defaultExpanded={false}
+          />
+        )}
 
         {/* Model Tabs */}
         <div className="model-tabs">
