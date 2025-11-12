@@ -242,6 +242,14 @@ function TailorCV() {
 
   return (
     <div className="tailor-cv">
+      {/* Floating Step Indicator */}
+      {(analyzing || scoring || recommendationsLoading || saving) && (
+        <div className="step-indicator">
+          <div className="step-indicator-icon">{STEPS[currentStep - 1].icon}</div>
+          <div className="step-indicator-text">Step {currentStep}/4</div>
+        </div>
+      )}
+
       {/* Progress Bar */}
       <div className="wizard-header">
         <h1>Create Tailored CV</h1>
@@ -278,6 +286,7 @@ function TailorCV() {
 
         {currentStep === 2 && (
           <Step2AIAnalysis
+            jobDescription={jobDescription}
             openaiAnalysis={openaiAnalysis}
             claudeAnalysis={claudeAnalysis}
             scores={scores}
@@ -289,6 +298,7 @@ function TailorCV() {
 
         {currentStep === 3 && (
           <Step3NodeSelection
+            jobDescription={jobDescription}
             profile={profile}
             recommendations={recommendations}
             selectedNodes={selectedNodes}
@@ -312,6 +322,7 @@ function TailorCV() {
             profile={profile}
             selectedNodes={selectedNodes}
             scores={scores}
+            jobAnalysis={jobAnalysis}
             onSave={handleSaveTailoredCV}
             saving={saving}
             onBack={() => setCurrentStep(3)}
@@ -390,7 +401,7 @@ function Step1JobDetails({ jobDescription, setJobDescription, jobTitle, setJobTi
 // Step 2: AI Analysis
 // ============================================================================
 
-function Step2AIAnalysis({ openaiAnalysis, claudeAnalysis, scores, scoring, onNext, onBack }) {
+function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, scores, scoring, onNext, onBack }) {
   const [selectedTab, setSelectedTab] = useState('openai');
 
   const currentAnalysis = selectedTab === 'openai' ? openaiAnalysis : claudeAnalysis;
@@ -404,13 +415,20 @@ function Step2AIAnalysis({ openaiAnalysis, claudeAnalysis, scores, scoring, onNe
       </div>
 
       <div className="step-body">
+        {/* AI Input Display */}
+        <AIInputDisplay
+          title="Input Sent to AI Models"
+          content={`Job Description:\n${jobDescription}\n\nPrompt: Analyze this job description and extract key requirements including technical skills, soft skills, experience, education, certifications, must-haves, and nice-to-haves.`}
+          defaultExpanded={false}
+        />
+
         {/* Model Tabs */}
         <div className="model-tabs">
           <button
             className={`model-tab ${selectedTab === 'openai' ? 'active' : ''}`}
             onClick={() => setSelectedTab('openai')}
           >
-            <strong>OpenAI GPT-4</strong>
+            <strong>OpenAI GPT-4o</strong>
             {scores?.openai?.scores && (
               <div className="tab-scores">
                 <span className="score">Fit: {scores.openai.scores.fit_score}</span>
@@ -422,7 +440,7 @@ function Step2AIAnalysis({ openaiAnalysis, claudeAnalysis, scores, scoring, onNe
             className={`model-tab ${selectedTab === 'claude' ? 'active' : ''}`}
             onClick={() => setSelectedTab('claude')}
           >
-            <strong>Claude 3.5 Sonnet</strong>
+            <strong>Claude Sonnet 4.5</strong>
             {scores?.claude?.scores && (
               <div className="tab-scores">
                 <span className="score">Fit: {scores.claude.scores.fit_score}</span>
@@ -435,8 +453,11 @@ function Step2AIAnalysis({ openaiAnalysis, claudeAnalysis, scores, scoring, onNe
         {/* Analysis Content */}
         {scoring ? (
           <div className="loading-state">
-            <div className="spinner" />
-            <p>Analyzing job requirements and scoring your profile...</p>
+            <div className="spinner-container">
+              <div className="spinner" />
+              <div className="spinner-text">Analyzing job requirements and scoring your profile...</div>
+              <div className="spinner-subtext">Using {selectedTab === 'openai' ? 'GPT-4o' : 'Claude Sonnet 4.5'}</div>
+            </div>
           </div>
         ) : (
           <div className="analysis-content">
@@ -553,7 +574,7 @@ function Step2AIAnalysis({ openaiAnalysis, claudeAnalysis, scores, scoring, onNe
 // Step 3: Node Selection
 // ============================================================================
 
-function Step3NodeSelection({ profile, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onNext, onBack }) {
+function Step3NodeSelection({ jobDescription, profile, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onNext, onBack }) {
   const flattenNodes = (nodes, result = []) => {
     nodes.forEach(node => {
       result.push(node);
@@ -568,6 +589,12 @@ function Step3NodeSelection({ profile, recommendations, selectedNodes, toggleNod
   const selectedCount = selectedNodes.size;
   const totalCount = allNodes.length;
 
+  // Prepare AI input preview
+  const profilePreview = allNodes.slice(0, 5).map(n =>
+    `- [${n.node_type}] ${n.title || n.content || 'Untitled'}`
+  ).join('\n');
+  const aiInputContent = `Job Description:\n${jobDescription.substring(0, 200)}...\n\nProfile Nodes (${totalCount} total):\n${profilePreview}\n...\n\nPrompt: Recommend which nodes to include/exclude for this specific job, with confidence scores and reasoning.`;
+
   return (
     <div className="wizard-step step-3">
       <div className="step-header">
@@ -576,10 +603,20 @@ function Step3NodeSelection({ profile, recommendations, selectedNodes, toggleNod
       </div>
 
       <div className="step-body">
+        {/* AI Input Display */}
+        <AIInputDisplay
+          title="Input Sent to AI Models for Node Recommendations"
+          content={aiInputContent}
+          defaultExpanded={false}
+        />
+
         {loading ? (
           <div className="loading-state">
-            <div className="spinner" />
-            <p>Getting AI recommendations...</p>
+            <div className="spinner-container">
+              <div className="spinner" />
+              <div className="spinner-text">Getting AI recommendations...</div>
+              <div className="spinner-subtext">Analyzing {totalCount} profile nodes</div>
+            </div>
           </div>
         ) : (
           <>
@@ -671,8 +708,11 @@ function Step3NodeSelection({ profile, recommendations, selectedNodes, toggleNod
 // Step 4: Save & Preview
 // ============================================================================
 
-function Step4SavePreview({ jobTitle, setJobTitle, companyName, setCompanyName, cvStatus, setCvStatus, profile, selectedNodes, scores, onSave, saving, onBack }) {
+function Step4SavePreview({ jobTitle, setJobTitle, companyName, setCompanyName, cvStatus, setCvStatus, profile, selectedNodes, scores, jobAnalysis, onSave, saving, onBack }) {
   const selectedCount = selectedNodes.size;
+
+  // AI Summary for display
+  const aiSummary = `Analysis Results:\n- OpenAI GPT-4o: Fit ${scores?.openai?.scores?.fit_score || 'N/A'}, ATS ${scores?.openai?.scores?.ats_score || 'N/A'}\n- Claude Sonnet 4.5: Fit ${scores?.claude?.scores?.fit_score || 'N/A'}, ATS ${scores?.claude?.scores?.ats_score || 'N/A'}\n\nSelected ${selectedCount} profile items optimized for this role.`;
 
   return (
     <div className="wizard-step step-4">
@@ -682,6 +722,23 @@ function Step4SavePreview({ jobTitle, setJobTitle, companyName, setCompanyName, 
       </div>
 
       <div className="step-body">
+        {/* AI Analysis Summary */}
+        <AIInputDisplay
+          title="AI Analysis Summary"
+          content={aiSummary}
+          defaultExpanded={false}
+        />
+
+        {saving && (
+          <div className="loading-state">
+            <div className="spinner-container">
+              <div className="spinner" />
+              <div className="spinner-text">Saving your tailored CV...</div>
+              <div className="spinner-subtext">Storing analysis and selections</div>
+            </div>
+          </div>
+        )}
+
         <div className="save-form">
           <div className="form-group">
             <label>Job Title *</label>
@@ -762,6 +819,36 @@ function Step4SavePreview({ jobTitle, setJobTitle, companyName, setCompanyName, 
           {saving ? 'Saving...' : 'Save Tailored CV'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Reusable AI Input Display Component
+// ============================================================================
+
+function AIInputDisplay({ title, content, defaultExpanded = false }) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  return (
+    <div className="ai-input-section">
+      <div
+        className="ai-input-header"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="ai-input-title">
+          <span>🤖</span>
+          <span>{title}</span>
+        </div>
+        <div className={`ai-input-toggle ${isExpanded ? 'expanded' : ''}`}>
+          ▼
+        </div>
+      </div>
+      {isExpanded && (
+        <div className="ai-input-content">
+          <pre>{content}</pre>
+        </div>
+      )}
     </div>
   );
 }

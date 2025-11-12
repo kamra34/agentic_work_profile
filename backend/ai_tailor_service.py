@@ -104,7 +104,7 @@ IMPORTANT: Return recommendations for ALL nodes provided."""
 
 
 def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
-    """Analyze job description using OpenAI GPT-4"""
+    """Analyze job description using OpenAI GPT-4o"""
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -131,10 +131,10 @@ def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
 
 
 def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
-    """Analyze job description using Claude"""
+    """Analyze job description using Claude Sonnet 4.5"""
     try:
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             max_tokens=4096,
             messages=[
                 {"role": "user", "content": JOB_ANALYSIS_PROMPT.format(job_description=job_description)}
@@ -145,13 +145,13 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         result = json.loads(response.content[0].text)
         return {
             "success": True,
-            "model": "claude-3-5-sonnet",
+            "model": "claude-sonnet-4.5",
             "analysis": result
         }
     except Exception as e:
         return {
             "success": False,
-            "model": "claude-3-5-sonnet",
+            "model": "claude-sonnet-4.5",
             "error": str(e)
         }
 
@@ -187,10 +187,10 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> D
 
 
 def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> Dict[str, Any]:
-    """Score profile fit using Claude"""
+    """Score profile fit using Claude Sonnet 4.5"""
     try:
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             max_tokens=4096,
             messages=[
                 {"role": "user", "content": SCORING_PROMPT.format(
@@ -204,13 +204,13 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
         result = json.loads(response.content[0].text)
         return {
             "success": True,
-            "model": "claude-3-5-sonnet",
+            "model": "claude-sonnet-4.5",
             "scores": result
         }
     except Exception as e:
         return {
             "success": False,
-            "model": "claude-3-5-sonnet",
+            "model": "claude-sonnet-4.5",
             "error": str(e)
         }
 
@@ -246,10 +246,10 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
 
 
 def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict]) -> Dict[str, Any]:
-    """Recommend which nodes to include using Claude"""
+    """Recommend which nodes to include using Claude Sonnet 4.5"""
     try:
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",
             max_tokens=8192,
             messages=[
                 {"role": "user", "content": NODE_SELECTION_PROMPT.format(
@@ -263,13 +263,13 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
         result = json.loads(response.content[0].text)
         return {
             "success": True,
-            "model": "claude-3-5-sonnet",
+            "model": "claude-sonnet-4.5",
             "recommendations": result
         }
     except Exception as e:
         return {
             "success": False,
-            "model": "claude-3-5-sonnet",
+            "model": "claude-sonnet-4.5",
             "error": str(e)
         }
 
