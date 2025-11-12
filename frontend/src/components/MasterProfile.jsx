@@ -272,10 +272,10 @@ function CVPreviewContent({ nodes, profile }) {
       );
     }
 
-    // Entry level (job, education, etc.)
+    // Entry level (job, education, etc.) with indentation for nested entries
     if (node.node_type === 'entry') {
       return (
-        <div key={node.id} className="cv-entry">
+        <div key={node.id} className={`cv-entry level-${level}`}>
           <div className="entry-header">
             <div className="entry-main">
               <h3 className="entry-title">{node.title}</h3>
@@ -330,10 +330,10 @@ function CVPreviewContent({ nodes, profile }) {
       return null;
     }
 
-    // Paragraph level - shown as text blocks
+    // Paragraph level - shown as text blocks with indentation
     if (node.node_type === 'paragraph') {
       return (
-        <div key={node.id} className="cv-paragraph">
+        <div key={node.id} className={`cv-paragraph level-${level}`}>
           {node.title && <h4 className="paragraph-title">{node.title}</h4>}
           {node.content && <p className="paragraph-content">{node.content}</p>}
           {node.children && node.children.length > 0 && (
