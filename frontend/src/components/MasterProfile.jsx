@@ -400,31 +400,34 @@ function NodeModal({ onSave, onCancel, isChild }) {
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Add {isChild ? 'Item' : 'Section'}</h2>
+          <h2>{isChild ? 'Add Content' : 'Add Section'}</h2>
           <button className="modal-close" onClick={onCancel}>×</button>
         </div>
 
         <form onSubmit={handleSubmit} className="modal-form">
-          <div className="form-group">
-            <label>Type</label>
-            <select
-              value={formData.node_type}
-              onChange={(e) => setFormData({ ...formData, node_type: e.target.value })}
-            >
-              <option value="section">Section - Top level (e.g., Work Experience, Education)</option>
-              <option value="entry">Entry - Main item (e.g., Job position, Degree)</option>
-              <option value="bullet">Bullet - Single point or achievement (shown as • item)</option>
-              <option value="paragraph">Paragraph - Text block or description</option>
-            </select>
-          </div>
-          <div className="form-help">
-            <small>
-              <strong>Section:</strong> Top-level like "Work Experience" •
-              <strong>Entry:</strong> Job/degree with dates •
-              <strong>Bullet:</strong> Achievement points (• bullets) •
-              <strong>Paragraph:</strong> Text blocks
-            </small>
-          </div>
+          {/* Only show type selector for child items, not for root sections */}
+          {isChild && (
+            <>
+              <div className="form-group">
+                <label>Type</label>
+                <select
+                  value={formData.node_type}
+                  onChange={(e) => setFormData({ ...formData, node_type: e.target.value })}
+                >
+                  <option value="entry">Entry - Main item (e.g., Job position, Degree)</option>
+                  <option value="bullet">Bullet - Single point or achievement (shown as • item)</option>
+                  <option value="paragraph">Paragraph - Text block or description</option>
+                </select>
+              </div>
+              <div className="form-help">
+                <small>
+                  <strong>Entry:</strong> Job/degree with dates •
+                  <strong>Bullet:</strong> Achievement points (• bullets) •
+                  <strong>Paragraph:</strong> Text blocks
+                </small>
+              </div>
+            </>
+          )}
 
           <div className="form-group">
             <label>Title *</label>
@@ -437,57 +440,70 @@ function NodeModal({ onSave, onCancel, isChild }) {
             />
           </div>
 
-          <div className="form-group">
-            <label>Subtitle</label>
-            <input
-              type="text"
-              value={formData.subtitle}
-              onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
-              placeholder="e.g., Company name"
-            />
-          </div>
+          {/* Subtitle - for entries and sections */}
+          {(formData.node_type === 'section' || formData.node_type === 'entry') && (
+            <div className="form-group">
+              <label>Subtitle</label>
+              <input
+                type="text"
+                value={formData.subtitle}
+                onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
+                placeholder={formData.node_type === 'section' ? 'Optional subtitle' : 'e.g., Company name'}
+              />
+            </div>
+          )}
 
           <div className="form-group">
             <label>Content</label>
             <textarea
               value={formData.content}
               onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-              placeholder="Description or bullet point text"
-              rows={3}
+              placeholder={
+                formData.node_type === 'bullet' ? 'Achievement or responsibility' :
+                formData.node_type === 'paragraph' ? 'Description or summary text' :
+                'Description'
+              }
+              rows={formData.node_type === 'paragraph' ? 5 : 3}
             />
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label>Start Date</label>
-              <input
-                type="text"
-                value={formData.start_date}
-                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                placeholder="Jan 2020"
-              />
-            </div>
-            <div className="form-group">
-              <label>End Date</label>
-              <input
-                type="text"
-                value={formData.end_date}
-                onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                placeholder="Present"
-              />
-            </div>
-          </div>
+          {/* Dates and Location - only for entries */}
+          {formData.node_type === 'entry' && (
+            <>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Start Date</label>
+                  <input
+                    type="text"
+                    value={formData.start_date}
+                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                    placeholder="Jan 2020"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>End Date</label>
+                  <input
+                    type="text"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    placeholder="Present"
+                  />
+                </div>
+              </div>
 
-          <div className="form-group">
-            <label>Location</label>
-            <input
-              type="text"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              placeholder="San Francisco, CA"
-            />
-          </div>
+              <div className="form-group">
+                <label>Location</label>
+                <input
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  placeholder="San Francisco, CA"
+                />
+              </div>
+            </>
+          )}
 
+          {/* Icon - only for sections */}
           {formData.node_type === 'section' && (
             <div className="form-group">
               <label>Icon (emoji)</label>
