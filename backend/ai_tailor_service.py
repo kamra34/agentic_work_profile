@@ -148,6 +148,7 @@ def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
 def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
     """Analyze job description using Claude Sonnet 4.5"""
     if not anthropic_client:
+        print("ERROR: Claude client is None - API key not loaded")
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
@@ -155,6 +156,7 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         }
 
     try:
+        print(f"DEBUG: Calling Claude API with job description length: {len(job_description)}")
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=4096,
@@ -164,13 +166,23 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
             temperature=0.3
         )
 
+        print(f"DEBUG: Claude response type: {type(response)}")
+        print(f"DEBUG: Claude response content: {response.content if hasattr(response, 'content') else 'NO CONTENT'}")
+
+        if not response.content or len(response.content) == 0:
+            raise ValueError("Claude returned empty content")
+
         result = json.loads(response.content[0].text)
+        print(f"DEBUG: Claude analysis successful, keys: {result.keys()}")
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
             "analysis": result
         }
     except Exception as e:
+        print(f"ERROR: Claude analysis failed: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
