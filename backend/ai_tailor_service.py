@@ -172,7 +172,15 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         if not response.content or len(response.content) == 0:
             raise ValueError("Claude returned empty content")
 
-        result = json.loads(response.content[0].text)
+        # Extract text and remove markdown code blocks if present
+        text = response.content[0].text.strip()
+        if text.startswith('```'):
+            # Remove markdown code blocks
+            lines = text.split('\n')
+            # Remove first line (```json or ```) and last line (```)
+            text = '\n'.join(lines[1:-1])
+
+        result = json.loads(text)
         print(f"DEBUG: Claude analysis successful, keys: {result.keys()}")
         return {
             "success": True,
@@ -249,7 +257,15 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
             temperature=0.3
         )
 
-        result = json.loads(response.content[0].text)
+        # Extract text and remove markdown code blocks if present
+        text = response.content[0].text.strip()
+        if text.startswith('```'):
+            # Remove markdown code blocks
+            lines = text.split('\n')
+            # Remove first line (```json or ```) and last line (```)
+            text = '\n'.join(lines[1:-1])
+
+        result = json.loads(text)
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
@@ -322,7 +338,15 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
             temperature=0.3
         )
 
-        result = json.loads(response.content[0].text)
+        # Extract text and remove markdown code blocks if present
+        text = response.content[0].text.strip()
+        if text.startswith('```'):
+            # Remove markdown code blocks
+            lines = text.split('\n')
+            # Remove first line (```json or ```) and last line (```)
+            text = '\n'.join(lines[1:-1])
+
+        result = json.loads(text)
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
