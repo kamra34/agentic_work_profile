@@ -48,6 +48,16 @@ function TailorCV() {
     fetchProfile();
   }, []);
 
+  // Auto-trigger scoring when job analysis completes
+  useEffect(() => {
+    if (currentStep === 2 && jobAnalysis && !scores && !scoring) {
+      const jobReqs = jobAnalysis.openai?.success ? jobAnalysis.openai.analysis : jobAnalysis.claude?.analysis;
+      if (jobReqs) {
+        handleScoreProfile(jobReqs);
+      }
+    }
+  }, [currentStep, jobAnalysis, scores, scoring]);
+
   const fetchProfile = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -100,13 +110,12 @@ function TailorCV() {
       setOpenaiAnalysis(data.openai);
       setClaudeAnalysis(data.claude);
 
-      // Auto-start scoring (use whichever succeeded)
-      const jobReqs = data.openai?.success ? data.openai.analysis : data.claude?.analysis;
-      if (jobReqs) {
-        await handleScoreProfile(jobReqs);
-      } else {
+      // Check if at least one model succeeded
+      if (!data.openai?.success && !data.claude?.success) {
         alert('Both AI models failed to analyze the job. Please try again.');
+        setCurrentStep(1);
       }
+      // If successful, scoring will be triggered when component mounts or user reviews
     } catch (error) {
       console.error('Error analyzing job:', error);
       alert(`Failed to analyze job description: ${error.message}`);
@@ -147,9 +156,7 @@ function TailorCV() {
       console.log('Scoring result:', data);
       setScores(data);
 
-      // Auto-start node recommendations
-      console.log('Starting node recommendations with job requirements:', jobRequirements);
-      await handleGetRecommendations(jobRequirements);
+      // Scoring complete - user can now review results and proceed to Step 3 manually
     } catch (error) {
       console.error('Error scoring profile:', error);
       alert(`Failed to score profile: ${error.message}`);
@@ -338,7 +345,14 @@ function TailorCV() {
             scores={scores}
             scoring={scoring}
             profile={profile}
-            onNext={() => setCurrentStep(3)}
+            onNext={async () => {
+              // Move to step 3 and trigger recommendations
+              setCurrentStep(3);
+              const jobReqs = openaiAnalysis?.success ? openaiAnalysis.analysis : claudeAnalysis?.analysis;
+              if (jobReqs) {
+                await handleGetRecommendations(jobReqs);
+              }
+            }}
             onBack={() => setCurrentStep(1)}
           />
         )}
