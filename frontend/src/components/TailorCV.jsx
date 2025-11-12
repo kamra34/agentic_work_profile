@@ -79,7 +79,14 @@ function TailorCV() {
         body: JSON.stringify({ job_description: jobDescription })
       });
 
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to analyze job');
+      }
+
       const data = await response.json();
+      console.log('Job analysis result:', data);
+
       setJobAnalysis(data);
       setOpenaiAnalysis(data.openai);
       setClaudeAnalysis(data.claude);
@@ -87,18 +94,26 @@ function TailorCV() {
       // Auto-advance to step 2
       setCurrentStep(2);
 
-      // Auto-start scoring
-      await handleScoreProfile(data.openai.analysis || data.claude.analysis);
+      // Auto-start scoring (use whichever succeeded)
+      const jobReqs = data.openai?.success ? data.openai.analysis : data.claude?.analysis;
+      if (jobReqs) {
+        await handleScoreProfile(jobReqs);
+      } else {
+        alert('Both AI models failed to analyze the job. Please try again.');
+      }
     } catch (error) {
       console.error('Error analyzing job:', error);
-      alert('Failed to analyze job description. Please try again.');
+      alert(`Failed to analyze job description: ${error.message}`);
     } finally {
       setAnalyzing(false);
     }
   };
 
   const handleScoreProfile = async (jobRequirements) => {
-    if (!profile || !jobRequirements) return;
+    if (!profile || !jobRequirements) {
+      console.error('Missing profile or job requirements:', { profile, jobRequirements });
+      return;
+    }
 
     setScoring(true);
     try {
@@ -115,20 +130,30 @@ function TailorCV() {
         })
       });
 
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to score profile');
+      }
+
       const data = await response.json();
+      console.log('Scoring result:', data);
       setScores(data);
 
       // Auto-start node recommendations
       await handleGetRecommendations(jobRequirements);
     } catch (error) {
       console.error('Error scoring profile:', error);
+      alert(`Failed to score profile: ${error.message}`);
     } finally {
       setScoring(false);
     }
   };
 
   const handleGetRecommendations = async (jobRequirements) => {
-    if (!profile || !jobRequirements) return;
+    if (!profile || !jobRequirements) {
+      console.error('Missing profile or job requirements for recommendations');
+      return;
+    }
 
     setRecommendationsLoading(true);
     try {
@@ -145,7 +170,13 @@ function TailorCV() {
         })
       });
 
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to get recommendations');
+      }
+
       const data = await response.json();
+      console.log('Recommendations result:', data);
       setRecommendations(data);
 
       // Auto-select nodes based on the selected model's recommendations
@@ -161,6 +192,7 @@ function TailorCV() {
       }
     } catch (error) {
       console.error('Error getting recommendations:', error);
+      alert(`Failed to get AI recommendations: ${error.message}`);
     } finally {
       setRecommendationsLoading(false);
     }
@@ -457,6 +489,14 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
               <div className="spinner" />
               <div className="spinner-text">Analyzing job requirements and scoring your profile...</div>
               <div className="spinner-subtext">Using {selectedTab === 'openai' ? 'GPT-4o' : 'Claude Sonnet 4.5'}</div>
+            </div>
+          </div>
+        ) : !scores ? (
+          <div className="loading-state">
+            <div className="spinner-container">
+              <div className="spinner" />
+              <div className="spinner-text">Preparing analysis...</div>
+              <div className="spinner-subtext">This may take a few moments</div>
             </div>
           </div>
         ) : (
