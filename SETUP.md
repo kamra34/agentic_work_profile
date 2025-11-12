@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 3. Configure environment:
    - Copy `.env.example` to `.env`
-   - Update database connection: `DATABASE_URL=postgresql://user:pass@host:port/general_work_profile`
+   - Update database connection: `DATABASE_URL=postgresql://user:pass@host:port/your_database_name`
    - Add API keys: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
 
 4. Initialize database:

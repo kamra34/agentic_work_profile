@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Initialize the new hierarchical database schema.
-Run this ONCE on the new general_work_profile database.
+Initialize the hierarchical database schema.
+Run this ONCE to create all tables in your database.
 """
 
 import os
@@ -22,7 +22,6 @@ print("DATABASE INITIALIZATION")
 print("=" * 80)
 print(f"\nDatabase: {DATABASE_URL.split('@')[1]}")  # Hide password
 print("\nThis will create all tables in the database.")
-print("Make sure you're connected to the NEW general_work_profile database!")
 print()
 
 response = input("Continue? (yes/no): ")
