@@ -209,7 +209,11 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, lev
 
         <div className="node-content">
           <span className="node-type-badge">{node.node_type}</span>
-          <span className="node-title">{node.title || 'Untitled'}</span>
+          <span className="node-title">
+            {node.node_type === 'bullet' || node.node_type === 'paragraph'
+              ? (node.content || 'Empty')
+              : (node.title || 'Untitled')}
+          </span>
           {node.subtitle && <span className="node-subtitle">• {node.subtitle}</span>}
         </div>
 
@@ -259,6 +263,12 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, lev
 
 // CV Preview Component
 function CVPreviewContent({ nodes, profile }) {
+  // Helper function to render children
+  const renderChildren = (children, level) => {
+    if (!children || children.length === 0) return null;
+    return children.map(child => renderNode(child, level));
+  };
+
   const renderNode = (node, level = 0) => {
     if (!node.is_visible) return null;
 
@@ -271,64 +281,84 @@ function CVPreviewContent({ nodes, profile }) {
             {node.title}
           </h2>
           {node.content && <p className="section-content">{node.content}</p>}
-          {node.children && node.children.map(child => renderNode(child, level + 1))}
+          {renderChildren(node.children, level + 1)}
         </div>
       );
     }
 
     // Entry level (job, education, etc.) with indentation for nested entries
     if (node.node_type === 'entry') {
+      // Level 1 entries use two-column layout with dates/location on right
+      if (level === 1) {
+        return (
+          <div key={node.id} className={`cv-entry level-${level}`}>
+            <div className="entry-header">
+              <div className="entry-main">
+                <div className="entry-title">{node.title}</div>
+                {node.subtitle && <div className="entry-subtitle">{node.subtitle}</div>}
+              </div>
+              {(node.start_date || node.end_date || node.location) && (
+                <div className="entry-meta">
+                  {node.start_date && <>{node.start_date}{node.end_date && ` - ${node.end_date}`}</>}
+                  {node.location && (
+                    <>
+                      <br />
+                      {node.location}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            {node.content && <div className="entry-description">{node.content}</div>}
+            {renderChildren(node.children, level + 1)}
+          </div>
+        );
+      }
+
+      // Level 2+ entries use simplified single-column layout with tight spacing
       return (
         <div key={node.id} className={`cv-entry level-${level}`}>
-          <div className="entry-header">
-            <div className="entry-main">
-              <h3 className="entry-title">{node.title}</h3>
-              {node.subtitle && <div className="entry-subtitle">{node.subtitle}</div>}
+          <div className="entry-title">{node.title}</div>
+          {node.subtitle && <div className="entry-subtitle">{node.subtitle}</div>}
+          {(node.start_date || node.end_date || node.location) && (
+            <div className="entry-meta">
+              {node.start_date && <>{node.start_date}{node.end_date && ` - ${node.end_date}`}</>}
+              {node.location && ` | ${node.location}`}
             </div>
-            {(node.start_date || node.end_date || node.location) && (
-              <div className="entry-meta">
-                {node.start_date && (
-                  <span className="entry-date">
-                    {node.start_date} {node.end_date && `- ${node.end_date}`}
-                  </span>
-                )}
-                {node.location && <span className="entry-location"> | {node.location}</span>}
-              </div>
-            )}
-          </div>
-          {node.content && <p className="entry-description">{node.content}</p>}
-          {node.children && node.children.length > 0 && (
-            <ul className="entry-items">
-              {node.children.map(child => renderNode(child, level + 1))}
-            </ul>
           )}
+          {node.content && <div className="entry-description">{node.content}</div>}
+          {renderChildren(node.children, level + 1)}
         </div>
       );
     }
 
-    // Bullet level - shown as list items
+    // Bullet level - shown as divs with bullet character
     if (node.node_type === 'bullet' || node.node_type === 'item') {
       // If it has content (text), show it as a bullet
       if (node.content) {
         return (
-          <li key={node.id} className="cv-item">
-            {node.title && <strong>{node.title}: </strong>}
-            {node.content}
+          <div key={node.id} className={`cv-bullet level-${level}`}>
+            <span className="bullet-icon">•</span>
+            <span className="bullet-content">
+              {node.title && <strong>{node.title}: </strong>}
+              {node.content}
+            </span>
             {/* If bullet has children, nest them */}
             {node.children && node.children.length > 0 && (
-              <ul className="nested-items">
-                {node.children.map(child => renderNode(child, level + 1))}
-              </ul>
+              <div className="bullet-children">
+                {renderChildren(node.children, level + 1)}
+              </div>
             )}
-          </li>
+          </div>
         );
       }
       // If it only has title, show title as bullet
       if (node.title) {
         return (
-          <li key={node.id} className="cv-item">
-            {node.title}
-          </li>
+          <div key={node.id} className={`cv-bullet level-${level}`}>
+            <span className="bullet-icon">•</span>
+            <span className="bullet-content">{node.title}</span>
+          </div>
         );
       }
       return null;
@@ -342,7 +372,7 @@ function CVPreviewContent({ nodes, profile }) {
           {node.content && <p className="paragraph-content">{node.content}</p>}
           {node.children && node.children.length > 0 && (
             <div className="paragraph-children">
-              {node.children.map(child => renderNode(child, level + 1))}
+              {renderChildren(node.children, level + 1)}
             </div>
           )}
         </div>
@@ -437,43 +467,57 @@ function NodeModal({ onSave, onCancel, isChild, parentLevel = 0 }) {
             </>
           )}
 
-          <div className="form-group">
-            <label>Title *</label>
-            <input
-              type="text"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="e.g., Work Experience, Senior Engineer"
-              required
-            />
-          </div>
-
-          {/* Subtitle - for entries and sections */}
-          {(formData.node_type === 'section' || formData.node_type === 'entry') && (
+          {/* For bullets and paragraphs, only show content field */}
+          {(formData.node_type === 'bullet' || formData.node_type === 'paragraph') ? (
             <div className="form-group">
-              <label>Subtitle</label>
-              <input
-                type="text"
-                value={formData.subtitle}
-                onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
-                placeholder={formData.node_type === 'section' ? 'Optional subtitle' : 'e.g., Company name'}
+              <label>{formData.node_type === 'bullet' ? 'Bullet Point' : 'Paragraph Text'} *</label>
+              <textarea
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                placeholder={
+                  formData.node_type === 'bullet'
+                    ? 'Enter your achievement or responsibility'
+                    : 'Enter your paragraph text'
+                }
+                rows={formData.node_type === 'paragraph' ? 5 : 3}
+                required
               />
             </div>
-          )}
+          ) : (
+            <>
+              {/* Title and subtitle for sections and entries */}
+              <div className="form-group">
+                <label>Title *</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  placeholder="e.g., Work Experience, Senior Engineer"
+                  required
+                />
+              </div>
 
-          <div className="form-group">
-            <label>Content</label>
-            <textarea
-              value={formData.content}
-              onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-              placeholder={
-                formData.node_type === 'bullet' ? 'Achievement or responsibility' :
-                formData.node_type === 'paragraph' ? 'Description or summary text' :
-                'Description'
-              }
-              rows={formData.node_type === 'paragraph' ? 5 : 3}
-            />
-          </div>
+              <div className="form-group">
+                <label>Subtitle</label>
+                <input
+                  type="text"
+                  value={formData.subtitle}
+                  onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
+                  placeholder={formData.node_type === 'section' ? 'Optional subtitle' : 'e.g., Company name'}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Content</label>
+                <textarea
+                  value={formData.content}
+                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                  placeholder="Description"
+                  rows={3}
+                />
+              </div>
+            </>
+          )}
 
           {/* Dates and Location - only for entries */}
           {formData.node_type === 'entry' && (
