@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './TailorCV.css';
+import { MOCK_RECOMMENDATIONS_STEP3 } from './mockRecommendations';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -9,8 +10,7 @@ const USE_MOCK_DATA = false;
 const STEPS = [
   { id: 1, name: 'Job Details', icon: '📋' },
   { id: 2, name: 'AI Analysis', icon: '🤖' },
-  { id: 3, name: 'Smart Selection', icon: '✨' },
-  { id: 4, name: 'Save & Preview', icon: '💾' }
+  { id: 3, name: 'Smart Selection', icon: '✨' }
 ];
 
 // Mock data from your actual test run
@@ -106,34 +106,9 @@ const MOCK_SCORES_DATA = {
   }
 };
 
-// Mock recommendations data for Step 3 testing
-const MOCK_RECOMMENDATIONS_DATA = {
-  openai: {
-    success: true,
-    model: "openai-gpt-4o",
-    recommendations: {
-      selection_summary: {
-        total_nodes: 70,
-        recommended_include: 51,
-        recommended_exclude: 19
-      },
-      tailoring_strategy: "Focus on highlighting AWS experience, leadership in cross-functional teams, hands-on Python and ML expertise, MLOps practices, and RAG/retrieval systems. De-emphasize older roles and non-technical management activities that don't directly demonstrate the required technical depth."
-    }
-  },
-  claude: {
-    success: true,
-    model: "claude-sonnet-4.5",
-    recommendations: {
-      selection_summary: {
-        total_nodes: 70,
-        recommended_include: 51,
-        recommended_exclude: 19
-      },
-      tailoring_strategy: "Focus on highlighting AWS experience, leadership in cross-functional teams, hands-on Python and ML expertise, MLOps practices, and RAG/retrieval systems. De-emphasize older roles and non-technical management activities that don't directly demonstrate the required technical depth."
-    }
-  },
-  total_nodes: 70
-};
+// Mock recommendations data imported from mockRecommendations.js
+// This contains actual AI responses captured from production API calls
+// Use this for Step 3 UI testing without calling AI APIs
 
 function TailorCV() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -168,6 +143,7 @@ function TailorCV() {
   const [selectedNodes, setSelectedNodes] = useState(new Set());
   const [selectedModel, setSelectedModel] = useState('openai'); // Which model's recommendations to use
   const [isPreFetching, setIsPreFetching] = useState(false); // Background pre-fetch state
+  const hasAutoAppliedRef = useRef(false); // Track if we've already auto-applied recommendations
 
   // Step 4: Save
   const [saving, setSaving] = useState(false);
@@ -186,6 +162,54 @@ function TailorCV() {
       }
     }
   }, [currentStep, jobAnalysis, scores, scoring]);
+
+  // Auto-apply recommendations when they first load
+  useEffect(() => {
+    if (recommendations && profile && !hasAutoAppliedRef.current) {
+      console.log('[Auto-apply] Recommendations loaded, auto-applying for default model:', selectedModel);
+
+      const modelRecs = recommendations[selectedModel];
+      if (modelRecs && modelRecs.success && modelRecs.recommendations.selected_nodes) {
+        const autoSelected = new Set();
+
+        // Build a map from node id to global_id for quick lookup
+        const flattenNodesForMap = (nodes, map = new Map()) => {
+          nodes.forEach(node => {
+            if (node.id) {
+              map.set(node.id, node.global_id);
+            }
+            if (node.children && node.children.length > 0) {
+              flattenNodesForMap(node.children, map);
+            }
+          });
+          return map;
+        };
+        const idToGlobalIdMap = flattenNodesForMap(profile.nodes || []);
+
+        // Apply recommendations
+        modelRecs.recommendations.selected_nodes.forEach(rec => {
+          if (rec.include) {
+            let globalId = null;
+            if (rec.id && idToGlobalIdMap.has(rec.id)) {
+              globalId = idToGlobalIdMap.get(rec.id);
+            } else if (rec.node_id && idToGlobalIdMap.has(rec.node_id)) {
+              globalId = idToGlobalIdMap.get(rec.node_id);
+            } else if (rec.global_id) {
+              globalId = rec.global_id;
+            }
+
+            if (globalId) {
+              autoSelected.add(globalId);
+            }
+          }
+        });
+
+        console.log(`[Auto-apply] Selected ${autoSelected.size} nodes for ${selectedModel}`);
+        setSelectedNodes(autoSelected);
+        hasAutoAppliedRef.current = true; // Mark as applied
+      }
+    }
+  }, [recommendations, profile, selectedModel]);
 
   const fetchProfile = async () => {
     try {
@@ -341,24 +365,22 @@ function TailorCV() {
       console.log('🧪 TEST MODE: Using mock recommendations data');
       setTimeout(() => {
         console.log('✅ Mock recommendations loaded');
-        setRecommendations(MOCK_RECOMMENDATIONS_DATA);
+        setRecommendations(MOCK_RECOMMENDATIONS_STEP3);
 
         // Auto-select nodes based on the selected model's recommendations
         console.log(`🎯 Auto-selecting nodes from ${selectedModel} model...`);
-        // Since mock data doesn't have per-node recommendations with global_ids,
-        // we'll just select all nodes for testing purposes
-        if (profile?.nodes) {
-          const allNodeIds = new Set();
-          const collectIds = (nodes) => {
-            nodes.forEach(node => {
-              if (node.global_id) allNodeIds.add(node.global_id);
-              if (node.children) collectIds(node.children);
-            });
-          };
-          collectIds(profile.nodes);
-          console.log(`✅ Auto-selected ${allNodeIds.size} nodes (mock mode - all nodes)`);
-          setSelectedNodes(allNodeIds);
-        }
+
+        // Extract node IDs where include=true from the selected model's recommendations
+        const modelRecs = MOCK_RECOMMENDATIONS_STEP3[selectedModel]?.recommendations?.selected_nodes || [];
+        const recommendedIds = new Set(
+          modelRecs
+            .filter(rec => rec.include === true)
+            .map(rec => rec.global_id)
+        );
+
+        console.log(`✅ Auto-selected ${recommendedIds.size} nodes based on ${selectedModel} recommendations`);
+        console.log(`   (${modelRecs.filter(rec => rec.include === true).length} included, ${modelRecs.filter(rec => rec.include === false).length} excluded)`);
+        setSelectedNodes(recommendedIds);
 
         if (isBackground) {
           console.log('🏁 Background pre-fetch finished - ready for Step 3!');
@@ -486,9 +508,22 @@ function TailorCV() {
       return;
     }
 
+    if (selectedNodes.size === 0) {
+      alert('Please select at least one item to include in your tailored CV');
+      return;
+    }
+
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
+
+      console.log('💾 [SAVE] Saving tailored CV with:', {
+        job_title: jobTitle,
+        company_name: companyName,
+        selected_nodes: selectedNodes.size,
+        selected_model: selectedModel
+      });
+
       const response = await fetch(`${API_URL}/api/tailor/save`, {
         method: 'POST',
         headers: {
@@ -500,23 +535,34 @@ function TailorCV() {
           job_title: jobTitle,
           company_name: companyName,
           job_description: jobDescription,
-          selected_node_ids: Array.from(selectedNodes),
+          selected_node_ids: Array.from(selectedNodes),  // Global IDs of selected nodes
           fit_scores: scores,
           ats_scores: scores,
-          recommendations: recommendations,
-          job_analysis: jobAnalysis,
+          recommendations: recommendations,  // Complete AI recommendations
+          job_analysis: jobAnalysis,  // Job requirements from both models
+          selected_model: selectedModel,  // Which AI model was used for selection
           status: cvStatus
         })
       });
 
       const data = await response.json();
       if (data.success) {
-        alert('✅ Tailored CV saved successfully!');
+        const summary = data.summary || {};
+        alert(
+          `✅ Tailored CV saved successfully!\n\n` +
+          `📊 Summary:\n` +
+          `• Selected nodes: ${summary.selected_nodes || selectedNodes.size}\n` +
+          `• Root sections: ${summary.root_sections || 'N/A'}\n` +
+          `• AI model: ${summary.ai_model || selectedModel}\n` +
+          `• Job: ${jobTitle}${companyName ? ` at ${companyName}` : ''}`
+        );
         // Could navigate to the tailored CVs list page
+      } else {
+        throw new Error(data.message || 'Failed to save');
       }
     } catch (error) {
       console.error('Error saving tailored CV:', error);
-      alert('Failed to save tailored CV. Please try again.');
+      alert(`❌ Failed to save tailored CV\n\n${error.message || 'Please try again.'}`);
     } finally {
       setSaving(false);
     }
@@ -533,16 +579,59 @@ function TailorCV() {
   };
 
   const applyModelRecommendations = (model) => {
+    console.log(`[Apply Recommendations] Model: ${model}`);
     setSelectedModel(model);
     const modelRecs = recommendations?.[model];
+
     if (modelRecs && modelRecs.success && modelRecs.recommendations.selected_nodes) {
       const autoSelected = new Set();
-      modelRecs.recommendations.selected_nodes.forEach(node => {
-        if (node.include) {
-          autoSelected.add(node.global_id || node.node_id);
+
+      // Build a map from node id to global_id for quick lookup
+      const flattenNodesForMap = (nodes, map = new Map()) => {
+        nodes.forEach(node => {
+          if (node.id) {
+            map.set(node.id, node.global_id);
+          }
+          if (node.children && node.children.length > 0) {
+            flattenNodesForMap(node.children, map);
+          }
+        });
+        return map;
+      };
+      const idToGlobalIdMap = flattenNodesForMap(profile?.nodes || []);
+      console.log(`[Apply Recommendations] Built map with ${idToGlobalIdMap.size} nodes`);
+
+      // Apply recommendations
+      let includedCount = 0;
+      let matchedCount = 0;
+      modelRecs.recommendations.selected_nodes.forEach(rec => {
+        if (rec.include) {
+          includedCount++;
+          // Try to match by: id (new format), node_id (old format), or global_id (fallback)
+          let globalId = null;
+          if (rec.id && idToGlobalIdMap.has(rec.id)) {
+            globalId = idToGlobalIdMap.get(rec.id);
+            matchedCount++;
+          } else if (rec.node_id && idToGlobalIdMap.has(rec.node_id)) {
+            globalId = idToGlobalIdMap.get(rec.node_id);
+            matchedCount++;
+          } else if (rec.global_id) {
+            globalId = rec.global_id;
+            matchedCount++;
+          }
+
+          if (globalId) {
+            autoSelected.add(globalId);
+          } else {
+            console.warn(`[Apply Recommendations] Could not match rec:`, rec);
+          }
         }
       });
+
+      console.log(`[Apply Recommendations] Included: ${includedCount}, Matched: ${matchedCount}, Selected: ${autoSelected.size}`);
       setSelectedNodes(autoSelected);
+    } else {
+      console.warn('[Apply Recommendations] No valid recommendations found for model:', model);
     }
   };
 
@@ -556,32 +645,31 @@ function TailorCV() {
 
   return (
     <div className="tailor-cv">
-      {/* Mock Data Toggle */}
-      <div className="dev-tools-toggle">
-        <label className="mock-data-toggle">
-          <input
-            type="checkbox"
-            checked={useMockData}
-            onChange={(e) => setUseMockData(e.target.checked)}
-          />
-          <span className="toggle-slider"></span>
-          <span className="toggle-label">
-            🧪 Test Mode {useMockData ? '(Mock Data)' : '(Real AI)'}
-          </span>
-        </label>
-      </div>
-
       {/* Floating Step Indicator */}
       {(analyzing || scoring || recommendationsLoading || saving) && (
         <div className="step-indicator">
           <div className="step-indicator-icon">{STEPS[currentStep - 1].icon}</div>
-          <div className="step-indicator-text">Step {currentStep}/4</div>
+          <div className="step-indicator-text">Step {currentStep}/{STEPS.length}</div>
         </div>
       )}
 
       {/* Progress Bar */}
       <div className="wizard-header">
-        <h1>Create Tailored CV</h1>
+        <div className="header-top">
+          <h1>Create Tailored CV</h1>
+          {/* Test Mode Toggle */}
+          <label className="mock-data-toggle">
+            <input
+              type="checkbox"
+              checked={useMockData}
+              onChange={(e) => setUseMockData(e.target.checked)}
+            />
+            <span className="toggle-slider"></span>
+            <span className="toggle-label">
+              🧪 Test Mode
+            </span>
+          </label>
+        </div>
         <div className="wizard-progress">
           {STEPS.map((step, index) => (
             <div
@@ -640,8 +728,11 @@ function TailorCV() {
 
         {currentStep === 3 && (
           <Step3NodeSelection
+            jobTitle={jobTitle}
+            companyName={companyName}
             jobDescription={jobDescription}
             profile={profile}
+            scores={scores}
             jobAnalysis={jobAnalysis}
             recommendations={recommendations}
             selectedNodes={selectedNodes}
@@ -649,7 +740,8 @@ function TailorCV() {
             selectedModel={selectedModel}
             applyModelRecommendations={applyModelRecommendations}
             loading={recommendationsLoading}
-            onNext={() => setCurrentStep(4)}
+            onSave={handleSaveTailoredCV}
+            saving={saving}
             onBack={() => setCurrentStep(2)}
           />
         )}
@@ -1178,7 +1270,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
 // Step 3: Node Selection
 // ============================================================================
 
-function Step3NodeSelection({ jobDescription, profile, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onNext, onBack }) {
+function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, scores, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onSave, saving, onBack }) {
   const flattenNodes = (nodes, result = []) => {
     nodes.forEach(node => {
       result.push(node);
@@ -1192,6 +1284,41 @@ function Step3NodeSelection({ jobDescription, profile, jobAnalysis, recommendati
   const allNodes = profile?.nodes ? flattenNodes(profile.nodes) : [];
   const selectedCount = selectedNodes.size;
   const totalCount = allNodes.length;
+
+  // Download recommendations as JSON for mock data
+  const downloadRecommendations = () => {
+    if (!recommendations) {
+      console.warn('No recommendations to download');
+      return;
+    }
+
+    const dataStr = JSON.stringify(recommendations, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `step3_recommendations_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    console.log('✅ Recommendations downloaded successfully');
+  };
+
+  // Save tailored CV to database
+  const handleSave = () => {
+    if (!profile || !jobTitle || !recommendations) {
+      alert('Missing required data. Please complete all steps.');
+      return;
+    }
+
+    if (selectedNodes.size === 0) {
+      alert('Please select at least one item to include in your tailored CV.');
+      return;
+    }
+
+    onSave();
+  };
 
   // Clean dict - remove null, empty strings, empty arrays (same as backend)
   const cleanDict = (d) => {
@@ -1230,36 +1357,31 @@ function Step3NodeSelection({ jobDescription, profile, jobAnalysis, recommendati
     return cleaned;
   };
 
-  // Convert nodes to the format sent to AI (same as backend does)
+  // Convert nodes to minimal format for AI (reduce token usage by ~30-40%)
+  // Only send: id (primary key) + content fields
+  // Remove: global_id, node_type, level, context_path, is_visible
   const nodesToAIFormat = (nodes) => {
     if (!nodes || nodes.length === 0) return [];
 
-    const flattenForAI = (nodeList, parentContext = '') => {
+    const flattenForAI = (nodeList) => {
       const result = [];
       nodeList.forEach(node => {
-        const context = parentContext ? `${parentContext} > ${node.title || 'Untitled'}` : (node.title || 'Untitled');
-
         const nodeData = {
-          id: node.id,
-          global_id: node.global_id,
-          node_type: node.node_type,
+          id: node.id,           // Primary key - absolutely unique identifier
           title: node.title,
           subtitle: node.subtitle,
           content: node.content,
           start_date: node.start_date,
           end_date: node.end_date,
-          location: node.location,
-          level: node.level || 0,
-          context_path: context,
-          is_visible: node.is_visible !== false
+          location: node.location
         };
 
-        // Clean the node data
+        // Clean the node data (remove null/empty values)
         const cleanedNode = cleanDict(nodeData);
         result.push(cleanedNode);
 
         if (node.children && node.children.length > 0) {
-          result.push(...flattenForAI(node.children, context));
+          result.push(...flattenForAI(node.children));
         }
       });
       return result;
@@ -1279,7 +1401,7 @@ function Step3NodeSelection({ jobDescription, profile, jobAnalysis, recommendati
 Job Requirements:
 {job_requirements}
 
-Profile Nodes (hierarchical structure):
+Profile Nodes:
 {profile_nodes}
 
 For each node, decide if it should be INCLUDED (visible) or EXCLUDED (hidden) in the tailored CV.
@@ -1293,8 +1415,7 @@ Return JSON with node IDs and selection status:
 {
   "selected_nodes": [
     {
-      "node_id": "uuid-or-id",
-      "global_id": "global-uuid",
+      "id": 123,
       "include": true,
       "confidence": 0.95,
       "reason": "Why this should be included/excluded",
@@ -1310,17 +1431,15 @@ Return JSON with node IDs and selection status:
   "tailoring_strategy": "Brief explanation of the overall tailoring approach"
 }
 
-IMPORTANT: Return recommendations for ALL nodes provided.`;
+IMPORTANT:
+- Use the "id" field from each node (not node_id or global_id)
+- Return recommendations for ALL nodes provided
+- The "id" is the database primary key - use it exactly as provided`;
 
-  // Complete AI input content
-  const aiInputContent = `=== JOB REQUIREMENTS (EXTRACTED FROM JOB ANALYSIS) ===
-${JSON.stringify(jobRequirements, null, 2)}
-
-=== ALL PROFILE NODES (${nodesForAI.length} nodes) ===
-${JSON.stringify(nodesForAI, null, 2)}
-
-=== EXACT PROMPT USED ===
-${NODE_SELECTION_PROMPT.replace('{job_requirements}', JSON.stringify(jobRequirements, null, 2)).replace('{profile_nodes}', JSON.stringify(nodesForAI, null, 2))}`;
+  // Show only the actual prompt sent to AI (with data filled in)
+  const aiInputContent = NODE_SELECTION_PROMPT
+    .replace('{job_requirements}', JSON.stringify(jobRequirements, null, 2))
+    .replace('{profile_nodes}', JSON.stringify(nodesForAI, null, 2));
 
   return (
     <div className="wizard-step step-3">
@@ -1370,45 +1489,98 @@ ${NODE_SELECTION_PROMPT.replace('{job_requirements}', JSON.stringify(jobRequirem
               <div className="selection-summary">
                 <strong>{selectedCount}</strong> of <strong>{totalCount}</strong> items selected
               </div>
+
+              {/* Action buttons */}
+              {recommendations && (
+                <div className="action-buttons">
+                  <button
+                    className="btn-download-recommendations"
+                    onClick={downloadRecommendations}
+                    title="Download AI recommendations as JSON for debugging"
+                  >
+                    <span className="btn-icon">📥</span>
+                    <span className="btn-text">Download Data</span>
+                  </button>
+                  <button
+                    className="btn-save-tailored-cv"
+                    onClick={handleSave}
+                    disabled={saving || selectedNodes.size === 0}
+                    title="Save this tailored CV to your account"
+                  >
+                    <span className="btn-icon">{saving ? '⏳' : '💾'}</span>
+                    <span className="btn-text">{saving ? 'Saving...' : 'Save Tailored CV'}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Node List */}
-            <div className="nodes-list">
+            {/* Node List - Two Column Layout */}
+            <div className="nodes-list-two-column">
               {allNodes.map(node => {
                 const isSelected = selectedNodes.has(node.global_id);
+                // Find AI recommendation for this node
+                // Match by database id (primary key) first, then try other formats for backward compatibility
                 const modelRec = recommendations?.[selectedModel]?.recommendations?.selected_nodes?.find(
-                  rec => rec.global_id === node.global_id || rec.node_id === node.id
+                  rec => {
+                    // Primary match: database id (number)
+                    if (rec.id === node.id) return true;
+                    // Fallback for old format: node_id or global_id
+                    if (rec.node_id === node.id || rec.global_id === node.global_id) return true;
+                    return false;
+                  }
                 );
 
                 return (
                   <div
                     key={node.global_id || node.id}
-                    className={`node-item ${isSelected ? 'selected' : ''} ${modelRec?.include ? 'recommended' : ''}`}
-                    onClick={() => toggleNodeSelection(node.global_id)}
+                    className={`node-item-row ${isSelected ? 'selected' : ''} ${modelRec?.include ? 'recommended' : ''}`}
                   >
-                    <div className="node-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleNodeSelection(node.global_id)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </div>
-                    <div className="node-content">
-                      <div className="node-header">
-                        <span className="node-type-badge">{node.node_type}</span>
-                        <span className="node-title">
-                          {node.node_type === 'bullet' || node.node_type === 'paragraph'
-                            ? (node.content || 'Empty')
-                            : (node.title || 'Untitled')}
-                        </span>
+                    {/* Left Column: Node Content */}
+                    <div className="node-content-column" onClick={() => toggleNodeSelection(node.global_id)}>
+                      <div className="node-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleNodeSelection(node.global_id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
                       </div>
-                      {node.subtitle && <div className="node-subtitle">{node.subtitle}</div>}
-                      {modelRec?.reason && (
-                        <div className="ai-recommendation">
-                          <strong>AI:</strong> {modelRec.reason}
-                          {modelRec.confidence && <span className="confidence"> ({Math.round(modelRec.confidence * 100)}% confidence)</span>}
+                      <div className="node-info">
+                        <div className="node-header">
+                          <span className="node-type-badge">{node.node_type}</span>
+                          <span className="node-title">
+                            {node.node_type === 'bullet' || node.node_type === 'paragraph'
+                              ? (node.content || 'Empty')
+                              : (node.title || 'Untitled')}
+                          </span>
                         </div>
+                        {node.subtitle && <div className="node-subtitle">{node.subtitle}</div>}
+                      </div>
+                    </div>
+
+                    {/* Right Column: AI Recommendation */}
+                    <div className="node-ai-column">
+                      {modelRec ? (
+                        <div className={`ai-recommendation ${modelRec.include ? 'recommend-include' : 'recommend-exclude'}`}>
+                          <div className="ai-rec-header">
+                            <strong>{modelRec.include ? '✓ Include' : '✗ Exclude'}</strong>
+                            {modelRec.confidence && (
+                              <span className="confidence">{Math.round(modelRec.confidence * 100)}%</span>
+                            )}
+                          </div>
+                          {modelRec.reason && (
+                            <div className="ai-rec-reason">{modelRec.reason}</div>
+                          )}
+                          {modelRec.relevance_tags && modelRec.relevance_tags.length > 0 && (
+                            <div className="ai-rec-tags">
+                              {modelRec.relevance_tags.map((tag, idx) => (
+                                <span key={idx} className="tag">{tag}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="ai-no-recommendation">No AI recommendation</div>
                       )}
                     </div>
                   </div>
@@ -1421,10 +1593,7 @@ ${NODE_SELECTION_PROMPT.replace('{job_requirements}', JSON.stringify(jobRequirem
 
       <div className="step-actions">
         <button className="btn-secondary" onClick={onBack}>
-          ← Back
-        </button>
-        <button className="btn-primary btn-large" onClick={onNext}>
-          Continue to Save →
+          ← Back to Analysis
         </button>
       </div>
     </div>

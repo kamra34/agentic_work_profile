@@ -727,11 +727,14 @@ async def recommend_node_selection(
     total_time = time.time() - start_time
     print(f"🏁 [RECOMMEND-NODES] Total request time: {total_time:.2f}s")
 
-    return {
+    # Prepare response
+    response_data = {
         "openai": openai_recommendations,
         "claude": claude_recommendations,
         "total_nodes": len(flat_nodes)
     }
+
+    return response_data
 
 
 @app.post("/api/tailor/save")
@@ -741,17 +744,21 @@ async def save_tailored_cv(
     db: Session = Depends(get_db)
 ):
     """
-    Save a tailored CV with selected nodes and AI analysis results.
+    Save a tailored CV with complete snapshot of selected nodes.
+
+    This creates a frozen-in-time version of the CV that can always be reconstructed
+    exactly as it was, even if the master profile is later modified.
     """
     profile_id = request.get("profile_id")
     job_title = request.get("job_title")
     company_name = request.get("company_name")
     job_description = request.get("job_description")
-    selected_node_ids = request.get("selected_node_ids", [])
+    selected_node_ids = request.get("selected_node_ids", [])  # List of global_ids
     fit_scores = request.get("fit_scores")
     ats_scores = request.get("ats_scores")
     recommendations = request.get("recommendations")
     job_analysis = request.get("job_analysis")
+    selected_model = request.get("selected_model", "openai")  # Which AI model was used
     status = request.get("status", "draft")
 
     if not profile_id or not job_title:
@@ -766,38 +773,167 @@ async def save_tailored_cv(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    # Create content snapshot
-    def node_to_dict(node):
-        return {
+    print(f"📋 [SAVE-CV] Saving tailored CV: {job_title} at {company_name}")
+    print(f"📋 [SAVE-CV] Selected {len(selected_node_ids)} nodes from profile {profile.title}")
+
+    # Build complete node lookup map: global_id -> node object
+    def build_node_map(node, node_map):
+        node_map[node.global_id] = node
+        for child in node.children:
+            build_node_map(child, node_map)
+
+    node_lookup = {}
+    for node in profile.nodes:
+        build_node_map(node, node_lookup)
+
+    # Convert node to complete dict with ALL fields from profile_nodes table
+    def node_to_complete_dict(node, include_children=True):
+        """
+        Convert SQLAlchemy node to complete dictionary with ALL fields.
+        This ensures we can perfectly reconstruct the CV even if master profile changes.
+        """
+        node_dict = {
+            # Identity
             "id": node.id,
             "global_id": node.global_id,
+            "profile_id": node.profile_id,
+            "parent_id": node.parent_id,
+
+            # Hierarchy
+            "level": node.level,
+            "root_id": node.root_id,
+
+            # Type
             "node_type": node.node_type,
+
+            # Content
             "title": node.title,
             "subtitle": node.subtitle,
             "content": node.content,
+            "content_type": node.content_type,
+
+            # Optional metadata
             "start_date": node.start_date,
             "end_date": node.end_date,
             "location": node.location,
-            "level": node.level,
+
+            # Display and organization
             "order": node.order,
             "is_visible": node.is_visible,
-            "children": [node_to_dict(child) for child in node.children] if node.children else []
+            "icon": node.icon,
+
+            # Flexible extensions
+            "attributes": node.attributes,
+            "meta_info": node.meta_info,
+
+            # Tracking
+            "created_at": node.created_at.isoformat() if node.created_at else None,
+            "updated_at": node.updated_at.isoformat() if node.updated_at else None,
         }
 
-    nodes_dict = {}
-    root_node_ids = []
-    for node in profile.nodes:
-        nodes_dict[node.global_id] = node_to_dict(node)
-        if node.parent_id is None:
-            root_node_ids.append(node.global_id)
+        if include_children and node.children:
+            node_dict["children"] = [node_to_complete_dict(child) for child in node.children]
+        else:
+            node_dict["children"] = []
 
+        return node_dict
+
+    # Build hierarchical structure of ONLY selected nodes
+    selected_nodes_set = set(selected_node_ids)
+
+    def filter_and_build_hierarchy(node):
+        """
+        Recursively filter nodes to include only selected ones and their necessary parents.
+        Returns the node dict if it or any descendant is selected, None otherwise.
+        """
+        # Check if any children should be included
+        filtered_children = []
+        if node.children:
+            for child in node.children:
+                filtered_child = filter_and_build_hierarchy(child)
+                if filtered_child:
+                    filtered_children.append(filtered_child)
+
+        # Include this node if it's selected OR has selected descendants
+        if node.global_id in selected_nodes_set or filtered_children:
+            node_dict = node_to_complete_dict(node, include_children=False)
+            node_dict["children"] = filtered_children
+            node_dict["is_selected"] = node.global_id in selected_nodes_set
+            return node_dict
+
+        return None
+
+    # Build filtered hierarchy starting from root nodes
+    filtered_root_nodes = []
+    for node in profile.nodes:
+        if node.parent_id is None:  # Root node
+            filtered_node = filter_and_build_hierarchy(node)
+            if filtered_node:
+                filtered_root_nodes.append(filtered_node)
+
+    # Save COMPLETE AI recommendations from BOTH models
+    # This includes ALL nodes (not just selected) so we have full context
+    complete_recommendations = {}
+    if recommendations:
+        for model_name in ['openai', 'claude']:
+            if model_name in recommendations:
+                model_data = recommendations[model_name]
+                if model_data.get('success') and model_data.get('recommendations'):
+                    complete_recommendations[model_name] = {
+                        'success': model_data.get('success'),
+                        'model': model_data.get('model'),
+                        'recommendations': {
+                            'selected_nodes': model_data['recommendations'].get('selected_nodes', []),
+                            'selection_summary': model_data['recommendations'].get('selection_summary', {}),
+                            'tailoring_strategy': model_data['recommendations'].get('tailoring_strategy', ''),
+                            'profile_fit_score': model_data['recommendations'].get('profile_fit_score'),
+                            'ats_score': model_data['recommendations'].get('ats_score')
+                        }
+                    }
+                else:
+                    # Save error info if model failed
+                    complete_recommendations[model_name] = {
+                        'success': False,
+                        'error': model_data.get('error', 'Unknown error')
+                    }
+
+    # Read backend version
+    backend_version = "unknown"
+    try:
+        from pathlib import Path
+        version_file = Path(__file__).parent / "VERSION"
+        if version_file.exists():
+            backend_version = version_file.read_text().strip()
+    except Exception:
+        pass
+
+    # Create complete content snapshot
     content_snapshot = {
-        "nodes": nodes_dict,
-        "root_node_ids": root_node_ids,
-        "contact_info": profile.contact_info
+        "nodes": filtered_root_nodes,  # Hierarchical structure with only selected nodes
+        "contact_info": profile.contact_info,
+        "profile_title": profile.title,
+        "profile_id": profile.id,
+        "backend_version": backend_version,
+        "created_at": datetime.now().isoformat(),
+        "selected_count": len(selected_node_ids),
+        "total_nodes_in_profile": len(node_lookup)
     }
 
-    # Create tailored CV record
+    # Build selected_node_ids list with both id and global_id for reference
+    selected_nodes_with_ids = []
+    for global_id in selected_node_ids:
+        node = node_lookup.get(global_id)
+        if node:
+            selected_nodes_with_ids.append({
+                "id": node.id,
+                "global_id": node.global_id
+            })
+
+    print(f"📋 [SAVE-CV] Built snapshot with {len(filtered_root_nodes)} root sections")
+    print(f"📋 [SAVE-CV] Selected model: {selected_model}")
+    print(f"📋 [SAVE-CV] Saving recommendations from both models: {list(complete_recommendations.keys())}")
+
+    # Create tailored CV record with complete snapshot
     tailored_cv = TailoredCV(
         user_id=current_user.id,
         profile_id=profile_id,
@@ -806,21 +942,32 @@ async def save_tailored_cv(
         job_description=job_description,
         fit_scores=fit_scores,
         ats_scores=ats_scores,
-        selected_node_ids=selected_node_ids,
+        selected_node_ids=selected_nodes_with_ids,
         content_snapshot=content_snapshot,
-        recommendations=recommendations,
-        job_analysis=job_analysis,
+        recommendations=complete_recommendations,  # Complete recommendations from BOTH models
+        job_analysis=job_analysis,  # Job requirements from BOTH models
         status=status
     )
+
+    # Add selected_model to the record (we'll need to add this field to the model)
+    # For now, store it in content_snapshot
+    content_snapshot["selected_ai_model"] = selected_model
 
     db.add(tailored_cv)
     db.commit()
     db.refresh(tailored_cv)
 
+    print(f"✅ [SAVE-CV] Tailored CV saved with ID: {tailored_cv.id}")
+
     return {
         "success": True,
         "tailored_cv_id": tailored_cv.id,
-        "message": "Tailored CV saved successfully"
+        "message": "Tailored CV saved successfully",
+        "summary": {
+            "selected_nodes": len(selected_node_ids),
+            "root_sections": len(filtered_root_nodes),
+            "ai_model": selected_model
+        }
     }
 
 

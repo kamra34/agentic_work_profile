@@ -120,24 +120,42 @@ class TailoredCV(Base):
     company_name = Column(String, nullable=True)
     job_description = Column(Text, nullable=True)
 
-    # AI scores
-    fit_scores = Column(JSON, nullable=True)  # {"openai": 85, "claude": 90, "gemini": 88}
+    # AI scores (from Step 2 - both models)
+    fit_scores = Column(JSON, nullable=True)  # {"openai": 85, "claude": 90}
     ats_scores = Column(JSON, nullable=True)  # {"openai": 75, "claude": 80}
 
-    # Selected nodes (track by global_id)
-    selected_node_ids = Column(JSON, nullable=False)  # ["uuid-1", "uuid-2", ...]
+    # Selected nodes - store BOTH id (for exact table reference) and global_id (for flexibility)
+    selected_node_ids = Column(JSON, nullable=False)
+    # [
+    #   {"id": 123, "global_id": "uuid-1"},
+    #   {"id": 124, "global_id": "uuid-2"}
+    # ]
 
-    # Content snapshot at time of tailoring
+    # Content snapshot at time of tailoring (denormalized for historical accuracy)
     content_snapshot = Column(JSON, nullable=False)
     # {
-    #   "nodes": {"uuid-1": {...node_data...}, "uuid-2": {...}},
+    #   "nodes": {"uuid-1": {...complete_node_data_with_id...}, "uuid-2": {...}},
     #   "root_node_ids": ["uuid-1", "uuid-4"],
     #   "contact_info": {...}
     # }
 
-    # AI recommendations and analysis
-    recommendations = Column(JSON, nullable=True)  # {"openai": {...}, "claude": {...}}
-    job_analysis = Column(JSON, nullable=True)
+    # AI recommendations and analysis (complete data from Step 3)
+    recommendations = Column(JSON, nullable=True)
+    # {
+    #   "openai": {
+    #     "success": true,
+    #     "model": "openai-gpt-4o",
+    #     "recommendations": {
+    #       "selected_nodes": [
+    #         {"node_id": 123, "global_id": "uuid", "include": true, "confidence": 0.9, "reason": "...", "relevance_tags": [...]}
+    #       ],
+    #       "selection_summary": {"total_nodes": 70, "recommended_include": 42, "recommended_exclude": 20},
+    #       "tailoring_strategy": "..."
+    #     }
+    #   },
+    #   "claude": {...same structure...}
+    # }
+    job_analysis = Column(JSON, nullable=True)  # Complete job requirements from both models
 
     # Application tracking
     status = Column(String, default="draft")  # draft, applied, interview, offer, rejected, etc.
