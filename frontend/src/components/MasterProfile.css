@@ -656,3 +656,16 @@
   font-size: 18px;
   color: #6b7280;
 }
+
+/* Clickable preview items */
+.clickable-preview-item {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+.clickable-preview-item:hover {
+  background-color: rgba(59, 130, 246, 0.08);
+}

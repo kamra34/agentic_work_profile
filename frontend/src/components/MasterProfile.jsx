@@ -8,11 +8,13 @@ function MasterProfile() {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState(null);
-  const [isEditing, setIsEditing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addParentId, setAddParentId] = useState(null);
   const [addParentLevel, setAddParentLevel] = useState(0);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingNode, setEditingNode] = useState(null);
   const [draggedNode, setDraggedNode] = useState(null);
+  const [expandedNodes, setExpandedNodes] = useState(new Set());
 
   useEffect(() => {
     fetchProfile();
@@ -30,6 +32,19 @@ function MasterProfile() {
         const defaultProfile = profiles.find(p => p.is_default) || profiles[0];
         setProfile(defaultProfile);
         setNodes(defaultProfile.nodes || []);
+
+        // Initialize all nodes as expanded by default
+        const allNodeIds = new Set();
+        const collectNodeIds = (nodes) => {
+          nodes.forEach(node => {
+            allNodeIds.add(node.id);
+            if (node.children && node.children.length > 0) {
+              collectNodeIds(node.children);
+            }
+          });
+        };
+        collectNodeIds(defaultProfile.nodes || []);
+        setExpandedNodes(allNodeIds);
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -42,6 +57,61 @@ function MasterProfile() {
     setAddParentId(parentId);
     setAddParentLevel(parentLevel);
     setShowAddModal(true);
+  };
+
+  const handleEditNode = (node) => {
+    setEditingNode(node);
+    setShowEditModal(true);
+  };
+
+  // Find all ancestor IDs for a given node
+  const findNodePath = (nodes, targetId, path = []) => {
+    for (const node of nodes) {
+      if (node.id === targetId) {
+        return [...path, node.id];
+      }
+      if (node.children && node.children.length > 0) {
+        const found = findNodePath(node.children, targetId, [...path, node.id]);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  // Handle clicking a node in the preview - expand path and scroll to it
+  const handlePreviewNodeClick = (nodeId) => {
+    const path = findNodePath(nodes, nodeId);
+    if (path) {
+      // Expand all parent nodes (all except the last one which is the target)
+      const newExpandedNodes = new Set(expandedNodes);
+      path.slice(0, -1).forEach(id => newExpandedNodes.add(id));
+      setExpandedNodes(newExpandedNodes);
+
+      // Find and select the node
+      const findNode = (nodes, id) => {
+        for (const node of nodes) {
+          if (node.id === id) return node;
+          if (node.children) {
+            const found = findNode(node.children, id);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const targetNode = findNode(nodes, nodeId);
+      if (targetNode) {
+        setSelectedNode(targetNode);
+
+        // Scroll to the node after a short delay to allow expansion animation
+        setTimeout(() => {
+          const element = document.querySelector(`[data-node-id="${nodeId}"]`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
+    }
   };
 
   const handleSaveNode = async (nodeData) => {
@@ -66,6 +136,16 @@ function MasterProfile() {
     }
   };
 
+  const handleSaveEditNode = async (nodeData) => {
+    try {
+      await handleUpdateNode(editingNode.id, nodeData);
+      setShowEditModal(false);
+      setEditingNode(null);
+    } catch (error) {
+      console.error('Error updating node:', error);
+    }
+  };
+
   const handleUpdateNode = async (nodeId, updates) => {
     try {
       const token = localStorage.getItem('token');
@@ -80,7 +160,6 @@ function MasterProfile() {
 
       if (response.ok) {
         await fetchProfile();
-        setIsEditing(false);
       }
     } catch (error) {
       console.error('Error updating node:', error);
@@ -233,11 +312,14 @@ function MasterProfile() {
                   selectedNode={selectedNode}
                   onSelect={setSelectedNode}
                   onAdd={handleAddNode}
+                  onEdit={handleEditNode}
                   onUpdate={handleUpdateNode}
                   onDelete={handleDeleteNode}
                   onReorder={handleReorderNode}
                   draggedNode={draggedNode}
                   setDraggedNode={setDraggedNode}
+                  expandedNodes={expandedNodes}
+                  setExpandedNodes={setExpandedNodes}
                   level={0}
                 />
               ))
@@ -253,12 +335,16 @@ function MasterProfile() {
           </div>
 
           <div className="cv-preview">
-            <CVPreviewContent nodes={nodes} profile={profile} />
+            <CVPreviewContent
+              nodes={nodes}
+              profile={profile}
+              onNodeClick={handlePreviewNodeClick}
+            />
           </div>
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Add Modal */}
       {showAddModal && (
         <NodeModal
           onSave={handleSaveNode}
@@ -271,16 +357,41 @@ function MasterProfile() {
           parentLevel={addParentLevel}
         />
       )}
+
+      {/* Edit Modal */}
+      {showEditModal && editingNode && (
+        <NodeModal
+          onSave={handleSaveEditNode}
+          onCancel={() => {
+            setShowEditModal(false);
+            setEditingNode(null);
+          }}
+          isChild={editingNode.parent_id !== null}
+          parentLevel={editingNode.level}
+          editMode={true}
+          existingData={editingNode}
+        />
+      )}
     </div>
   );
 }
 
 // Tree Node Component - Recursive
-function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, onReorder, draggedNode, setDraggedNode, level }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDelete, onReorder, draggedNode, setDraggedNode, expandedNodes, setExpandedNodes, level }) {
   const [dragOver, setDragOver] = useState(null); // 'before', 'after', or null
   const isSelected = selectedNode?.id === node.id;
   const isDragging = draggedNode?.id === node.id;
+  const isExpanded = expandedNodes.has(node.id) || !node.children || node.children.length === 0;
+
+  const toggleExpanded = () => {
+    const newExpandedNodes = new Set(expandedNodes);
+    if (expandedNodes.has(node.id)) {
+      newExpandedNodes.delete(node.id);
+    } else {
+      newExpandedNodes.add(node.id);
+    }
+    setExpandedNodes(newExpandedNodes);
+  };
 
   const handleDragStart = (e) => {
     e.stopPropagation();
@@ -359,13 +470,14 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, onR
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onDragEnd={handleDragEnd}
+        data-node-id={node.id}
       >
         {node.children && node.children.length > 0 && (
           <button
             className="expand-btn"
             onClick={(e) => {
               e.stopPropagation();
-              setIsExpanded(!isExpanded);
+              toggleExpanded();
             }}
           >
             {isExpanded ? '▼' : '▶'}
@@ -383,6 +495,16 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, onR
         </div>
 
         <div className="node-actions">
+          <button
+            className="btn-icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(node);
+            }}
+            title="Edit"
+          >
+            ✎
+          </button>
           <button
             className="btn-icon"
             onClick={(e) => {
@@ -415,11 +537,14 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, onR
               selectedNode={selectedNode}
               onSelect={onSelect}
               onAdd={onAdd}
+              onEdit={onEdit}
               onUpdate={onUpdate}
               onDelete={onDelete}
               onReorder={onReorder}
               draggedNode={draggedNode}
               setDraggedNode={setDraggedNode}
+              expandedNodes={expandedNodes}
+              setExpandedNodes={setExpandedNodes}
               level={level + 1}
             />
           ))}
@@ -430,7 +555,7 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, onR
 }
 
 // CV Preview Component
-function CVPreviewContent({ nodes, profile }) {
+function CVPreviewContent({ nodes, profile, onNodeClick }) {
   // Helper function to render children
   const renderChildren = (children, level) => {
     if (!children || children.length === 0) return null;
@@ -440,10 +565,22 @@ function CVPreviewContent({ nodes, profile }) {
   const renderNode = (node, level = 0) => {
     if (!node.is_visible) return null;
 
+    // Common click handler
+    const handleClick = (e) => {
+      e.stopPropagation();
+      if (onNodeClick) {
+        onNodeClick(node.id);
+      }
+    };
+
     // Section level
     if (node.node_type === 'section' && level === 0) {
       return (
-        <div key={node.id} className="cv-section">
+        <div
+          key={node.id}
+          className="cv-section clickable-preview-item"
+          onClick={handleClick}
+        >
           <h2 className="cv-section-title">
             {node.icon && <span className="section-icon">{node.icon}</span>}
             {node.title}
@@ -459,7 +596,11 @@ function CVPreviewContent({ nodes, profile }) {
       // Level 1 entries use two-column layout with dates/location on right
       if (level === 1) {
         return (
-          <div key={node.id} className={`cv-entry level-${level}`}>
+          <div
+            key={node.id}
+            className={`cv-entry level-${level} clickable-preview-item`}
+            onClick={handleClick}
+          >
             <div className="entry-header">
               <div className="entry-main">
                 <div className="entry-title">{node.title}</div>
@@ -485,7 +626,11 @@ function CVPreviewContent({ nodes, profile }) {
 
       // Level 2+ entries use simplified single-column layout with tight spacing
       return (
-        <div key={node.id} className={`cv-entry level-${level}`}>
+        <div
+          key={node.id}
+          className={`cv-entry level-${level} clickable-preview-item`}
+          onClick={handleClick}
+        >
           <div className="entry-title">{node.title}</div>
           {node.subtitle && <div className="entry-subtitle">{node.subtitle}</div>}
           {(node.start_date || node.end_date || node.location) && (
@@ -505,7 +650,11 @@ function CVPreviewContent({ nodes, profile }) {
       // If it has content (text), show it as a bullet
       if (node.content) {
         return (
-          <div key={node.id} className={`cv-bullet level-${level}`}>
+          <div
+            key={node.id}
+            className={`cv-bullet level-${level} clickable-preview-item`}
+            onClick={handleClick}
+          >
             <span className="bullet-icon">•</span>
             <span className="bullet-content">
               {node.title && <strong>{node.title}: </strong>}
@@ -523,7 +672,11 @@ function CVPreviewContent({ nodes, profile }) {
       // If it only has title, show title as bullet
       if (node.title) {
         return (
-          <div key={node.id} className={`cv-bullet level-${level}`}>
+          <div
+            key={node.id}
+            className={`cv-bullet level-${level} clickable-preview-item`}
+            onClick={handleClick}
+          >
             <span className="bullet-icon">•</span>
             <span className="bullet-content">{node.title}</span>
           </div>
@@ -535,7 +688,11 @@ function CVPreviewContent({ nodes, profile }) {
     // Paragraph level - shown as text blocks with indentation
     if (node.node_type === 'paragraph') {
       return (
-        <div key={node.id} className={`cv-paragraph level-${level}`}>
+        <div
+          key={node.id}
+          className={`cv-paragraph level-${level} clickable-preview-item`}
+          onClick={handleClick}
+        >
           {node.title && <h4 className="paragraph-title">{node.title}</h4>}
           {node.content && <p className="paragraph-content">{node.content}</p>}
           {node.children && node.children.length > 0 && (
@@ -549,7 +706,11 @@ function CVPreviewContent({ nodes, profile }) {
 
     // Default rendering for any other types
     return (
-      <div key={node.id} className={`cv-node cv-node-${node.node_type}`}>
+      <div
+        key={node.id}
+        className={`cv-node cv-node-${node.node_type} clickable-preview-item`}
+        onClick={handleClick}
+      >
         {node.title && <strong>{node.title}</strong>}
         {node.content && <span> {node.content}</span>}
         {node.children && node.children.map(child => renderNode(child, level + 1))}
@@ -578,24 +739,40 @@ function CVPreviewContent({ nodes, profile }) {
 }
 
 // Node Modal Component
-function NodeModal({ onSave, onCancel, isChild, parentLevel = 0 }) {
+function NodeModal({ onSave, onCancel, isChild, parentLevel = 0, editMode = false, existingData = null }) {
   // Level 2+ can only add bullets/paragraphs, not entries
   const canAddEntry = parentLevel < 2;
   const defaultType = isChild ? (canAddEntry ? 'entry' : 'bullet') : 'section';
 
-  const [formData, setFormData] = useState({
-    node_type: defaultType,
-    title: '',
-    subtitle: '',
-    content: '',
-    content_type: 'text',
-    start_date: '',
-    end_date: '',
-    location: '',
-    icon: '',
-    order: 0,
-    is_visible: true
-  });
+  const [formData, setFormData] = useState(
+    editMode && existingData
+      ? {
+          node_type: existingData.node_type || defaultType,
+          title: existingData.title || '',
+          subtitle: existingData.subtitle || '',
+          content: existingData.content || '',
+          content_type: existingData.content_type || 'text',
+          start_date: existingData.start_date || '',
+          end_date: existingData.end_date || '',
+          location: existingData.location || '',
+          icon: existingData.icon || '',
+          order: existingData.order || 0,
+          is_visible: existingData.is_visible !== undefined ? existingData.is_visible : true
+        }
+      : {
+          node_type: defaultType,
+          title: '',
+          subtitle: '',
+          content: '',
+          content_type: 'text',
+          start_date: '',
+          end_date: '',
+          location: '',
+          icon: '',
+          order: 0,
+          is_visible: true
+        }
+  );
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -606,13 +783,13 @@ function NodeModal({ onSave, onCancel, isChild, parentLevel = 0 }) {
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{isChild ? 'Add Content' : 'Add Section'}</h2>
+          <h2>{editMode ? 'Edit Item' : (isChild ? 'Add Content' : 'Add Section')}</h2>
           <button className="modal-close" onClick={onCancel}>×</button>
         </div>
 
         <form onSubmit={handleSubmit} className="modal-form">
-          {/* Only show type selector for child items, not for root sections */}
-          {isChild && (
+          {/* Only show type selector for child items in add mode, not for root sections or edit mode */}
+          {isChild && !editMode && (
             <>
               <div className="form-group">
                 <label>Type</label>
@@ -633,6 +810,19 @@ function NodeModal({ onSave, onCancel, isChild, parentLevel = 0 }) {
                 </small>
               </div>
             </>
+          )}
+
+          {/* Show read-only type in edit mode */}
+          {editMode && (
+            <div className="form-group">
+              <label>Type</label>
+              <input
+                type="text"
+                value={formData.node_type}
+                disabled
+                style={{ backgroundColor: '#f5f5f5', cursor: 'not-allowed' }}
+              />
+            </div>
           )}
 
           {/* For bullets and paragraphs, only show content field */}
