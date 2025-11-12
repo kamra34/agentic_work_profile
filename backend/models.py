@@ -42,7 +42,7 @@ class Profile(Base):
 
     # Relationships
     user = relationship("User", back_populates="profiles")
-    nodes = relationship("ProfileNode", back_populates="profile", cascade="all, delete-orphan")
+    nodes = relationship("ProfileNode", back_populates="profile", cascade="all, delete-orphan", order_by="ProfileNode.order")
 
 
 class ProfileNode(Base):

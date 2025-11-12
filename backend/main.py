@@ -6,7 +6,7 @@ Generic endpoints handle all profile content through ProfileNode model.
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
@@ -155,9 +155,9 @@ def get_profiles(
 ):
     """Get all profiles for current user"""
     profiles = db.query(Profile).filter(Profile.user_id == current_user.id).all()
-    # Only return root nodes
+    # Only return root nodes, sorted by order
     for profile in profiles:
-        profile.nodes = [n for n in profile.nodes if n.parent_id is None]
+        profile.nodes = sorted([n for n in profile.nodes if n.parent_id is None], key=lambda x: x.order)
     return profiles
 
 
@@ -176,7 +176,8 @@ def get_profile(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     # Only return root nodes (children loaded via relationship)
-    profile.nodes = [n for n in profile.nodes if n.parent_id is None]
+    # Sort by order to ensure correct display
+    profile.nodes = sorted([n for n in profile.nodes if n.parent_id is None], key=lambda x: x.order)
     return profile
 
 
@@ -304,13 +305,23 @@ def create_node(
             level = parent.level + 1
             root_id = parent.root_id if parent.root_id is not None else parent.id
 
+    # Calculate next order value for siblings
+    # Get max order among siblings (nodes with same parent_id)
+    max_order = db.query(func.max(ProfileNode.order)).filter(
+        ProfileNode.profile_id == profile_id,
+        ProfileNode.parent_id == node_data.parent_id
+    ).scalar()
+    # If no siblings exist (max_order is None), start at 0, otherwise increment
+    next_order = 0 if max_order is None else max_order + 1
+
     # Create node
     node = ProfileNode(
         global_id=str(uuid.uuid4()),
         profile_id=profile_id,
         level=level,
         root_id=root_id,
-        **node_data.model_dump(exclude={"parent_id", "children", "level", "root_id"})
+        order=next_order,
+        **node_data.model_dump(exclude={"parent_id", "children", "level", "root_id", "order"})
     )
     if node_data.parent_id is not None:
         node.parent_id = node_data.parent_id
@@ -389,8 +400,7 @@ def delete_node(
 @app.post("/nodes/{node_id}/move")
 def move_node(
     node_id: int,
-    new_parent_id: Optional[int] = None,
-    new_order: Optional[int] = None,
+    move_data: dict,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -407,13 +417,34 @@ def move_node(
     if not profile:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    new_parent_id = move_data.get('new_parent_id')
+    new_order = move_data.get('new_order')
+
+    print(f"🔄 Moving node {node_id}")
+    print(f"   Current: parent_id={node.parent_id}, order={node.order}")
+    print(f"   New: parent_id={new_parent_id}, order={new_order}")
+
     if new_parent_id is not None:
         node.parent_id = new_parent_id
     if new_order is not None:
         node.order = new_order
 
     db.commit()
+
+    # Normalize orders for all siblings (sequential 0, 1, 2...)
+    siblings = db.query(ProfileNode).filter(
+        ProfileNode.profile_id == node.profile_id,
+        ProfileNode.parent_id == node.parent_id
+    ).order_by(ProfileNode.order).all()
+
+    print(f"   Found {len(siblings)} siblings to normalize")
+    for idx, sibling in enumerate(siblings):
+        print(f"   - Node {sibling.id} ({sibling.title}): {sibling.order} -> {idx}")
+        sibling.order = idx
+
+    db.commit()
     db.refresh(node)
+    print(f"✅ Node {node_id} moved successfully, new order: {node.order}")
     return node
 
 

@@ -12,6 +12,7 @@ function MasterProfile() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addParentId, setAddParentId] = useState(null);
   const [addParentLevel, setAddParentLevel] = useState(0);
+  const [draggedNode, setDraggedNode] = useState(null);
 
   useEffect(() => {
     fetchProfile();
@@ -102,6 +103,93 @@ function MasterProfile() {
     }
   };
 
+  const handleReorderNode = async (draggedNodeId, targetNodeId, position) => {
+    try {
+      const token = localStorage.getItem('token');
+
+      // Find the dragged and target nodes to get their parent context
+      const findNode = (nodes, id) => {
+        for (const node of nodes) {
+          if (node.id === id) return node;
+          if (node.children) {
+            const found = findNode(node.children, id);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const findParent = (nodes, childId) => {
+        for (const node of nodes) {
+          if (node.children && node.children.find(c => c.id === childId)) {
+            return node;
+          }
+          if (node.children) {
+            const found = findParent(node.children, childId);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const draggedNode = findNode(nodes, draggedNodeId);
+      const targetNode = findNode(nodes, targetNodeId);
+      const targetParent = findParent(nodes, targetNodeId);
+
+      console.log('🔄 Reordering:', {
+        draggedNode: { id: draggedNode?.id, title: draggedNode?.title, order: draggedNode?.order },
+        targetNode: { id: targetNode?.id, title: targetNode?.title, order: targetNode?.order },
+        position,
+        targetParent: targetParent?.id || 'null (root level)'
+      });
+
+      if (!draggedNode || !targetNode) {
+        console.log('❌ Missing node(s)');
+        return;
+      }
+
+      // Determine new parent - same as target's parent
+      let newParentId = targetParent ? targetParent.id : null;
+
+      // Calculate new order based on position
+      let newOrder;
+      if (position === 'before') {
+        newOrder = targetNode.order - 0.5; // Place between previous and target
+      } else {
+        newOrder = targetNode.order + 0.5; // Place between target and next
+      }
+
+      console.log('📤 Sending to API:', { new_parent_id: newParentId, new_order: newOrder });
+
+      // Move the node
+      const response = await fetch(`${API_URL}/nodes/${draggedNodeId}/move`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          new_parent_id: newParentId,
+          new_order: newOrder
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to move node');
+      }
+
+      const result = await response.json();
+      console.log('✅ API response:', result);
+
+      // Refresh the profile to get updated order
+      console.log('🔄 Refreshing profile...');
+      await fetchProfile();
+      console.log('✅ Profile refreshed, nodes updated');
+    } catch (error) {
+      console.error('❌ Error reordering node:', error);
+    }
+  };
+
   if (loading) {
     return <div className="master-profile-loading">Loading profile...</div>;
   }
@@ -147,6 +235,9 @@ function MasterProfile() {
                   onAdd={handleAddNode}
                   onUpdate={handleUpdateNode}
                   onDelete={handleDeleteNode}
+                  onReorder={handleReorderNode}
+                  draggedNode={draggedNode}
+                  setDraggedNode={setDraggedNode}
                   level={0}
                 />
               ))
@@ -185,15 +276,89 @@ function MasterProfile() {
 }
 
 // Tree Node Component - Recursive
-function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, level }) {
+function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, onReorder, draggedNode, setDraggedNode, level }) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [dragOver, setDragOver] = useState(null); // 'before', 'after', or null
   const isSelected = selectedNode?.id === node.id;
+  const isDragging = draggedNode?.id === node.id;
+
+  const handleDragStart = (e) => {
+    e.stopPropagation();
+    setDraggedNode(node);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedNode || draggedNode.id === node.id) return;
+
+    // RULE 1: Only allow dragging nodes of the same type
+    if (draggedNode.node_type !== node.node_type) {
+      e.dataTransfer.dropEffect = 'none';
+      return; // Can't drag section to entry, entry to bullet, etc.
+    }
+
+    // RULE 2: Only allow dragging within the same parent context
+    // Both nodes must have the same parent_id
+    if (draggedNode.parent_id !== node.parent_id) {
+      e.dataTransfer.dropEffect = 'none';
+      return; // Can't drag across different parents
+    }
+
+    // Valid drop target
+    e.dataTransfer.dropEffect = 'move';
+
+    // Determine if we're hovering over top or bottom half
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    const position = e.clientY < midpoint ? 'before' : 'after';
+
+    setDragOver(position);
+  };
+
+  const handleDragLeave = (e) => {
+    e.stopPropagation();
+    setDragOver(null);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedNode || draggedNode.id === node.id) {
+      setDragOver(null);
+      return;
+    }
+
+    // Apply same validation rules as dragOver
+    if (draggedNode.node_type !== node.node_type || draggedNode.parent_id !== node.parent_id) {
+      setDragOver(null);
+      return;
+    }
+
+    onReorder(draggedNode.id, node.id, dragOver);
+    setDragOver(null);
+    setDraggedNode(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedNode(null);
+    setDragOver(null);
+  };
 
   return (
     <div className="tree-node" style={{ marginLeft: `${level * 20}px` }}>
       <div
-        className={`node-item ${isSelected ? 'selected' : ''}`}
+        className={`node-item ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${dragOver ? `drag-${dragOver}` : ''}`}
         onClick={() => onSelect(node)}
+        draggable="true"
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
       >
         {node.children && node.children.length > 0 && (
           <button
@@ -252,6 +417,9 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, lev
               onAdd={onAdd}
               onUpdate={onUpdate}
               onDelete={onDelete}
+              onReorder={onReorder}
+              draggedNode={draggedNode}
+              setDraggedNode={setDraggedNode}
               level={level + 1}
             />
           ))}
