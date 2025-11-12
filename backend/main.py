@@ -73,21 +73,34 @@ def create_access_token(data: dict):
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
+    if not credentials:
+        print("[DEBUG] No credentials provided in request")
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     token = credentials.credentials
+    print(f"[DEBUG] Validating token: {token[:20]}...")
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        print(f"[DEBUG] Token decoded successfully: {payload}")
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
+            print(f"[DEBUG] No user_id in token payload")
             raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
+        user_id = int(user_id_str)
+    except JWTError as e:
+        print(f"[DEBUG] JWT decode error: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
+        print(f"[DEBUG] User not found for ID: {user_id}")
         raise HTTPException(status_code=401, detail="User not found")
+
+    print(f"[DEBUG] Token validated, user: {user.email}")
     return user
 
 
@@ -95,6 +108,7 @@ def get_current_user(
 # Auth Endpoints
 # ============================================================================
 
+@app.post("/api/register", response_model=UserResponse)
 @app.post("/auth/register", response_model=UserResponse)
 def register(user_data: UserRegister, db: Session = Depends(get_db)):
     """Register new user"""
@@ -118,17 +132,33 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     return user
 
 
+@app.post("/api/login", response_model=Token)
 @app.post("/auth/login", response_model=Token)
 def login(credentials: UserLogin, db: Session = Depends(get_db)):
     """Login user"""
+    print(f"[DEBUG] Login attempt for email: {credentials.email}")
+
     user = db.query(User).filter(User.email == credentials.email).first()
-    if not user or not pwd_context.verify(credentials.password, user.hashed_password):
+
+    if not user:
+        print(f"[DEBUG] User not found: {credentials.email}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = create_access_token(data={"sub": user.id})
+    print(f"[DEBUG] User found: {user.email}, ID: {user.id}")
+
+    password_valid = pwd_context.verify(credentials.password, user.hashed_password)
+    print(f"[DEBUG] Password valid: {password_valid}")
+
+    if not password_valid:
+        print(f"[DEBUG] Password verification failed")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token = create_access_token(data={"sub": str(user.id)})
+    print(f"[DEBUG] Login successful, token created")
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+@app.get("/api/me", response_model=UserResponse)
 @app.get("/auth/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     """Get current user"""
