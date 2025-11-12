@@ -11,6 +11,7 @@ function MasterProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addParentId, setAddParentId] = useState(null);
+  const [addParentLevel, setAddParentLevel] = useState(0);
 
   useEffect(() => {
     fetchProfile();
@@ -36,8 +37,9 @@ function MasterProfile() {
     }
   };
 
-  const handleAddNode = (parentId = null) => {
+  const handleAddNode = (parentId = null, parentLevel = 0) => {
     setAddParentId(parentId);
+    setAddParentLevel(parentLevel);
     setShowAddModal(true);
   };
 
@@ -172,8 +174,10 @@ function MasterProfile() {
           onCancel={() => {
             setShowAddModal(false);
             setAddParentId(null);
+            setAddParentLevel(0);
           }}
           isChild={addParentId !== null}
+          parentLevel={addParentLevel}
         />
       )}
     </div>
@@ -214,7 +218,7 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onUpdate, onDelete, lev
             className="btn-icon"
             onClick={(e) => {
               e.stopPropagation();
-              onAdd(node.id);
+              onAdd(node.id, level);
             }}
             title="Add child"
           >
@@ -376,9 +380,13 @@ function CVPreviewContent({ nodes, profile }) {
 }
 
 // Node Modal Component
-function NodeModal({ onSave, onCancel, isChild }) {
+function NodeModal({ onSave, onCancel, isChild, parentLevel = 0 }) {
+  // Level 2+ can only add bullets/paragraphs, not entries
+  const canAddEntry = parentLevel < 2;
+  const defaultType = isChild ? (canAddEntry ? 'entry' : 'bullet') : 'section';
+
   const [formData, setFormData] = useState({
-    node_type: isChild ? 'entry' : 'section',
+    node_type: defaultType,
     title: '',
     subtitle: '',
     content: '',
@@ -414,14 +422,14 @@ function NodeModal({ onSave, onCancel, isChild }) {
                   value={formData.node_type}
                   onChange={(e) => setFormData({ ...formData, node_type: e.target.value })}
                 >
-                  <option value="entry">Entry - Main item (e.g., Job position, Degree)</option>
+                  {canAddEntry && <option value="entry">Entry - Main item (e.g., Job position, Degree)</option>}
                   <option value="bullet">Bullet - Single point or achievement (shown as • item)</option>
                   <option value="paragraph">Paragraph - Text block or description</option>
                 </select>
               </div>
               <div className="form-help">
                 <small>
-                  <strong>Entry:</strong> Job/degree with dates •
+                  {canAddEntry && <><strong>Entry:</strong> Job/degree with dates • </>}
                   <strong>Bullet:</strong> Achievement points (• bullets) •
                   <strong>Paragraph:</strong> Text blocks
                 </small>
