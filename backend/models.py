@@ -92,9 +92,15 @@ class ProfileNode(Base):
 
     # Relationships
     profile = relationship("Profile", back_populates="nodes")
-    parent = relationship("ProfileNode", remote_side=[id], back_populates="children")
+    parent = relationship(
+        "ProfileNode",
+        remote_side=[id],
+        foreign_keys=[parent_id],
+        back_populates="children"
+    )
     children = relationship(
         "ProfileNode",
+        foreign_keys="ProfileNode.parent_id",
         back_populates="parent",
         cascade="all, delete-orphan",
         order_by="ProfileNode.order"
