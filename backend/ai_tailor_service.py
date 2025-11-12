@@ -11,8 +11,16 @@ from anthropic import Anthropic
 from typing import Dict, Any, List
 
 # Initialize AI clients
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-anthropic_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+if not OPENAI_API_KEY:
+    print("WARNING: OPENAI_API_KEY not found in environment variables")
+if not ANTHROPIC_API_KEY:
+    print("WARNING: ANTHROPIC_API_KEY not found in environment variables")
+
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 
 
 JOB_ANALYSIS_PROMPT = """Analyze this job description and extract key information.

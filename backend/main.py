@@ -15,8 +15,11 @@ from typing import List, Optional
 import os
 from dotenv import load_dotenv
 import uuid
+from pathlib import Path
 
-load_dotenv()
+# Load .env from project root (parent directory)
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 from models import User, Profile, ProfileNode, TailoredCV
 from schemas import (
