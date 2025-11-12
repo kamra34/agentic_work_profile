@@ -1,0 +1,87 @@
+AI Resume Tailoring Platform
+Product Overview
+• Intelligent CV Customization Automatically analyzes job descriptions using dual AI models
+ (OpenAI GPT-4o + Anthropic Claude) to extract requirements, then tailors your master CV profile
+  by intelligently selecting and highlighting the most relevant experiences, skills, and achievements for each specific job application. 
+• Real-time ATS Optimization Provides instant ATS (Applicant Tracking System) compatibility scores and fit analysis from both AI
+   models, with live recalculation as you customize content visibility. Interactive preview lets you hide/show specific bullet points
+   , roles, or entire sections while monitoring how changes impact your scores before generating the final PDF. 
+• Professional PDF Generation Converts your tailored content into clean, ATS-friendly PDF resumes with proper formatting,
+    hierarchical structure (company → role → achievements), and customizable visibility controls. 
+    Download production-ready CVs optimized for both automated screening systems and human recruiters.
+• Application Tracking Dashboard Manage your entire job search pipeline with status tracking (Draft → Applied → Interview → Offer),
+ interview scheduling, company details, salary ranges, and historical ATS scores. Visual dashboard shows application statistics,
+  status pipeline, and allows filtering/sorting to stay organized throughout your job hunt.
+
+DATABASE:
+  the database URL is in .venv file in the root directory. never create SQLite database, we only work on PostgreSQL database.
+
+NOTE:
+ . NEVER Create .md files along the way the project will only have one README.md and SETUP.md. 
+ that's it. You DONT NEED to create summary of changes or anything like that
+ . if you want to make some temporary python file, create it in temp folder for example backend/temp
+ or frontend/temp so that I know what to remove when we are done using temp files. 
+ .always run bump_version when you update front end or backend so that we have the correct version.
+ use correct use of the code depending on the changes level and which one needs to be changed.
+
+
+Analysis of profile_nodes Table Structure
+Based on the database query and model inspection, here's the complete understanding:
+Table Structure:
+The profile_nodes table uses a self-referential hierarchical design with these key columns:
+Identity & Relationships:
+id: Primary key (integer)
+global_id: Unique UUID for tracking nodes across CV tailoring
+profile_id: Foreign key to profiles table
+parent_id: Self-referential foreign key (NULL for root nodes)
+Hierarchy Tracking (Performance Optimization):
+level: Integer depth (0=root/section, 1=direct child, 2=grandchild, etc.)
+root_id: Foreign key pointing to the top-level section node (level 0)
+Content:
+node_type: Flexible string ("section", "entry", "bullet", "paragraph", "item", etc.)
+title, subtitle, content: Text fields
+start_date, end_date, location: Optional metadata
+order: Display order within siblings
+is_visible: Boolean for show/hide functionality
+Current Data Structure (Profile 1):
+Total nodes: 13
+Root nodes: 3 (sections)
+Max depth: 3 levels
+All relationships: ✅ VERIFIED CORRECT
+
+Distribution:
+- Level 0: 3 nodes (sections)
+- Level 1: 5 nodes (direct children)
+- Level 2: 4 nodes (grandchildren)
+- Level 3: 1 node (great-grandchild)
+
+Node types:
+- section: 3
+- entry: 3
+- paragraph: 2
+- bullet: 5
+Actual Hierarchies Found:
+Skills Section (ID:17, Level:0)
+Paragraph (ID:39, Level:1) → Bullet (ID:40, Level:2)
+Entry: Technical Skills (ID:22, Level:1) → Bullet (ID:36, Level:2)
+Work Experience Section (ID:15, Level:0)
+Entry: Lead DS at Ericsson (ID:16, Level:1)
+Entry: Project Management (ID:18, Level:2)
+Bullet (ID:35, Level:3)
+Summary Section (ID:10, Level:0)
+Bullet (ID:32, Level:1)
+Paragraph (ID:37, Level:1) → Bullet (ID:38, Level:2)
+Relationship Verification Results:
+✅ No orphaned nodes - All parent_id values point to valid nodes ✅ Level consistency - All level values match the actual depth in the tree ✅ Root_id correctness - All nodes correctly reference their top-level section
+Key Insights:
+Complete Traceability: Every node's position in the hierarchy is absolutely determinable through:
+parent_id - immediate parent
+level - depth from root
+root_id - which top-level section it belongs to
+Recursive query through parent_id chain reaches the root
+Flexibility: The structure supports any nesting pattern:
+Section → Entry → Entry → Bullet (4 levels deep, as seen)
+Section → Paragraph → Bullet
+Section → Bullet (direct)
+Performance: The denormalized level and root_id columns eliminate the need for recursive queries in most cases
+Data Integrity: SQLAlchemy relationships with cascade="all, delete-orphan" ensure that deleting a parent removes all descendants
