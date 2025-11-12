@@ -18,12 +18,13 @@ import uuid
 
 load_dotenv()
 
-from models import User, Profile, ProfileNode
+from models import User, Profile, ProfileNode, TailoredCV
 from schemas import (
     UserRegister, UserLogin, Token, UserResponse,
     ProfileResponse, ProfileCreate, ProfileUpdate,
     ProfileNodeResponse, ProfileNodeCreate, ProfileNodeUpdate
 )
+import ai_tailor_service
 
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -477,6 +478,316 @@ def _create_children_recursive(db: Session, parent_id: int, profile_id: int, chi
 
         if child_data.children:
             _create_children_recursive(db, child.id, profile_id, child_data.children)
+
+
+# ============================================================================
+# Tailored CV Routes
+# ============================================================================
+
+@app.post("/api/tailor/analyze-job")
+async def analyze_job_description(
+    request: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Analyze job description with both OpenAI and Claude.
+    Returns extracted requirements from both models.
+    """
+    job_description = request.get("job_description", "")
+
+    if not job_description or len(job_description.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Job description too short (minimum 50 characters)")
+
+    # Call both AI models in parallel
+    openai_result = ai_tailor_service.analyze_job_with_openai(job_description)
+    claude_result = ai_tailor_service.analyze_job_with_claude(job_description)
+
+    return {
+        "openai": openai_result,
+        "claude": claude_result,
+        "job_description": job_description
+    }
+
+
+@app.post("/api/tailor/score-profile")
+async def score_profile_fit(
+    request: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Score how well the profile matches job requirements.
+    Returns fit scores and ATS scores from both models.
+    """
+    job_requirements = request.get("job_requirements")
+    profile_id = request.get("profile_id")
+
+    if not job_requirements or not profile_id:
+        raise HTTPException(status_code=400, detail="Missing job_requirements or profile_id")
+
+    # Get profile with nodes
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    # Convert nodes to text for scoring
+    def node_to_dict(node):
+        return {
+            "id": node.id,
+            "global_id": node.global_id,
+            "node_type": node.node_type,
+            "title": node.title,
+            "subtitle": node.subtitle,
+            "content": node.content,
+            "start_date": node.start_date,
+            "end_date": node.end_date,
+            "location": node.location,
+            "level": node.level,
+            "is_visible": node.is_visible,
+            "children": [node_to_dict(child) for child in node.children] if node.children else []
+        }
+
+    nodes_list = [node_to_dict(node) for node in profile.nodes if node.parent_id is None]
+    profile_text = ai_tailor_service.profile_nodes_to_text(nodes_list)
+
+    # Score with both models
+    openai_scores = ai_tailor_service.score_profile_with_openai(job_requirements, profile_text)
+    claude_scores = ai_tailor_service.score_profile_with_claude(job_requirements, profile_text)
+
+    return {
+        "openai": openai_scores,
+        "claude": claude_scores,
+        "profile_id": profile_id
+    }
+
+
+@app.post("/api/tailor/recommend-nodes")
+async def recommend_node_selection(
+    request: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI recommendations for which nodes to include/exclude.
+    Returns recommendations from both models.
+    """
+    job_requirements = request.get("job_requirements")
+    profile_id = request.get("profile_id")
+
+    if not job_requirements or not profile_id:
+        raise HTTPException(status_code=400, detail="Missing job_requirements or profile_id")
+
+    # Get profile with nodes
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    # Convert nodes to flat list for AI analysis
+    def node_to_dict(node):
+        return {
+            "id": node.id,
+            "global_id": node.global_id,
+            "node_type": node.node_type,
+            "title": node.title,
+            "subtitle": node.subtitle,
+            "content": node.content,
+            "start_date": node.start_date,
+            "end_date": node.end_date,
+            "location": node.location,
+            "level": node.level,
+            "is_visible": node.is_visible,
+            "children": [node_to_dict(child) for child in node.children] if node.children else []
+        }
+
+    nodes_list = [node_to_dict(node) for node in profile.nodes if node.parent_id is None]
+    flat_nodes = ai_tailor_service.flatten_nodes_for_analysis(nodes_list)
+
+    # Get recommendations from both models
+    openai_recommendations = ai_tailor_service.recommend_nodes_with_openai(job_requirements, flat_nodes)
+    claude_recommendations = ai_tailor_service.recommend_nodes_with_claude(job_requirements, flat_nodes)
+
+    return {
+        "openai": openai_recommendations,
+        "claude": claude_recommendations,
+        "total_nodes": len(flat_nodes)
+    }
+
+
+@app.post("/api/tailor/save")
+async def save_tailored_cv(
+    request: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Save a tailored CV with selected nodes and AI analysis results.
+    """
+    profile_id = request.get("profile_id")
+    job_title = request.get("job_title")
+    company_name = request.get("company_name")
+    job_description = request.get("job_description")
+    selected_node_ids = request.get("selected_node_ids", [])
+    fit_scores = request.get("fit_scores")
+    ats_scores = request.get("ats_scores")
+    recommendations = request.get("recommendations")
+    job_analysis = request.get("job_analysis")
+    status = request.get("status", "draft")
+
+    if not profile_id or not job_title:
+        raise HTTPException(status_code=400, detail="Missing required fields: profile_id, job_title")
+
+    # Verify profile ownership
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    # Create content snapshot
+    def node_to_dict(node):
+        return {
+            "id": node.id,
+            "global_id": node.global_id,
+            "node_type": node.node_type,
+            "title": node.title,
+            "subtitle": node.subtitle,
+            "content": node.content,
+            "start_date": node.start_date,
+            "end_date": node.end_date,
+            "location": node.location,
+            "level": node.level,
+            "order": node.order,
+            "is_visible": node.is_visible,
+            "children": [node_to_dict(child) for child in node.children] if node.children else []
+        }
+
+    nodes_dict = {}
+    root_node_ids = []
+    for node in profile.nodes:
+        nodes_dict[node.global_id] = node_to_dict(node)
+        if node.parent_id is None:
+            root_node_ids.append(node.global_id)
+
+    content_snapshot = {
+        "nodes": nodes_dict,
+        "root_node_ids": root_node_ids,
+        "contact_info": profile.contact_info
+    }
+
+    # Create tailored CV record
+    tailored_cv = TailoredCV(
+        user_id=current_user.id,
+        profile_id=profile_id,
+        job_title=job_title,
+        company_name=company_name,
+        job_description=job_description,
+        fit_scores=fit_scores,
+        ats_scores=ats_scores,
+        selected_node_ids=selected_node_ids,
+        content_snapshot=content_snapshot,
+        recommendations=recommendations,
+        job_analysis=job_analysis,
+        status=status
+    )
+
+    db.add(tailored_cv)
+    db.commit()
+    db.refresh(tailored_cv)
+
+    return {
+        "success": True,
+        "tailored_cv_id": tailored_cv.id,
+        "message": "Tailored CV saved successfully"
+    }
+
+
+@app.get("/api/tailor/list")
+async def list_tailored_cvs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all tailored CVs for the current user"""
+    tailored_cvs = db.query(TailoredCV).filter(
+        TailoredCV.user_id == current_user.id
+    ).order_by(TailoredCV.created_at.desc()).all()
+
+    return [
+        {
+            "id": cv.id,
+            "job_title": cv.job_title,
+            "company_name": cv.company_name,
+            "status": cv.status,
+            "fit_scores": cv.fit_scores,
+            "ats_scores": cv.ats_scores,
+            "created_at": cv.created_at.isoformat(),
+            "updated_at": cv.updated_at.isoformat()
+        }
+        for cv in tailored_cvs
+    ]
+
+
+@app.get("/api/tailor/{cv_id}")
+async def get_tailored_cv(
+    cv_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific tailored CV with full details"""
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    return {
+        "id": tailored_cv.id,
+        "profile_id": tailored_cv.profile_id,
+        "job_title": tailored_cv.job_title,
+        "company_name": tailored_cv.company_name,
+        "job_description": tailored_cv.job_description,
+        "fit_scores": tailored_cv.fit_scores,
+        "ats_scores": tailored_cv.ats_scores,
+        "selected_node_ids": tailored_cv.selected_node_ids,
+        "content_snapshot": tailored_cv.content_snapshot,
+        "recommendations": tailored_cv.recommendations,
+        "job_analysis": tailored_cv.job_analysis,
+        "status": tailored_cv.status,
+        "created_at": tailored_cv.created_at.isoformat(),
+        "updated_at": tailored_cv.updated_at.isoformat()
+    }
+
+
+@app.delete("/api/tailor/{cv_id}")
+async def delete_tailored_cv(
+    cv_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a tailored CV"""
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    db.delete(tailored_cv)
+    db.commit()
+
+    return {"success": True, "message": "Tailored CV deleted"}
 
 
 # ============================================================================

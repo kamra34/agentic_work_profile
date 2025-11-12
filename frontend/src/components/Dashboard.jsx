@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import MasterProfile from './MasterProfile';
+import TailorCV from './TailorCV';
 import TailoredCVs from './TailoredCVs';
 import ApplicationTracker from './ApplicationTracker';
 import './Dashboard.css';
@@ -117,7 +118,7 @@ function Dashboard({ user, onLogout }) {
         <main className="main-content">
           {activeTab === 'home' && <HomeView onNavigate={setActiveTab} />}
           {activeTab === 'profile' && <MasterProfile />}
-          {activeTab === 'tailor' && <ComingSoon feature="CV Tailoring" />}
+          {activeTab === 'tailor' && <TailorCV />}
           {activeTab === 'review' && <TailoredCVs />}
           {activeTab === 'applications' && <ApplicationTracker />}
         </main>
