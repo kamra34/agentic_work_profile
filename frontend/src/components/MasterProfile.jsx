@@ -15,12 +15,13 @@ function MasterProfile() {
   const [editingNode, setEditingNode] = useState(null);
   const [draggedNode, setDraggedNode] = useState(null);
   const [expandedNodes, setExpandedNodes] = useState(new Set());
+  const [scrollPosition, setScrollPosition] = useState(0);
 
   useEffect(() => {
     fetchProfile();
   }, []);
 
-  const fetchProfile = async () => {
+  const fetchProfile = async (preserveState = false) => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/profiles`, {
@@ -33,18 +34,10 @@ function MasterProfile() {
         setProfile(defaultProfile);
         setNodes(defaultProfile.nodes || []);
 
-        // Initialize all nodes as expanded by default
-        const allNodeIds = new Set();
-        const collectNodeIds = (nodes) => {
-          nodes.forEach(node => {
-            allNodeIds.add(node.id);
-            if (node.children && node.children.length > 0) {
-              collectNodeIds(node.children);
-            }
-          });
-        };
-        collectNodeIds(defaultProfile.nodes || []);
-        setExpandedNodes(allNodeIds);
+        // Only reset expanded nodes on initial load, preserve them on updates
+        if (!preserveState) {
+          setExpandedNodes(new Set());
+        }
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -116,6 +109,10 @@ function MasterProfile() {
 
   const handleSaveNode = async (nodeData) => {
     try {
+      // Save current scroll position
+      const editorPanel = document.querySelector('.editor-panel');
+      const currentScroll = editorPanel?.scrollTop || 0;
+
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/profiles/${profile.id}/nodes`, {
         method: 'POST',
@@ -127,9 +124,16 @@ function MasterProfile() {
       });
 
       if (response.ok) {
-        await fetchProfile();
+        await fetchProfile(true); // Preserve state
         setShowAddModal(false);
         setAddParentId(null);
+
+        // Restore scroll position after DOM updates
+        setTimeout(() => {
+          if (editorPanel) {
+            editorPanel.scrollTop = currentScroll;
+          }
+        }, 50);
       }
     } catch (error) {
       console.error('Error saving node:', error);
@@ -148,6 +152,10 @@ function MasterProfile() {
 
   const handleUpdateNode = async (nodeId, updates) => {
     try {
+      // Save current scroll position
+      const editorPanel = document.querySelector('.editor-panel');
+      const currentScroll = editorPanel?.scrollTop || 0;
+
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/nodes/${nodeId}`, {
         method: 'PUT',
@@ -159,7 +167,14 @@ function MasterProfile() {
       });
 
       if (response.ok) {
-        await fetchProfile();
+        await fetchProfile(true); // Preserve state
+
+        // Restore scroll position after DOM updates
+        setTimeout(() => {
+          if (editorPanel) {
+            editorPanel.scrollTop = currentScroll;
+          }
+        }, 50);
       }
     } catch (error) {
       console.error('Error updating node:', error);
@@ -170,13 +185,24 @@ function MasterProfile() {
     if (!confirm('Delete this item and all its children?')) return;
 
     try {
+      // Save current scroll position
+      const editorPanel = document.querySelector('.editor-panel');
+      const currentScroll = editorPanel?.scrollTop || 0;
+
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/nodes/${nodeId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      await fetchProfile();
+      await fetchProfile(true); // Preserve state
       setSelectedNode(null);
+
+      // Restore scroll position after DOM updates
+      setTimeout(() => {
+        if (editorPanel) {
+          editorPanel.scrollTop = currentScroll;
+        }
+      }, 50);
     } catch (error) {
       console.error('Error deleting node:', error);
     }
@@ -260,10 +286,21 @@ function MasterProfile() {
       const result = await response.json();
       console.log('✅ API response:', result);
 
+      // Save current scroll position
+      const editorPanel = document.querySelector('.editor-panel');
+      const currentScroll = editorPanel?.scrollTop || 0;
+
       // Refresh the profile to get updated order
       console.log('🔄 Refreshing profile...');
-      await fetchProfile();
+      await fetchProfile(true); // Preserve state
       console.log('✅ Profile refreshed, nodes updated');
+
+      // Restore scroll position after DOM updates
+      setTimeout(() => {
+        if (editorPanel) {
+          editorPanel.scrollTop = currentScroll;
+        }
+      }, 50);
     } catch (error) {
       console.error('❌ Error reordering node:', error);
     }
