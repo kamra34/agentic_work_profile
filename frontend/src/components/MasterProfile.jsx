@@ -304,11 +304,30 @@ function CVPreviewContent({ nodes, profile }) {
 
     // Item/bullet level
     if (node.node_type === 'item' || node.node_type === 'bullet') {
-      return (
-        <li key={node.id} className="cv-item">
-          {node.content}
-        </li>
-      );
+      // If it has content (text), show it as a bullet
+      if (node.content) {
+        return (
+          <li key={node.id} className="cv-item">
+            {node.title && <strong>{node.title}: </strong>}
+            {node.content}
+            {/* If bullet has children, nest them */}
+            {node.children && node.children.length > 0 && (
+              <ul className="nested-items">
+                {node.children.map(child => renderNode(child, level + 1))}
+              </ul>
+            )}
+          </li>
+        );
+      }
+      // If it only has title, show title as bullet
+      if (node.title) {
+        return (
+          <li key={node.id} className="cv-item">
+            {node.title}
+          </li>
+        );
+      }
+      return null;
     }
 
     // Default rendering
@@ -377,11 +396,18 @@ function NodeModal({ onSave, onCancel, isChild }) {
               value={formData.node_type}
               onChange={(e) => setFormData({ ...formData, node_type: e.target.value })}
             >
-              <option value="section">Section</option>
-              <option value="entry">Entry</option>
-              <option value="item">Item</option>
-              <option value="bullet">Bullet</option>
+              <option value="section">Section - Top level (e.g., Work Experience, Education)</option>
+              <option value="entry">Entry - Main item (e.g., Job position, Degree)</option>
+              <option value="item">Item - Bullet point or achievement</option>
+              <option value="bullet">Bullet - Same as Item (alternative name)</option>
             </select>
+          </div>
+          <div className="form-help">
+            <small>
+              <strong>Section:</strong> Top-level like "Work Experience" •
+              <strong>Entry:</strong> Job/degree with dates •
+              <strong>Item/Bullet:</strong> Achievement points
+            </small>
           </div>
 
           <div className="form-group">
