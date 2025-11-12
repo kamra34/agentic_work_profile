@@ -113,6 +113,13 @@ IMPORTANT: Return recommendations for ALL nodes provided."""
 
 def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
     """Analyze job description using OpenAI GPT-4o"""
+    if not openai_client:
+        return {
+            "success": False,
+            "model": "openai-gpt-4o",
+            "error": "OpenAI client not initialized. Check API key."
+        }
+
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -140,6 +147,13 @@ def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
 
 def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
     """Analyze job description using Claude Sonnet 4.5"""
+    if not anthropic_client:
+        return {
+            "success": False,
+            "model": "claude-sonnet-4.5",
+            "error": "Claude client not initialized. Check API key."
+        }
+
     try:
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -166,6 +180,13 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
 
 def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> Dict[str, Any]:
     """Score profile fit using OpenAI"""
+    if not openai_client:
+        return {
+            "success": False,
+            "model": "openai-gpt-4o",
+            "error": "OpenAI client not initialized. Check API key."
+        }
+
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -196,6 +217,13 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> D
 
 def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> Dict[str, Any]:
     """Score profile fit using Claude Sonnet 4.5"""
+    if not anthropic_client:
+        return {
+            "success": False,
+            "model": "claude-sonnet-4.5",
+            "error": "Claude client not initialized. Check API key."
+        }
+
     try:
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -225,6 +253,13 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
 
 def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict]) -> Dict[str, Any]:
     """Recommend which nodes to include using OpenAI"""
+    if not openai_client:
+        return {
+            "success": False,
+            "model": "openai-gpt-4o",
+            "error": "OpenAI client not initialized. Check API key."
+        }
+
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -255,6 +290,13 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
 
 def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict]) -> Dict[str, Any]:
     """Recommend which nodes to include using Claude Sonnet 4.5"""
+    if not anthropic_client:
+        return {
+            "success": False,
+            "model": "claude-sonnet-4.5",
+            "error": "Claude client not initialized. Check API key."
+        }
+
     try:
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
