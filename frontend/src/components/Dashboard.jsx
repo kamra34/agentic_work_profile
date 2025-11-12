@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import ProfileManagement from './ProfileManagement';
 import TailoredCVs from './TailoredCVs';
+import ApplicationTracker from './ApplicationTracker';
 import './Dashboard.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -89,7 +89,7 @@ function Dashboard({ user, onLogout }) {
               onClick={() => setActiveTab('tailor')}
             >
               <span className="icon">🤖</span>
-              <span className="label">Job Analysis & Tailoring</span>
+              <span className="label">Create Tailored CV</span>
               <span className="badge badge-ai">AI</span>
             </button>
             <button
@@ -97,7 +97,7 @@ function Dashboard({ user, onLogout }) {
               onClick={() => setActiveTab('review')}
             >
               <span className="icon">💾</span>
-              <span className="label">Review & Finalize</span>
+              <span className="label">Saved CVs</span>
             </button>
           </div>
 
@@ -106,21 +106,19 @@ function Dashboard({ user, onLogout }) {
             <button
               className={`sidebar-item ${activeTab === 'applications' ? 'active' : ''}`}
               onClick={() => setActiveTab('applications')}
-              disabled
             >
               <span className="icon">📈</span>
               <span className="label">Application Tracker</span>
-              <span className="badge badge-coming-soon">Coming Soon</span>
             </button>
           </div>
         </aside>
 
         <main className="main-content">
           {activeTab === 'home' && <HomeView onNavigate={setActiveTab} />}
-          {activeTab === 'profile' && <ProfileManagement />}
-          {activeTab === 'tailor' && <TailorCVView />}
-          {activeTab === 'review' && <ReviewFinalizeView />}
-          {activeTab === 'applications' && <ApplicationsView />}
+          {activeTab === 'profile' && <ComingSoon feature="Master Profile" />}
+          {activeTab === 'tailor' && <ComingSoon feature="CV Tailoring" />}
+          {activeTab === 'review' && <TailoredCVs />}
+          {activeTab === 'applications' && <ApplicationTracker />}
         </main>
       </div>
     </div>
@@ -157,10 +155,10 @@ function HomeView({ onNavigate }) {
             <div className="step-number">2</div>
             <div className="step-icon">🤖</div>
             <div className="step-content">
-              <h3>AI Analysis & Tailoring</h3>
-              <p>Paste a job description and get dual-AI analysis (OpenAI + Claude). AI intelligently selects the best-fit items from your profile for the specific role.</p>
+              <h3>Create Tailored CV</h3>
+              <p>Paste a job description and get dual-AI analysis (OpenAI + Claude). Get profile fit scores, ATS compatibility ratings, and let AI intelligently select the best items from your profile for this specific role.</p>
               <button className="step-btn" onClick={() => onNavigate('tailor')}>
-                Analyze & Tailor →
+                Create Tailored CV →
               </button>
             </div>
           </div>
@@ -169,10 +167,10 @@ function HomeView({ onNavigate }) {
             <div className="step-number">3</div>
             <div className="step-icon">💾</div>
             <div className="step-content">
-              <h3>Review & Finalize</h3>
-              <p>Preview AI selections, toggle visibility, re-evaluate ATS scores, and download your professionally formatted PDF ready for application.</p>
+              <h3>Manage Saved CVs</h3>
+              <p>View all your saved tailored CVs. See job details, AI scores, and selected content. Toggle item visibility, recalculate ATS scores, preview in real-time, and download professional PDFs.</p>
               <button className="step-btn" onClick={() => onNavigate('review')}>
-                Review CVs →
+                View Saved CVs →
               </button>
             </div>
           </div>
@@ -182,9 +180,9 @@ function HomeView({ onNavigate }) {
             <div className="step-icon">📈</div>
             <div className="step-content">
               <h3>Track Applications</h3>
-              <p>Monitor all your applications in one dashboard. Track status from Applied to Interview to Offer, with scores and notes for each opportunity.</p>
-              <button className="step-btn" disabled>
-                Coming Soon
+              <p>Monitor all your applications in one dashboard. Track status from Applied to Interview to Offer, with scores, notes, and analytics for each opportunity.</p>
+              <button className="step-btn" onClick={() => onNavigate('applications')}>
+                Open Tracker →
               </button>
             </div>
           </div>
@@ -681,9 +679,9 @@ function TailorCVView() {
   return (
     <div className="tailor-cv-view">
       <div className="tailor-header">
-        <h1>🤖 Job Analysis & CV Tailoring</h1>
+        <h1>🤖 Create Tailored CV</h1>
         <p className="tailor-subtitle">
-          Paste any job description below. Our dual-AI system (OpenAI + Claude) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role.
+          Paste any job description below. Our dual-AI system (OpenAI GPT-4o + Claude Sonnet 4.5) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role. Then save your tailored CV to review and finalize later.
         </p>
       </div>
 
@@ -1799,9 +1797,9 @@ function ReviewFinalizeView() {
   return (
     <div className="review-finalize-wrapper">
       <div className="review-header">
-        <h1>💾 Review & Finalize Your CVs</h1>
+        <h1>💾 Saved CVs</h1>
         <p className="review-subtitle">
-          View your AI-tailored CVs, toggle item visibility, re-evaluate ATS scores, preview the final output, and download professional PDFs ready for your applications.
+          View all your saved tailored CVs. See complete job details, AI fit and ATS scores, and all AI-selected content. Toggle visibility of individual items, recalculate ATS scores based on your final selections, preview your CV in real-time, and download professional PDFs ready for applications.
         </p>
       </div>
       <TailoredCVs />
@@ -1809,29 +1807,37 @@ function ReviewFinalizeView() {
   );
 }
 
-// Applications View Component - Placeholder for future Application Tracker
-function ApplicationsView() {
+// Coming Soon Component
+function ComingSoon({ feature }) {
   return (
-    <div className="placeholder-view">
-      <div className="placeholder-content">
-        <div className="placeholder-icon">📈</div>
-        <h2>Application Tracker</h2>
-        <p className="placeholder-description">
-          Your centralized dashboard for tracking all job applications is coming soon! This feature will include:
+    <div className="coming-soon-container" style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '400px',
+      padding: '40px',
+      textAlign: 'center'
+    }}>
+      <div style={{ fontSize: '80px', marginBottom: '20px' }}>🚧</div>
+      <h1 style={{ fontSize: '32px', marginBottom: '16px', color: '#333' }}>
+        {feature} - Coming Soon
+      </h1>
+      <p style={{ fontSize: '18px', color: '#666', maxWidth: '600px' }}>
+        We're building an amazing new hierarchical profile system with infinite flexibility.
+        This feature will be available soon with the v3.0 release!
+      </p>
+      <div style={{
+        marginTop: '30px',
+        padding: '20px',
+        backgroundColor: '#f0f8ff',
+        borderRadius: '8px',
+        maxWidth: '500px'
+      }}>
+        <p style={{ fontSize: '14px', color: '#0066cc', margin: 0 }}>
+          <strong>New in v3.0:</strong> Universal hierarchical nodes, infinite nesting,
+          flexible metadata, and global ID tracking for perfect CV tailoring.
         </p>
-        <ul className="placeholder-list">
-          <li>📊 Visual dashboard with application status pipeline (Applied → Interview → Offer)</li>
-          <li>📋 Complete application history with company names, job titles, and dates</li>
-          <li>🎯 Profile Fit and ATS scores for each application</li>
-          <li>📄 Download the exact CV version you applied with</li>
-          <li>📝 Add notes, interview dates, and follow-up reminders</li>
-          <li>📈 Analytics and insights on your job search progress</li>
-          <li>🔔 Status change notifications and deadline reminders</li>
-        </ul>
-        <div className="placeholder-cta">
-          <h3>What you can do now:</h3>
-          <p>Use <strong>Review & Finalize</strong> to manage your CV drafts and download PDFs. Once you apply for a job, you'll be able to track it here.</p>
-        </div>
       </div>
     </div>
   );

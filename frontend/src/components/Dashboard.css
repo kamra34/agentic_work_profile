@@ -17,23 +17,29 @@
   align-items: center;
   max-width: 1600px;
   margin: 0 auto;
+  min-height: 48px;
 }
 
 .navbar-left {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex: 1;
 }
 
 .navbar-left h2 {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 600;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
 }
 
 .navbar-versions {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
 }
 
 .version-badge {
@@ -44,12 +50,18 @@
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid rgba(255, 255, 255, 0.3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .navbar-right {
   display: flex;
   align-items: center;
   gap: 1.5rem;
+  flex-shrink: 0;
 }
 
 .user-name {
@@ -58,6 +70,8 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .btn-logout {
@@ -69,6 +83,11 @@
   cursor: pointer;
   font-size: 0.9rem;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .btn-logout:hover {
@@ -204,6 +223,7 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 1.25rem;
   margin-bottom: 4rem;
+  align-items: stretch;
 }
 
 .step-card {
@@ -214,6 +234,9 @@
   transition: all 0.3s;
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .step-card::before {
@@ -817,9 +840,10 @@
 
 .fit-comparison {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 2rem;
   margin-top: 1.5rem;
+  align-items: start;
 }
 
 .fit-card {
@@ -828,6 +852,9 @@
   padding: 1.5rem;
   border: 2px solid #e2e8f0;
   transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .fit-card:hover {
@@ -860,6 +887,11 @@
   text-align: center;
   border: 3px solid;
   transition: all 0.3s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
 }
 
 .fit-excellent {
@@ -897,6 +929,7 @@
   font-weight: 800;
   line-height: 1;
   margin-bottom: 0.5rem;
+  display: block;
 }
 
 .fit-label {
@@ -904,6 +937,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: block;
 }
 
 .fit-summary-text {
@@ -1252,9 +1286,10 @@
 
 .ats-comparison {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 2rem;
   margin-top: 1.5rem;
+  align-items: start;
 }
 
 .ats-card {
@@ -1263,6 +1298,9 @@
   padding: 1.5rem;
   border: 2px solid #e2e8f0;
   transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .ats-card:hover {
@@ -1305,6 +1343,11 @@
   text-align: center;
   border: 2px solid;
   margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
 }
 
 .ats-score {
@@ -1312,6 +1355,7 @@
   font-weight: 800;
   line-height: 1;
   margin-bottom: 0.5rem;
+  display: block;
 }
 
 .ats-label {
@@ -1319,6 +1363,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: block;
 }
 
 .ats-breakdown {
@@ -1333,12 +1378,16 @@
   grid-template-columns: 140px 1fr 60px;
   align-items: center;
   gap: 1rem;
+  min-height: 32px;
 }
 
 .ats-metric-label {
   font-size: 0.9rem;
   font-weight: 500;
   color: #4a5568;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
 }
 
 .ats-progress-bar {
@@ -1347,6 +1396,7 @@
   border-radius: 4px;
   overflow: hidden;
   position: relative;
+  align-self: center;
 }
 
 .ats-progress-fill {
@@ -1361,6 +1411,10 @@
   font-weight: 600;
   color: #2d3748;
   text-align: right;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .ats-metric-badge {
@@ -1370,6 +1424,10 @@
   border-radius: 4px;
   background: #f7fafc;
   border: 1px solid #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .ats-notes {
@@ -2686,11 +2744,12 @@
 /* Quick Stats Section */
 .quick-stats-section {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
   margin-top: 3rem;
   padding-top: 3rem;
   border-top: 2px solid #e2e8f0;
+  align-items: stretch;
 }
 
 .stat-card {
@@ -2701,6 +2760,11 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   transition: all 0.3s ease;
   border: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 180px;
 }
 
 .stat-card:hover {
@@ -2717,6 +2781,8 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
   margin-bottom: 0.5rem;
+  line-height: 1;
+  display: block;
 }
 
 .stat-label {
@@ -2724,11 +2790,13 @@
   font-weight: 600;
   color: #4a5568;
   margin-bottom: 0.25rem;
+  display: block;
 }
 
 .stat-description {
   font-size: 0.85rem;
   color: #a0aec0;
+  display: block;
 }
 
 /* Review & Finalize Header */

@@ -333,7 +333,7 @@ function TailoredCVs() {
                   className="btn-view"
                   onClick={() => viewCVDetail(cv)}
                 >
-                  👁️ View
+                  🔍 View
                 </button>
                 <button
                   className="btn-delete"
@@ -363,7 +363,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
   const [expandedSections, setExpandedSections] = useState({});
   const [expandedEntries, setExpandedEntries] = useState({});
   const [previewMode, setPreviewMode] = useState('cv'); // 'cv', 'openai', 'claude'
-  const [hiddenItems, setHiddenItems] = useState({}); // Track hidden items by ID
+  const [hiddenItems, setHiddenItems] = useState({}); // Track hidden entries, sub-entries, and items by ID
   const [reEvaluatedScores, setReEvaluatedScores] = useState(null); // Re-calculated ATS scores
   const [recalculating, setRecalculating] = useState(false); // Loading state for recalculation
   const [showDebugData, setShowDebugData] = useState(false); // Show formatted data sent to AI
@@ -391,24 +391,10 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       setFullCVData(data);
       setError(null);
 
-      // Auto-expand all sections for viewing
-      if (data && data.profile && data.profile.sections) {
-        const expandedSecs = {};
-        const expandedEnts = {};
-        data.profile.sections.forEach(section => {
-          expandedSecs[section.id] = true;
-          section.entries.forEach(entry => {
-            expandedEnts[entry.id] = true;
-            if (entry.sub_entries) {
-              entry.sub_entries.forEach(sub => {
-                expandedEnts[sub.id] = true;
-              });
-            }
-          });
-        });
-        setExpandedSections(expandedSecs);
-        setExpandedEntries(expandedEnts);
-      }
+      // Sections and entries start collapsed by default
+      // User can expand them manually by clicking
+      setExpandedSections({});
+      setExpandedEntries({});
     } catch (err) {
       setError(err.message);
     } finally {
@@ -430,11 +416,162 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     }));
   };
 
-  const toggleItemVisibility = (itemId) => {
-    setHiddenItems(prev => ({
-      ...prev,
-      [itemId]: !prev[itemId]
-    }));
+  // Create namespaced ID to avoid collisions between entries, sub-entries, and items
+  const makeId = (type, id) => `${type}_${id}`;
+  const parseId = (namespacedId) => {
+    const parts = String(namespacedId).split('_');
+    if (parts.length === 2) {
+      return { type: parts[0], id: parseInt(parts[1]) };
+    }
+    // Fallback for raw IDs (backward compatibility)
+    return { type: 'item', id: namespacedId };
+  };
+
+  // Helper function to get all child IDs (sub-entries and items) of an entry
+  const getAllChildIds = (entry) => {
+    const ids = [];
+
+    // Add all items in this entry
+    if (entry.items) {
+      entry.items.forEach(item => ids.push(makeId('item', item.id)));
+    }
+
+    // Add all sub-entries and their items
+    if (entry.sub_entries) {
+      entry.sub_entries.forEach(subEntry => {
+        ids.push(makeId('subentry', subEntry.id));
+        if (subEntry.items) {
+          subEntry.items.forEach(item => ids.push(makeId('item', item.id)));
+        }
+      });
+    }
+
+    return ids;
+  };
+
+  // Helper function to get all item IDs of a sub-entry
+  const getSubEntryItemIds = (subEntry) => {
+    const ids = [];
+    if (subEntry.items) {
+      subEntry.items.forEach(item => ids.push(makeId('item', item.id)));
+    }
+    return ids;
+  };
+
+  // Find entry/sub-entry in the profile data
+  // Note: Returns ALL matches since Entry IDs may not be unique across sections
+  const findEntryOrSubEntry = (namespacedId) => {
+    if (!fullCVData || !fullCVData.profile || !fullCVData.profile.sections) {
+      return null;
+    }
+
+    const { type, id } = parseId(namespacedId);
+    const matches = [];
+
+    for (const section of fullCVData.profile.sections) {
+      if (section.entries) {
+        for (const entry of section.entries) {
+          if (type === 'entry' && entry.id === id) {
+            matches.push({ type: 'entry', data: entry, section: section.title });
+          }
+          if (entry.sub_entries) {
+            for (const subEntry of entry.sub_entries) {
+              if (type === 'subentry' && subEntry.id === id) {
+                matches.push({ type: 'subEntry', data: subEntry, section: section.title });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // If multiple matches found, log warning and return the one with most items
+    if (matches.length > 1) {
+      console.warn(`[ID Collision] Found ${matches.length} entries with ID ${id}:`, matches.map(m => ({ section: m.section, title: m.data.title, itemCount: m.data.items?.length || 0 })));
+      // Return the entry with the most items (most likely the correct one)
+      return matches.reduce((best, current) => {
+        const bestItemCount = best.data.items?.length || 0;
+        const currentItemCount = current.data.items?.length || 0;
+        return currentItemCount > bestItemCount ? current : best;
+      });
+    }
+
+    return matches.length > 0 ? matches[0] : null;
+  };
+
+  const toggleItemVisibility = (id) => {
+    const found = findEntryOrSubEntry(id);
+    const newHiddenState = !hiddenItems[id];
+
+    setHiddenItems(prev => {
+      const updated = { ...prev, [id]: newHiddenState };
+
+      // If toggling an entry, cascade to all its sub-entries and items
+      if (found && found.type === 'entry') {
+        console.log(`[DEBUG Entry Data]`, found.data);
+        const childIds = getAllChildIds(found.data);
+        console.log(`[Cascading Entry] ID: ${id}, Entry ID: ${found.data.id}, Title: ${found.data.title}, Children: ${childIds.length}`, childIds);
+        childIds.forEach(childId => {
+          updated[childId] = newHiddenState;
+        });
+      }
+      // If toggling a sub-entry, cascade to all its items
+      else if (found && found.type === 'subEntry') {
+        const itemIds = getSubEntryItemIds(found.data);
+        console.log(`[Cascading SubEntry] ID: ${id}, Found: ${found.data.title}, Items: ${itemIds.length}`, itemIds);
+        itemIds.forEach(itemId => {
+          updated[itemId] = newHiddenState;
+        });
+      }
+      // If no entry/subEntry found, but it's a namespaced ID, still try to cascade
+      // This handles cases where the structure might be different (e.g., Skills section)
+      else {
+        console.log(`[Fallback Cascading] ID: ${id}, Found: ${found ? found.type : 'null'}`);
+        const { type } = parseId(id);
+        if (type === 'entry' || type === 'subentry') {
+          // Search in the full data to find this item and its children
+          if (fullCVData && fullCVData.profile && fullCVData.profile.sections) {
+            let cascaded = false;
+            for (const section of fullCVData.profile.sections) {
+              if (section.entries) {
+                for (const entry of section.entries) {
+                  const entryId = makeId('entry', entry.id);
+                  if (entryId === id) {
+                    const childIds = getAllChildIds(entry);
+                    console.log(`[Fallback Entry Match] Section: ${section.title}, Entry: ${entry.title}, Children: ${childIds.length}`, childIds);
+                    childIds.forEach(childId => {
+                      updated[childId] = newHiddenState;
+                    });
+                    cascaded = true;
+                    break;
+                  }
+                  if (entry.sub_entries) {
+                    for (const subEntry of entry.sub_entries) {
+                      const subEntryId = makeId('subentry', subEntry.id);
+                      if (subEntryId === id) {
+                        const itemIds = getSubEntryItemIds(subEntry);
+                        console.log(`[Fallback SubEntry Match] Entry: ${entry.title}, SubEntry: ${subEntry.title}, Items: ${itemIds.length}`, itemIds);
+                        itemIds.forEach(itemId => {
+                          updated[itemId] = newHiddenState;
+                        });
+                        cascaded = true;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+              if (cascaded) break;
+            }
+            if (!cascaded) {
+              console.log(`[Fallback No Match] ID: ${id} not found in data structure`);
+            }
+          }
+        }
+      }
+
+      return updated;
+    });
   };
 
   const downloadPDF = async () => {
@@ -442,9 +579,10 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       const token = localStorage.getItem('token');
 
       // Get list of hidden item IDs
+      // Extract raw IDs from namespaced IDs for backend
       const hiddenItemIds = Object.keys(hiddenItems)
-        .filter(id => hiddenItems[id])
-        .map(id => parseInt(id));
+        .filter(key => hiddenItems[key])
+        .map(key => parseId(key).id);
 
       const response = await fetch(
         `${API_URL}/api/cv/tailored-versions/${cv.id}/download-pdf`,
@@ -490,9 +628,10 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       const token = localStorage.getItem('token');
 
       // Get visible items (non-hidden)
+      // Extract raw IDs from namespaced IDs for backend
       const hiddenItemIds = Object.keys(hiddenItems)
-        .filter(id => hiddenItems[id])
-        .map(id => parseInt(id));
+        .filter(key => hiddenItems[key])
+        .map(key => parseId(key).id);
 
       const response = await fetch(
         `${API_URL}/api/cv/tailored-versions/${cv.id}/preview-ai-input`,
@@ -527,9 +666,10 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       const token = localStorage.getItem('token');
 
       // Get visible items (non-hidden)
+      // Extract raw IDs from namespaced IDs for backend
       const hiddenItemIds = Object.keys(hiddenItems)
-        .filter(id => hiddenItems[id])
-        .map(id => parseInt(id));
+        .filter(key => hiddenItems[key])
+        .map(key => parseId(key).id);
 
       const response = await fetch(
         `${API_URL}/api/cv/tailored-versions/${cv.id}/recalculate-ats`,
@@ -715,16 +855,38 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     );
   };
 
-  const renderEntry = (entry, sectionType) => {
+  const renderEntry = (entry, sectionType, isSubEntry = false) => {
     const isExpanded = expandedEntries[entry.id];
     const hasItems = entry.items && entry.items.length > 0;
     const hasSubEntries = entry.sub_entries && entry.sub_entries.length > 0;
     const hasContent = hasItems || hasSubEntries || entry.description;
+    const entryKey = makeId(isSubEntry ? 'subentry' : 'entry', entry.id);
 
     return (
       <div key={entry.id} className="entry-card" data-entry-id={entry.id}>
-        <div className="entry-header" onClick={() => hasContent && toggleEntry(entry.id)}>
-          <div className="entry-header-content">
+        <div className="entry-header">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleItemVisibility(entryKey);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '1.1rem',
+              padding: '0 0.75rem 0 0',
+              color: hiddenItems[entryKey] ? '#cbd5e0' : '#2d3748',
+              fontWeight: hiddenItems[entryKey] ? 'normal' : 'bold',
+              transition: 'all 0.2s',
+              lineHeight: 1,
+              flexShrink: 0
+            }}
+            title={hiddenItems[entryKey] ? 'Show in CV preview' : 'Hide from CV preview'}
+          >
+            {hiddenItems[entryKey] ? '☐' : '☑'}
+          </button>
+          <div className="entry-header-content" onClick={() => hasContent && toggleEntry(entry.id)} style={{flex: 1, cursor: hasContent ? 'pointer' : 'default'}}>
             <div className="entry-title-row">
               <strong className="entry-title">{entry.title}</strong>
               {entry.subtitle && <span className="entry-subtitle"> - {entry.subtitle}</span>}
@@ -748,7 +910,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
             )}
           </div>
           {hasContent && (
-            <span className="expand-arrow">{isExpanded ? '▼' : '▶'}</span>
+            <span className="expand-arrow" onClick={() => hasContent && toggleEntry(entry.id)} style={{cursor: 'pointer'}}>{isExpanded ? '▼' : '▶'}</span>
           )}
         </div>
 
@@ -775,40 +937,43 @@ function CVDetailView({ cv, onBack, onUpdate }) {
 
             {hasItems && (
               <ul className="entry-items-list">
-                {entry.items.map(item => (
-                  <li key={item.id} className="entry-item" data-item-id={item.id}>
-                    <div className="item-content-row">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleItemVisibility(item.id);
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '1rem',
-                          padding: '0 0.5rem 0 0',
-                          color: hiddenItems[item.id] ? '#cbd5e0' : '#2d3748',
-                          fontWeight: hiddenItems[item.id] ? 'normal' : 'bold',
-                          transition: 'all 0.2s',
-                          lineHeight: 1
-                        }}
-                        title={hiddenItems[item.id] ? 'Show in CV preview' : 'Hide from CV preview'}
-                      >
-                        👁
-                      </button>
-                      <span className="item-text">{item.content}</span>
-                      {item.recommended_by && renderAIBadge(item.recommended_by)}
-                    </div>
-                  </li>
-                ))}
+                {entry.items.map(item => {
+                  const itemKey = makeId('item', item.id);
+                  return (
+                    <li key={item.id} className="entry-item" data-item-id={item.id}>
+                      <div className="item-content-row">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleItemVisibility(itemKey);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '1rem',
+                            padding: '0 0.5rem 0 0',
+                            color: hiddenItems[itemKey] ? '#cbd5e0' : '#2d3748',
+                            fontWeight: hiddenItems[itemKey] ? 'normal' : 'bold',
+                            transition: 'all 0.2s',
+                            lineHeight: 1
+                          }}
+                          title={hiddenItems[itemKey] ? 'Show in CV preview' : 'Hide from CV preview'}
+                        >
+                          {hiddenItems[itemKey] ? '☐' : '☑'}
+                        </button>
+                        <span className="item-text">{item.content}</span>
+                        {item.recommended_by && renderAIBadge(item.recommended_by)}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
             {hasSubEntries && (
               <div className="sub-entries">
-                {entry.sub_entries.map(subEntry => renderEntry(subEntry, sectionType))}
+                {entry.sub_entries.map(subEntry => renderEntry(subEntry, sectionType, true))}
               </div>
             )}
           </div>

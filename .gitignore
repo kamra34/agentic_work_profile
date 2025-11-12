@@ -36,4 +36,14 @@ Thumbs.db
 # Uploads
 backend/uploads/
 
+# SQLite databases (not used - we use PostgreSQL)
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files and folders
+backend/temp/
+frontend/temp/
+temp/
+
 .clau*

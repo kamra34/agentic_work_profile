@@ -754,7 +754,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  cursor: pointer;
+  gap: 0.5rem;
   transition: all 0.2s;
 }
 

@@ -1,36 +1,19 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON, Enum as SQLEnum
+"""
+Generalized hierarchical data models for work profile management.
+All profile content uses a single ProfileNode model for infinite flexibility.
+"""
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
-import enum
+import uuid
 
 Base = declarative_base()
 
 
-class ContentType(str, enum.Enum):
-    """Type of content stored in a section or entry"""
-    PARAGRAPH = "paragraph"  # Flowing text with multiple sentences
-    BULLETS = "bullets"  # List of bullet points only
-    TEXT_AND_BULLETS = "text_and_bullets"  # Description text followed by bullet points
-    EMPTY = "empty"  # No content, just metadata (title, dates, etc.)
-
-
-class SectionType(str, enum.Enum):
-    """Predefined section types for consistent structure"""
-    SUMMARY = "summary"
-    WORK_EXPERIENCE = "work_experience"
-    EDUCATION = "education"
-    SKILLS = "skills"
-    PROJECTS = "projects"
-    CERTIFICATIONS = "certifications"
-    AWARDS = "awards"
-    PUBLICATIONS = "publications"
-    LANGUAGES = "languages"
-    VOLUNTEER = "volunteer"
-    CUSTOM = "custom"  # User-defined section type
-
-
 class User(Base):
+    """User account"""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -45,151 +28,78 @@ class User(Base):
 
 
 class Profile(Base):
-    """
-    User's professional profile - can have multiple versions (e.g., for different roles)
-    """
+    """User's professional profile"""
     __tablename__ = "profiles"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    title = Column(String, nullable=False, default="My Profile")  # e.g., "Software Engineer Profile", "Data Scientist Profile"
-    is_default = Column(Boolean, default=True)  # User's primary profile
-
-    # Basic contact info (stored at profile level)
-    contact_info = Column(JSON, nullable=True)  # {"phone": "...", "email": "...", "location": "...", "linkedin": "...", "github": "..."}
-
-    # Metadata
+    title = Column(String, nullable=False, default="My Profile")
+    is_default = Column(Boolean, default=True)
+    contact_info = Column(JSON, nullable=True)  # {"phone": "...", "email": "...", "location": "..."}
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    notes = Column(Text, nullable=True)  # User's private notes about this profile
+    notes = Column(Text, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="profiles")
-    sections = relationship("Section", back_populates="profile", cascade="all, delete-orphan", order_by="Section.order")
+    nodes = relationship("ProfileNode", back_populates="profile", cascade="all, delete-orphan")
 
 
-class Section(Base):
+class ProfileNode(Base):
     """
-    Top-level sections of a profile (Summary, Work Experience, Education, etc.)
-    Can contain either:
-    1. Direct content (for simple sections like Summary)
-    2. Multiple entries (for complex sections like Work Experience)
+    Universal hierarchical node for ALL profile content.
+    Can represent: sections, entries, sub-entries, items, bullets - anything.
+    Infinitely nestable via parent_id self-reference.
     """
-    __tablename__ = "sections"
+    __tablename__ = "profile_nodes"
 
+    # Identity
     id = Column(Integer, primary_key=True, index=True)
+    global_id = Column(String, unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
     profile_id = Column(Integer, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("profile_nodes.id", ondelete="CASCADE"), nullable=True)
 
-    # Section identification
-    title = Column(String, nullable=False)  # Display name: "Professional Summary", "Work Experience", etc.
-    section_type = Column(SQLEnum(SectionType, values_callable=lambda obj: [e.value for e in obj]), nullable=False)  # Standardized type for programmatic access
-    icon = Column(String, nullable=True)  # Icon name for UI (e.g., "briefcase", "graduation-cap")
-
-    # Content configuration
-    content_type = Column(SQLEnum(ContentType, values_callable=lambda obj: [e.value for e in obj]), nullable=False, default=ContentType.EMPTY)
-    content = Column(Text, nullable=True)  # Direct content for paragraph-based sections (e.g., Summary)
-
-    # Organization
-    order = Column(Integer, default=0)  # Display order
-    is_visible = Column(Boolean, default=True)  # Show/hide in generated outputs
-
-    # Metadata for AI and tracking
-    meta_info = Column(JSON, nullable=True)  # Flexible field for: {"source": "manual", "last_ai_reviewed": "2024-01-15", "keywords": [...]}
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    profile = relationship("Profile", back_populates="sections")
-    entries = relationship("SectionEntry", back_populates="section", cascade="all, delete-orphan", order_by="SectionEntry.order")
-
-
-class SectionEntry(Base):
-    """
-    Individual entries within a section (e.g., a specific job, degree, project)
-    Supports hierarchical structure:
-    - Work Experience: Company (parent) → Role (child) → bullet points
-    - Education: Degree (parent) → bullet points (no child entries needed)
-    - Summary: Direct section content (no entries needed)
-
-    Can contain:
-    1. Just metadata (title, dates, location)
-    2. Text description
-    3. Bullet points (via SectionItem)
-    4. Both text description AND bullet points
-    5. Sub-entries (child entries for nested structure)
-    """
-    __tablename__ = "section_entries"
-
-    id = Column(Integer, primary_key=True, index=True)
-    section_id = Column(Integer, ForeignKey("sections.id", ondelete="CASCADE"), nullable=False)
-    parent_entry_id = Column(Integer, ForeignKey("section_entries.id", ondelete="CASCADE"), nullable=True)  # For nested entries (e.g., roles within a company)
-
-    # Entry identification
-    title = Column(String, nullable=False)  # Job title, degree name, project name, company name, etc.
-    subtitle = Column(String, nullable=True)  # Company (for top-level roles), university, organization, department, etc.
-
-    # Time and location
-    start_date = Column(String, nullable=True)  # Flexible format: "Jan 2020", "2020-01", etc.
-    end_date = Column(String, nullable=True)  # "Present", "Dec 2022", etc.
-    location = Column(String, nullable=True)  # "San Francisco, CA", "Remote", etc.
-
-    # Content configuration
-    content_type = Column(SQLEnum(ContentType, values_callable=lambda obj: [e.value for e in obj]), nullable=False, default=ContentType.BULLETS)
-    description = Column(Text, nullable=True)  # Text description/paragraph (for TEXT_AND_BULLETS or PARAGRAPH types)
-
-    # Organization
-    order = Column(Integer, default=0)
-    is_visible = Column(Boolean, default=True)
-
-    # Flexible additional data
-    extra_data = Column(JSON, nullable=True)  # {"company_size": "5000+", "industry": "Tech", "degree_type": "Bachelor's", "gpa": "3.8", etc.}
-
-    # Metadata for AI and tracking
-    meta_info = Column(JSON, nullable=True)  # {"source": "manual", "ai_enhanced": false, "keywords": [...], "last_edited": "2024-01-15"}
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    section = relationship("Section", back_populates="entries")
-    items = relationship("SectionItem", back_populates="entry", cascade="all, delete-orphan", order_by="SectionItem.order")
-
-    # Self-referential relationship for hierarchical structure
-    parent_entry = relationship("SectionEntry", remote_side=[id], back_populates="sub_entries")
-    sub_entries = relationship("SectionEntry", back_populates="parent_entry", cascade="all, delete-orphan", order_by="SectionEntry.order")
-
-
-class SectionItem(Base):
-    """
-    Individual bullet points or list items within an entry
-    Each item represents one achievement, responsibility, skill, etc.
-    """
-    __tablename__ = "section_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    entry_id = Column(Integer, ForeignKey("section_entries.id", ondelete="CASCADE"), nullable=False)
+    # Node type (flexible string - not enum)
+    node_type = Column(String, nullable=False, default="entry")  # "section", "entry", "item", "bullet", "custom"
 
     # Content
-    content = Column(Text, nullable=False)  # The actual bullet point text
+    title = Column(String, nullable=True)
+    subtitle = Column(String, nullable=True)
+    content = Column(Text, nullable=True)
+    content_type = Column(String, nullable=False, default="text")  # "text", "bullets", "paragraph", "mixed", "empty"
 
-    # Organization
+    # Optional metadata (only use when needed)
+    start_date = Column(String, nullable=True)
+    end_date = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+
+    # Display and organization
     order = Column(Integer, default=0)
     is_visible = Column(Boolean, default=True)
+    icon = Column(String, nullable=True)
 
-    # Metadata for AI and tracking
-    meta_info = Column(JSON, nullable=True)  # {"source": "manual", "ai_suggested": false, "keywords": [...], "impact_score": 8}
+    # Flexible extensions
+    attributes = Column(JSON, nullable=True)  # User-defined fields: {"gpa": "3.8", "company_size": "5000+"}
+    meta_info = Column(JSON, nullable=True)  # System metadata: {"source": "manual", "ai_enhanced": false}
+
+    # Tracking
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    entry = relationship("SectionEntry", back_populates="items")
+    profile = relationship("Profile", back_populates="nodes")
+    parent = relationship("ProfileNode", remote_side=[id], back_populates="children")
+    children = relationship(
+        "ProfileNode",
+        back_populates="parent",
+        cascade="all, delete-orphan",
+        order_by="ProfileNode.order"
+    )
 
 
-class TailoredCVVersion(Base):
-    """
-    Saved tailored CV versions for specific job applications
-    Stores which items were selected from the master profile for each application
-    """
-    __tablename__ = "tailored_cv_versions"
+class TailoredCV(Base):
+    """Saved tailored CV for specific job applications"""
+    __tablename__ = "tailored_cvs"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -198,66 +108,33 @@ class TailoredCVVersion(Base):
     # Job information
     job_title = Column(String, nullable=False)
     company_name = Column(String, nullable=True)
-    job_description = Column(Text, nullable=True)  # Original job description
+    job_description = Column(Text, nullable=True)
 
-    # AI Analysis scores
-    openai_fit_score = Column(Integer, nullable=True)  # 0-100
-    claude_fit_score = Column(Integer, nullable=True)  # 0-100
-    openai_ats_score = Column(Integer, nullable=True)  # 0-100
-    claude_ats_score = Column(Integer, nullable=True)  # 0-100
+    # AI scores
+    fit_scores = Column(JSON, nullable=True)  # {"openai": 85, "claude": 90, "gemini": 88}
+    ats_scores = Column(JSON, nullable=True)  # {"openai": 75, "claude": 80}
 
-    # Selected content (stored as JSON with ACTUAL CONTENT SNAPSHOT, not IDs)
-    # This ensures CV remains intact even if master profile is modified later
-    selected_content = Column(JSON, nullable=False)
-    # Structure - Complete snapshot of selected profile sections:
+    # Selected nodes (track by global_id)
+    selected_node_ids = Column(JSON, nullable=False)  # ["uuid-1", "uuid-2", ...]
+
+    # Content snapshot at time of tailoring
+    content_snapshot = Column(JSON, nullable=False)
     # {
-    #   "contact_info": {...},
-    #   "sections": [
-    #     {
-    #       "title": "Summary",
-    #       "section_type": "summary",
-    #       "icon": "📝",
-    #       "content_type": "bullets",
-    #       "order": 0,
-    #       "entries": [
-    #         {
-    #           "title": "Summary",
-    #           "items": [
-    #             {"content": "Actual bullet text...", "order": 0},
-    #             ...
-    #           ]
-    #         }
-    #       ]
-    #     },
-    #     {
-    #       "title": "Work Experience",
-    #       "section_type": "work_experience",
-    #       "entries": [
-    #         {
-    #           "title": "Job Title",
-    #           "subtitle": "Company Name",
-    #           "start_date": "Jan 2020",
-    #           "end_date": "Present",
-    #           "location": "City, State",
-    #           "description": "...",
-    #           "items": [{"content": "Achievement...", "order": 0}, ...],
-    #           "sub_entries": [...]  # For roles within company
-    #         }
-    #       ]
-    #     }
-    #   ]
+    #   "nodes": {"uuid-1": {...node_data...}, "uuid-2": {...}},
+    #   "root_node_ids": ["uuid-1", "uuid-4"],
+    #   "contact_info": {...}
     # }
 
-    # AI recommendations (for reference)
-    openai_recommendations = Column(JSON, nullable=True)
-    claude_recommendations = Column(JSON, nullable=True)
+    # AI recommendations and analysis
+    recommendations = Column(JSON, nullable=True)  # {"openai": {...}, "claude": {...}}
+    job_analysis = Column(JSON, nullable=True)
 
-    # Job analysis from both AI models
-    job_analysis = Column(JSON, nullable=True)  # Stores analysis.analyses array with both OpenAI and Claude job requirement analyses
+    # Application tracking
+    status = Column(String, default="draft")  # draft, applied, interview, offer, rejected, etc.
+    application_date = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
 
     # Metadata
-    notes = Column(Text, nullable=True)  # User's notes about this application
-    status = Column(String, default="draft")  # draft, applied, interview, rejected, offer
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

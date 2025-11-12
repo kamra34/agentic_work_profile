@@ -8,6 +8,9 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
   const contactInfo = profile?.contact_info || {};
   const sections = profile?.sections || {};
 
+  // Helper to create namespaced IDs (must match TailoredCVs.jsx)
+  const makeId = (type, id) => `${type}_${id}`;
+
   // Fetch user's full name
   useEffect(() => {
     const fetchUserName = async () => {
@@ -98,7 +101,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
           <div className="cv-summary-bullets">
             {summarySection.entries.flatMap(entry =>
               entry.items || []
-            ).filter(item => !hiddenItems[item.id]).map((item, idx) => (
+            ).filter(item => !hiddenItems[makeId('item', item.id)]).map((item, idx) => (
               <div
                 key={item.id || idx}
                 className="cv-bullet"
@@ -135,8 +138,8 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
     >
       <h3 className="cv-section-title">Professional Experience</h3>
       <div className="cv-section-content">
-        {workSection.entries && workSection.entries.filter(e => !e.parent_entry_id).length > 0 ? (
-          workSection.entries.filter(e => !e.parent_entry_id).map(job => (
+        {workSection.entries && workSection.entries.filter(e => !e.parent_entry_id && !hiddenItems[makeId('entry', e.id)]).length > 0 ? (
+          workSection.entries.filter(e => !e.parent_entry_id && !hiddenItems[makeId('entry', e.id)]).map(job => (
             <div key={job.id} className="cv-job">
               <div
                 className="cv-job-header"
@@ -165,7 +168,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
               {/* Direct bullets (not in groups) */}
               {job.items && job.items.length > 0 && (
                 <div className="cv-job-bullets">
-                  {job.items.filter(item => !hiddenItems[item.id]).map(item => (
+                  {job.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                     <div key={item.id} className="cv-bullet">• {item.content}</div>
                   ))}
                 </div>
@@ -174,7 +177,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
               {/* Bullet Groups */}
               {job.sub_entries && job.sub_entries.length > 0 && (
                 <div className="cv-bullet-groups">
-                  {job.sub_entries.map(group => (
+                  {job.sub_entries.filter(group => !hiddenItems[makeId('subentry', group.id)]).map(group => (
                     <div key={group.id} className="cv-bullet-group">
                       <div
                         className="cv-bullet-group-title"
@@ -187,7 +190,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                       </div>
                       {group.items && group.items.length > 0 && (
                         <div className="cv-bullet-group-items">
-                          {group.items.filter(item => !hiddenItems[item.id]).map(item => (
+                          {group.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                             <div key={item.id} className="cv-bullet-sub">– {item.content}</div>
                           ))}
                         </div>
@@ -214,8 +217,8 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
     >
       <h3 className="cv-section-title">Education</h3>
       <div className="cv-section-content">
-        {educationSection.entries && educationSection.entries.filter(e => !e.parent_entry_id).length > 0 ? (
-          educationSection.entries.filter(e => !e.parent_entry_id).map(edu => (
+        {educationSection.entries && educationSection.entries.filter(e => !e.parent_entry_id && !hiddenItems[makeId('entry', e.id)]).length > 0 ? (
+          educationSection.entries.filter(e => !e.parent_entry_id && !hiddenItems[makeId('entry', e.id)]).map(edu => (
             <div key={edu.id} className="cv-education">
               <div
                 className="cv-edu-header"
@@ -244,7 +247,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
               {/* Direct bullets (not in groups) */}
               {edu.items && edu.items.length > 0 && (
                 <div className="cv-edu-bullets">
-                  {edu.items.filter(item => !hiddenItems[item.id]).map(item => (
+                  {edu.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                     <div key={item.id} className="cv-bullet">• {item.content}</div>
                   ))}
                 </div>
@@ -253,7 +256,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
               {/* Bullet Groups */}
               {edu.sub_entries && edu.sub_entries.length > 0 && (
                 <div className="cv-bullet-groups">
-                  {edu.sub_entries.map(group => (
+                  {edu.sub_entries.filter(group => !hiddenItems[makeId('subentry', group.id)]).map(group => (
                     <div key={group.id} className="cv-bullet-group">
                       <div
                         className="cv-bullet-group-title"
@@ -266,7 +269,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                       </div>
                       {group.items && group.items.length > 0 && (
                         <div className="cv-bullet-group-items">
-                          {group.items.filter(item => !hiddenItems[item.id]).map(item => (
+                          {group.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                             <div key={item.id} className="cv-bullet-sub">– {item.content}</div>
                           ))}
                         </div>
@@ -300,7 +303,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
         <div className="cv-section-content">
           {skillsSection.entries && skillsSection.entries.length > 0 ? (
             <div className={gridClass}>
-              {skillsSection.entries.map(category => (
+              {skillsSection.entries.filter(category => !hiddenItems[makeId('entry', category.id)]).map(category => (
                 <div key={category.id} className="cv-skill-category">
                   <h4
                     className="cv-skill-category-title"
@@ -313,7 +316,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                   </h4>
                   {category.items && category.items.length > 0 && (
                     <ul className="cv-skill-list">
-                      {category.items.filter(item => !hiddenItems[item.id]).map(item => (
+                      {category.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                         <li
                           key={item.id}
                           onDoubleClick={(e) => {
@@ -349,7 +352,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
         <div className="cv-section-content">
           {projectsSection.entries && projectsSection.entries.length > 0 ? (
             <div className="cv-projects-list">
-              {projectsSection.entries.map(project => (
+              {projectsSection.entries.filter(project => !hiddenItems[makeId('entry', project.id)]).map(project => (
                 <div key={project.id} className="cv-project">
                   <h4
                     className="cv-project-title"
@@ -362,7 +365,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                   </h4>
                   {project.items && project.items.length > 0 && (
                     <ul className="cv-project-details">
-                      {project.items.filter(item => !hiddenItems[item.id]).map(item => (
+                      {project.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                         <li
                           key={item.id}
                           onDoubleClick={(e) => {
@@ -398,7 +401,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
         <div className="cv-section-content">
           {certificationsSection.entries && certificationsSection.entries.length > 0 ? (
             <div className="cv-certifications-list">
-              {certificationsSection.entries.map(cert => (
+              {certificationsSection.entries.filter(cert => !hiddenItems[makeId('entry', cert.id)]).map(cert => (
                 <div key={cert.id} className="cv-certification">
                   <h4
                     className="cv-certification-title"
@@ -411,7 +414,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                   </h4>
                   {cert.items && cert.items.length > 0 && (
                     <ul className="cv-certification-details">
-                      {cert.items.filter(item => !hiddenItems[item.id]).map(item => (
+                      {cert.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                         <li
                           key={item.id}
                           onDoubleClick={(e) => {
@@ -447,7 +450,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
         <div className="cv-section-content">
           {awardsSection.entries && awardsSection.entries.length > 0 ? (
             <div className="cv-awards-list">
-              {awardsSection.entries.map(award => (
+              {awardsSection.entries.filter(award => !hiddenItems[makeId('entry', award.id)]).map(award => (
                 <div key={award.id} className="cv-award">
                   <h4
                     className="cv-award-title"
@@ -460,7 +463,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                   </h4>
                   {award.items && award.items.length > 0 && (
                     <ul className="cv-award-details">
-                      {award.items.filter(item => !hiddenItems[item.id]).map(item => (
+                      {award.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                         <li
                           key={item.id}
                           onDoubleClick={(e) => {
@@ -496,7 +499,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
         <div className="cv-section-content">
           {publicationsSection.entries && publicationsSection.entries.length > 0 ? (
             <div className="cv-publications-list">
-              {publicationsSection.entries.map(pub => (
+              {publicationsSection.entries.filter(pub => !hiddenItems[makeId('entry', pub.id)]).map(pub => (
                 <div key={pub.id} className="cv-publication">
                   <div
                     className="cv-publication-title"
@@ -509,7 +512,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                   </div>
                   {pub.items && pub.items.length > 0 && (
                     <ul className="cv-publication-details">
-                      {pub.items.filter(item => !hiddenItems[item.id]).map(item => (
+                      {pub.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                         <li
                           key={item.id}
                           onDoubleClick={(e) => {
@@ -545,7 +548,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
         <div className="cv-section-content">
           {languagesSection.entries && languagesSection.entries.length > 0 ? (
             <div className="cv-languages-list">
-              {languagesSection.entries.map(lang => (
+              {languagesSection.entries.filter(lang => !hiddenItems[makeId('entry', lang.id)]).map(lang => (
                 <div key={lang.id} className="cv-language">
                   <h4
                     className="cv-language-name"
@@ -558,7 +561,7 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
                   </h4>
                   {lang.items && lang.items.length > 0 && (
                     <ul className="cv-language-proficiency">
-                      {lang.items.filter(item => !hiddenItems[item.id]).map(item => (
+                      {lang.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                         <li
                           key={item.id}
                           onDoubleClick={(e) => {
@@ -595,13 +598,13 @@ function CVPreview({ profile, onSectionClick, hiddenItems = {} }) {
           <div className="cv-text-content">{section.content}</div>
         )}
         {section.entries && section.entries.length > 0 ? (
-          section.entries.map(entry => (
+          section.entries.filter(entry => !hiddenItems[makeId('entry', entry.id)]).map(entry => (
             <div key={entry.id} className="cv-entry">
               <strong>{entry.title}</strong>
               {entry.subtitle && <span> - {entry.subtitle}</span>}
               {entry.items && entry.items.length > 0 && (
                 <div className="cv-entry-bullets">
-                  {entry.items.filter(item => !hiddenItems[item.id]).map(item => (
+                  {entry.items.filter(item => !hiddenItems[makeId('item', item.id)]).map(item => (
                     <div key={item.id} className="cv-bullet">• {item.content}</div>
                   ))}
                 </div>
