@@ -74,6 +74,10 @@ class ProfileNodeBase(BaseModel):
     is_visible: bool = True
     icon: Optional[str] = None
 
+    # Hierarchy tracking (auto-computed, but can be set manually)
+    level: int = 0
+    root_id: Optional[int] = None
+
     # Extensions
     attributes: Optional[Dict[str, Any]] = None
     meta_info: Optional[Dict[str, Any]] = None
@@ -98,6 +102,8 @@ class ProfileNodeUpdate(BaseModel):
     order: Optional[int] = None
     is_visible: Optional[bool] = None
     icon: Optional[str] = None
+    level: Optional[int] = None
+    root_id: Optional[int] = None
     attributes: Optional[Dict[str, Any]] = None
     meta_info: Optional[Dict[str, Any]] = None
     parent_id: Optional[int] = None

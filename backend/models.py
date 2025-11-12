@@ -59,6 +59,10 @@ class ProfileNode(Base):
     profile_id = Column(Integer, ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False)
     parent_id = Column(Integer, ForeignKey("profile_nodes.id", ondelete="CASCADE"), nullable=True)
 
+    # Hierarchy tracking (for performance)
+    level = Column(Integer, default=0, nullable=False, index=True)  # 0=root, 1=child, 2=grandchild, etc.
+    root_id = Column(Integer, ForeignKey("profile_nodes.id"), nullable=True, index=True)  # Top-level section ID
+
     # Node type (flexible string - not enum)
     node_type = Column(String, nullable=False, default="entry")  # "section", "entry", "item", "bullet", "custom"
 

@@ -295,11 +295,22 @@ def create_node(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    # Compute level and root_id based on parent
+    level = 0
+    root_id = None
+    if node_data.parent_id is not None:
+        parent = db.query(ProfileNode).filter(ProfileNode.id == node_data.parent_id).first()
+        if parent:
+            level = parent.level + 1
+            root_id = parent.root_id if parent.root_id is not None else parent.id
+
     # Create node
     node = ProfileNode(
         global_id=str(uuid.uuid4()),
         profile_id=profile_id,
-        **node_data.model_dump(exclude={"parent_id", "children"})
+        level=level,
+        root_id=root_id,
+        **node_data.model_dump(exclude={"parent_id", "children", "level", "root_id"})
     )
     if node_data.parent_id is not None:
         node.parent_id = node_data.parent_id
@@ -307,6 +318,12 @@ def create_node(
     db.add(node)
     db.commit()
     db.refresh(node)
+
+    # If this is a root node, set root_id to itself
+    if node.parent_id is None:
+        node.root_id = node.id
+        db.commit()
+        db.refresh(node)
 
     # Recursively create children if provided
     if node_data.children:
@@ -405,13 +422,23 @@ def move_node(
 # ============================================================================
 
 def _create_children_recursive(db: Session, parent_id: int, profile_id: int, children: List[ProfileNodeCreate]):
-    """Recursively create child nodes"""
+    """Recursively create child nodes with proper level and root_id tracking"""
+    # Get parent to compute level and root_id
+    parent = db.query(ProfileNode).filter(ProfileNode.id == parent_id).first()
+    if not parent:
+        return
+
     for child_data in children:
+        level = parent.level + 1
+        root_id = parent.root_id if parent.root_id is not None else parent.id
+
         child = ProfileNode(
             global_id=str(uuid.uuid4()),
             profile_id=profile_id,
             parent_id=parent_id,
-            **child_data.model_dump(exclude={"parent_id", "children"})
+            level=level,
+            root_id=root_id,
+            **child_data.model_dump(exclude={"parent_id", "children", "level", "root_id"})
         )
         db.add(child)
         db.commit()
