@@ -67,7 +67,10 @@ function TailorCV() {
       return;
     }
 
+    // Move to Step 2 immediately to show loading state
+    setCurrentStep(2);
     setAnalyzing(true);
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/tailor/analyze-job`, {
@@ -91,9 +94,6 @@ function TailorCV() {
       setOpenaiAnalysis(data.openai);
       setClaudeAnalysis(data.claude);
 
-      // Auto-advance to step 2
-      setCurrentStep(2);
-
       // Auto-start scoring (use whichever succeeded)
       const jobReqs = data.openai?.success ? data.openai.analysis : data.claude?.analysis;
       if (jobReqs) {
@@ -104,6 +104,8 @@ function TailorCV() {
     } catch (error) {
       console.error('Error analyzing job:', error);
       alert(`Failed to analyze job description: ${error.message}`);
+      // Go back to Step 1 on error
+      setCurrentStep(1);
     } finally {
       setAnalyzing(false);
     }
