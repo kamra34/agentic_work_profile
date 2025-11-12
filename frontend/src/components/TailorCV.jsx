@@ -142,6 +142,7 @@ function TailorCV() {
       setScores(data);
 
       // Auto-start node recommendations
+      console.log('Starting node recommendations with job requirements:', jobRequirements);
       await handleGetRecommendations(jobRequirements);
     } catch (error) {
       console.error('Error scoring profile:', error);
@@ -153,13 +154,15 @@ function TailorCV() {
 
   const handleGetRecommendations = async (jobRequirements) => {
     if (!profile || !jobRequirements) {
-      console.error('Missing profile or job requirements for recommendations');
+      console.error('Missing profile or job requirements for recommendations', { profile, jobRequirements });
       return;
     }
 
+    console.log('handleGetRecommendations called with profile:', profile.id);
     setRecommendationsLoading(true);
     try {
       const token = localStorage.getItem('token');
+      console.log('Fetching recommendations from API...');
       const response = await fetch(`${API_URL}/api/tailor/recommend-nodes`, {
         method: 'POST',
         headers: {
@@ -172,8 +175,11 @@ function TailorCV() {
         })
       });
 
+      console.log('Recommendations API response status:', response.status);
+
       if (!response.ok) {
         const error = await response.json();
+        console.error('Recommendations API error:', error);
         throw new Error(error.detail || 'Failed to get recommendations');
       }
 
