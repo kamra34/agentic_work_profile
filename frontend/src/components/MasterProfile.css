@@ -319,6 +319,29 @@
   list-style-type: circle;
 }
 
+/* Paragraph styling */
+.cv-paragraph {
+  margin-bottom: 16px;
+}
+
+.paragraph-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 6px 0;
+}
+
+.paragraph-content {
+  color: #4b5563;
+  line-height: 1.6;
+  margin: 0;
+  text-align: justify;
+}
+
+.paragraph-children {
+  margin-top: 12px;
+}
+
 /* Buttons */
 .btn-primary {
   background: #3b82f6;

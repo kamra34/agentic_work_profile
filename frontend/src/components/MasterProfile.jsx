@@ -302,8 +302,8 @@ function CVPreviewContent({ nodes, profile }) {
       );
     }
 
-    // Item/bullet level
-    if (node.node_type === 'item' || node.node_type === 'bullet') {
+    // Bullet level - shown as list items
+    if (node.node_type === 'bullet' || node.node_type === 'item') {
       // If it has content (text), show it as a bullet
       if (node.content) {
         return (
@@ -330,11 +330,26 @@ function CVPreviewContent({ nodes, profile }) {
       return null;
     }
 
-    // Default rendering
+    // Paragraph level - shown as text blocks
+    if (node.node_type === 'paragraph') {
+      return (
+        <div key={node.id} className="cv-paragraph">
+          {node.title && <h4 className="paragraph-title">{node.title}</h4>}
+          {node.content && <p className="paragraph-content">{node.content}</p>}
+          {node.children && node.children.length > 0 && (
+            <div className="paragraph-children">
+              {node.children.map(child => renderNode(child, level + 1))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Default rendering for any other types
     return (
       <div key={node.id} className={`cv-node cv-node-${node.node_type}`}>
         {node.title && <strong>{node.title}</strong>}
-        {node.content && <span>{node.content}</span>}
+        {node.content && <span> {node.content}</span>}
         {node.children && node.children.map(child => renderNode(child, level + 1))}
       </div>
     );
@@ -398,15 +413,16 @@ function NodeModal({ onSave, onCancel, isChild }) {
             >
               <option value="section">Section - Top level (e.g., Work Experience, Education)</option>
               <option value="entry">Entry - Main item (e.g., Job position, Degree)</option>
-              <option value="item">Item - Bullet point or achievement</option>
-              <option value="bullet">Bullet - Same as Item (alternative name)</option>
+              <option value="bullet">Bullet - Single point or achievement (shown as • item)</option>
+              <option value="paragraph">Paragraph - Text block or description</option>
             </select>
           </div>
           <div className="form-help">
             <small>
               <strong>Section:</strong> Top-level like "Work Experience" •
               <strong>Entry:</strong> Job/degree with dates •
-              <strong>Item/Bullet:</strong> Achievement points
+              <strong>Bullet:</strong> Achievement points (• bullets) •
+              <strong>Paragraph:</strong> Text blocks
             </small>
           </div>
 
