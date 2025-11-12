@@ -16,6 +16,8 @@ import os
 from dotenv import load_dotenv
 import uuid
 from pathlib import Path
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # Load .env from project root (parent directory)
 env_path = Path(__file__).parent.parent / '.env'
@@ -578,24 +580,67 @@ async def recommend_node_selection(
     Get AI recommendations for which nodes to include/exclude.
     Returns recommendations from both models.
     """
+    import time
+    start_time = time.time()
+    print(f"\n🚀 [RECOMMEND-NODES] Request received from user {current_user.id}")
+
     job_requirements = request.get("job_requirements")
     profile_id = request.get("profile_id")
 
     if not job_requirements or not profile_id:
+        print(f"❌ [RECOMMEND-NODES] Missing requirements or profile_id")
         raise HTTPException(status_code=400, detail="Missing job_requirements or profile_id")
 
+    print(f"📋 [RECOMMEND-NODES] Profile ID: {profile_id}")
+
     # Get profile with nodes
+    db_start = time.time()
     profile = db.query(Profile).filter(
         Profile.id == profile_id,
         Profile.user_id == current_user.id
     ).first()
+    print(f"⏱️ [RECOMMEND-NODES] Database query took {time.time() - db_start:.2f}s")
 
     if not profile:
+        print(f"❌ [RECOMMEND-NODES] Profile {profile_id} not found")
         raise HTTPException(status_code=404, detail="Profile not found")
 
     # Convert nodes to flat list for AI analysis
+    print(f"🔄 [RECOMMEND-NODES] Converting {len(profile.nodes)} nodes to dict...")
+    convert_start = time.time()
+
+    def clean_dict(d):
+        """Remove null, empty string, and empty array values to reduce token usage"""
+        if not isinstance(d, dict):
+            return d
+
+        cleaned = {}
+        for key, value in d.items():
+            # Skip null, empty strings, and empty lists
+            if value is None or value == "" or (isinstance(value, list) and len(value) == 0):
+                continue
+
+            # Recursively clean nested dicts
+            if isinstance(value, dict):
+                cleaned_value = clean_dict(value)
+                if cleaned_value:  # Only include if not empty after cleaning
+                    cleaned[key] = cleaned_value
+            # Clean lists of dicts
+            elif isinstance(value, list):
+                if all(isinstance(item, dict) for item in value):
+                    cleaned_list = [clean_dict(item) for item in value]
+                    cleaned_list = [item for item in cleaned_list if item]  # Remove empty dicts
+                    if cleaned_list:
+                        cleaned[key] = cleaned_list
+                else:
+                    cleaned[key] = value
+            else:
+                cleaned[key] = value
+
+        return cleaned
+
     def node_to_dict(node):
-        return {
+        data = {
             "id": node.id,
             "global_id": node.global_id,
             "node_type": node.node_type,
@@ -607,15 +652,80 @@ async def recommend_node_selection(
             "location": node.location,
             "level": node.level,
             "is_visible": node.is_visible,
-            "children": [node_to_dict(child) for child in node.children] if node.children else []
         }
+        cleaned = clean_dict(data)
+        if node.children:
+            children = [node_to_dict(child) for child in node.children]
+            if children:
+                cleaned["children"] = children
+        return cleaned
 
     nodes_list = [node_to_dict(node) for node in profile.nodes if node.parent_id is None]
-    flat_nodes = ai_tailor_service.flatten_nodes_for_analysis(nodes_list)
 
-    # Get recommendations from both models
-    openai_recommendations = ai_tailor_service.recommend_nodes_with_openai(job_requirements, flat_nodes)
-    claude_recommendations = ai_tailor_service.recommend_nodes_with_claude(job_requirements, flat_nodes)
+    # Clean job_requirements too
+    job_requirements = clean_dict(job_requirements)
+
+    # Calculate original size (before flattening with cleaned structure)
+    import json
+    original_size = len(json.dumps({"job_requirements": job_requirements, "profile_nodes": nodes_list}))
+
+    flat_nodes = ai_tailor_service.flatten_nodes_for_analysis(nodes_list)
+    print(f"✅ [RECOMMEND-NODES] Converted to {len(flat_nodes)} flat nodes in {time.time() - convert_start:.2f}s")
+
+    # Show size reduction
+    cleaned_size = len(json.dumps({"job_requirements": job_requirements, "profile_nodes": flat_nodes}))
+    reduction = original_size - cleaned_size
+    reduction_pct = (reduction / original_size * 100) if original_size > 0 else 0
+    print(f"📊 [RECOMMEND-NODES] Data size: {original_size:,} → {cleaned_size:,} characters ({cleaned_size/1000:.1f}K)")
+    print(f"📉 [RECOMMEND-NODES] Reduction: {reduction:,} characters ({reduction_pct:.1f}%)")
+
+    # Get recommendations from both models IN PARALLEL
+    print(f"🤖 [RECOMMEND-NODES] Calling OpenAI and Claude IN PARALLEL...")
+    parallel_start = time.time()
+
+    # Run both AI calls in parallel using ThreadPoolExecutor
+    # This allows both models to process simultaneously
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        # Submit both tasks
+        openai_future = executor.submit(
+            ai_tailor_service.recommend_nodes_with_openai,
+            job_requirements,
+            flat_nodes
+        )
+        claude_future = executor.submit(
+            ai_tailor_service.recommend_nodes_with_claude,
+            job_requirements,
+            flat_nodes
+        )
+
+        # Wait for OpenAI result
+        openai_start = time.time()
+        try:
+            openai_recommendations = openai_future.result()
+            openai_duration = time.time() - openai_start
+            print(f"✅ [RECOMMEND-NODES] OpenAI completed in {openai_duration:.2f}s, success: {openai_recommendations.get('success')}")
+        except Exception as e:
+            openai_duration = time.time() - openai_start
+            print(f"❌ [RECOMMEND-NODES] OpenAI failed after {openai_duration:.2f}s: {str(e)}")
+            openai_recommendations = {"success": False, "error": str(e)}
+
+        # Wait for Claude result
+        claude_start = time.time()
+        try:
+            claude_recommendations = claude_future.result()
+            claude_duration = time.time() - claude_start
+            print(f"✅ [RECOMMEND-NODES] Claude completed in {claude_duration:.2f}s, success: {claude_recommendations.get('success')}")
+        except Exception as e:
+            claude_duration = time.time() - claude_start
+            print(f"❌ [RECOMMEND-NODES] Claude failed after {claude_duration:.2f}s: {str(e)}")
+            claude_recommendations = {"success": False, "error": str(e)}
+
+    parallel_duration = time.time() - parallel_start
+    print(f"⚡ [RECOMMEND-NODES] Both models completed in parallel in {parallel_duration:.2f}s (vs {openai_duration + claude_duration:.2f}s sequential)")
+    print(f"💰 [RECOMMEND-NODES] Time saved: {(openai_duration + claude_duration - parallel_duration):.2f}s")
+
+    total_time = time.time() - start_time
+    print(f"🏁 [RECOMMEND-NODES] Total request time: {total_time:.2f}s")
 
     return {
         "openai": openai_recommendations,
