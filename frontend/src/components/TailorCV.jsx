@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import './TailorCV.css';
 import { MOCK_RECOMMENDATIONS_STEP3 } from './mockRecommendations';
+import { useAIAnalysis } from '../context/AIAnalysisContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -111,41 +112,31 @@ const MOCK_SCORES_DATA = {
 // Use this for Step 3 UI testing without calling AI APIs
 
 function TailorCV() {
-  const [currentStep, setCurrentStep] = useState(1);
+  // Use global AI analysis context
+  const {
+    currentStep, setCurrentStep,
+    jobDescription, setJobDescription,
+    jobTitle, setJobTitle,
+    companyName, setCompanyName,
+    jobAnalysis, setJobAnalysis,
+    openaiAnalysis, setOpenaiAnalysis,
+    claudeAnalysis, setClaudeAnalysis,
+    scores, setScores,
+    recommendations, setRecommendations,
+    selectedNodes, setSelectedNodes,
+    selectedModel, setSelectedModel,
+    isAnalyzing, setIsAnalyzing,
+    analysisStep, setAnalysisStep,
+    analysisProgress, setAnalysisProgress,
+    analysisError, setAnalysisError,
+    analysisStartTime,
+  } = useAIAnalysis();
+
+  // Local state (not shared globally)
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // 🧪 Mock data mode state (UI toggle)
   const [useMockData, setUseMockData] = useState(USE_MOCK_DATA);
-
-  // Step 1: Job Details
-  const [jobDescription, setJobDescription] = useState(`• Advanced degree in a quantitative field (e.g., PhD/MS in EE, CS, Statistics, or related).
-• 6–10+ years across DS/ML/AI with 2+ years leading teams or programs (people and delivery).
-• Hands-on depth with Python (and familiarity with R/MATLAB a plus), SQL, and modern data tooling.
-• Demonstrated experience on AWS (Bedrock, SageMaker, Lambda, Step Functions) or equivalent clouds.
-• Production experience with retrieval systems (vector indexes, chunking, metadata, eval).
-• Fluency in MLOps: containers, CI/CD, experiment tracking, model monitoring, rollback strategies.
-• Strong communicator who writes clearly, avoids jargon, and can defend decisions with evidence.`);
-  const [jobTitle, setJobTitle] = useState('Senior Data Scientist');
-  const [companyName, setCompanyName] = useState('');
-
-  // Step 2: AI Analysis Results
-  const [analyzing, setAnalyzing] = useState(false);
-  const [jobAnalysis, setJobAnalysis] = useState(null);
-  const [openaiAnalysis, setOpenaiAnalysis] = useState(null);
-  const [claudeAnalysis, setClaudeAnalysis] = useState(null);
-
-  // Step 3: Scoring and Selection
-  const [scoring, setScoring] = useState(false);
-  const [scores, setScores] = useState(null);
-  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
-  const [recommendations, setRecommendations] = useState(null);
-  const [selectedNodes, setSelectedNodes] = useState(new Set());
-  const [selectedModel, setSelectedModel] = useState('openai'); // Which model's recommendations to use
-  const [isPreFetching, setIsPreFetching] = useState(false); // Background pre-fetch state
-  const hasAutoAppliedRef = useRef(false); // Track if we've already auto-applied recommendations
-
-  // Step 4: Save
+  const [isPreFetching, setIsPreFetching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cvStatus, setCvStatus] = useState('draft');
 
@@ -153,66 +144,101 @@ function TailorCV() {
     fetchProfile();
   }, []);
 
-  // Auto-trigger scoring when job analysis completes
+  // Auto-trigger scoring when job analysis completes (only once)
   useEffect(() => {
-    if (currentStep === 2 && jobAnalysis && !scores && !scoring) {
+    console.log('[Auto-trigger] Check conditions:', {
+      currentStep,
+      hasJobAnalysis: !!jobAnalysis,
+      hasScores: !!scores,
+      analysisStep,
+      hasProfile: !!profile
+    });
+
+    if (currentStep === 2 && jobAnalysis && !scores && analysisStep !== 'scoring' && profile) {
       const jobReqs = jobAnalysis.openai?.success ? jobAnalysis.openai.analysis : jobAnalysis.claude?.analysis;
       if (jobReqs) {
+        console.log('🎯 Auto-triggering score profile');
         handleScoreProfile(jobReqs);
       }
     }
-  }, [currentStep, jobAnalysis, scores, scoring]);
+  }, [currentStep, jobAnalysis, scores, analysisStep, profile]);
 
-  // Auto-apply recommendations when they first load
+  // Auto-apply recommendations when they load OR when model changes
   useEffect(() => {
-    if (recommendations && profile && !hasAutoAppliedRef.current) {
-      console.log('[Auto-apply] Recommendations loaded, auto-applying for default model:', selectedModel);
+    if (recommendations && profile) {
+      console.log('[Auto-apply] Applying recommendations for model:', selectedModel);
 
-      const modelRecs = recommendations[selectedModel];
-      if (modelRecs && modelRecs.success && modelRecs.recommendations.selected_nodes) {
-        const autoSelected = new Set();
+      const autoSelected = new Set();
 
-        // Build a map from node id to global_id for quick lookup
-        const flattenNodesForMap = (nodes, map = new Map()) => {
-          nodes.forEach(node => {
-            if (node.id) {
-              map.set(node.id, node.global_id);
-            }
-            if (node.children && node.children.length > 0) {
-              flattenNodesForMap(node.children, map);
-            }
-          });
-          return map;
-        };
-        const idToGlobalIdMap = flattenNodesForMap(profile.nodes || []);
-
-        // Apply recommendations
-        modelRecs.recommendations.selected_nodes.forEach(rec => {
-          if (rec.include) {
-            let globalId = null;
-            if (rec.id && idToGlobalIdMap.has(rec.id)) {
-              globalId = idToGlobalIdMap.get(rec.id);
-            } else if (rec.node_id && idToGlobalIdMap.has(rec.node_id)) {
-              globalId = idToGlobalIdMap.get(rec.node_id);
-            } else if (rec.global_id) {
-              globalId = rec.global_id;
-            }
-
-            if (globalId) {
-              autoSelected.add(globalId);
-            }
+      // Build a map from node id to global_id for quick lookup
+      const flattenNodesForMap = (nodes, map = new Map()) => {
+        nodes.forEach(node => {
+          if (node.id) {
+            map.set(node.id, node.global_id);
+          }
+          if (node.children && node.children.length > 0) {
+            flattenNodesForMap(node.children, map);
           }
         });
+        return map;
+      };
+      const idToGlobalIdMap = flattenNodesForMap(profile.nodes || []);
 
-        console.log(`[Auto-apply] Selected ${autoSelected.size} nodes for ${selectedModel}`);
-        setSelectedNodes(autoSelected);
-        hasAutoAppliedRef.current = true; // Mark as applied
+      // Helper function to apply recommendations from a single model
+      const applyModelRecs = (modelName, modelRecs) => {
+        if (modelRecs && modelRecs.success && modelRecs.recommendations?.selected_nodes) {
+          let count = 0;
+          modelRecs.recommendations.selected_nodes.forEach(rec => {
+            if (rec.include) {
+              let globalId = null;
+              if (rec.id && idToGlobalIdMap.has(rec.id)) {
+                globalId = idToGlobalIdMap.get(rec.id);
+              } else if (rec.node_id && idToGlobalIdMap.has(rec.node_id)) {
+                globalId = idToGlobalIdMap.get(rec.node_id);
+              } else if (rec.global_id) {
+                globalId = rec.global_id;
+              }
+
+              if (globalId) {
+                autoSelected.add(globalId);
+                count++;
+              }
+            }
+          });
+          console.log(`   ${modelName}: added ${count} nodes`);
+          return true;
+        }
+        return false;
+      };
+
+      // Apply recommendations based on selectedModel
+      if (selectedModel === 'both') {
+        // Combine recommendations from BOTH models (union)
+        console.log('[Auto-apply] Combining recommendations from both models...');
+        const openaiApplied = applyModelRecs('OpenAI', recommendations.openai);
+        const claudeApplied = applyModelRecs('Claude', recommendations.claude);
+
+        if (!openaiApplied && !claudeApplied) {
+          console.warn('[Auto-apply] No valid recommendations found from either model');
+        }
+      } else {
+        // Apply recommendations from specific model
+        const modelRecs = recommendations[selectedModel];
+        const applied = applyModelRecs(selectedModel, modelRecs);
+
+        if (!applied) {
+          console.warn(`[Auto-apply] No valid recommendations found for ${selectedModel}`, modelRecs);
+        }
       }
+
+      console.log(`[Auto-apply] Selected ${autoSelected.size} nodes total (selectedModel: ${selectedModel})`);
+      setSelectedNodes(autoSelected);
     }
   }, [recommendations, profile, selectedModel]);
 
   const fetchProfile = async () => {
     try {
+      console.log('[fetchProfile] Starting profile fetch...');
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/profiles`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -221,7 +247,10 @@ function TailorCV() {
 
       if (profiles && profiles.length > 0) {
         const defaultProfile = profiles.find(p => p.is_default) || profiles[0];
+        console.log('[fetchProfile] Setting profile:', defaultProfile.id);
         setProfile(defaultProfile);
+      } else {
+        console.warn('[fetchProfile] No profiles found');
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -236,9 +265,22 @@ function TailorCV() {
       return;
     }
 
+    // ✅ CACHE CHECK: If we already have analysis, just move to step 2
+    if (jobAnalysis) {
+      console.log('✅ Using cached job analysis - skipping API call');
+      setCurrentStep(2);
+      return;
+    }
+
     // Move to Step 2 immediately to show loading state
     setCurrentStep(2);
-    setAnalyzing(true);
+
+    // Set global analyzing state for status bar
+    setIsAnalyzing(true);
+    setAnalysisStep('job-analysis');
+    setAnalysisProgress('Analyzing job requirements with OpenAI and Claude...');
+    setAnalysisError(null);
+    analysisStartTime.current = Date.now();
 
     // 🧪 TEST MODE: Use mock data instead of API call
     if (useMockData) {
@@ -247,15 +289,18 @@ function TailorCV() {
         setJobAnalysis({ openai: MOCK_ANALYSIS_DATA.openai, claude: MOCK_ANALYSIS_DATA.claude });
         setOpenaiAnalysis(MOCK_ANALYSIS_DATA.openai);
         setClaudeAnalysis(MOCK_ANALYSIS_DATA.claude);
-        setAnalyzing(false);
+
+        // Update to scoring step
+        setAnalysisStep('scoring');
+        setAnalysisProgress('Scoring profile fit...');
+
         // Auto-trigger scoring with mock data
         setTimeout(() => {
-          setScoring(true);
-          setTimeout(() => {
-            setScores(MOCK_SCORES_DATA);
-            setScoring(false);
-          }, 1000);
-        }, 500);
+          setScores(MOCK_SCORES_DATA);
+          setAnalysisStep('complete');
+          setAnalysisProgress('Ready to save! Go to Smart Selection and save your tailored CV.');
+          setIsAnalyzing(false);  // Stop the analyzing animation, but keep the complete status
+        }, 1000);
       }, 1000);
       return;
     }
@@ -285,17 +330,24 @@ function TailorCV() {
 
       // Check if at least one model succeeded
       if (!data.openai?.success && !data.claude?.success) {
+        setAnalysisError('Both AI models failed to analyze the job');
         alert('Both AI models failed to analyze the job. Please try again.');
         setCurrentStep(1);
+        setIsAnalyzing(false);
+        setAnalysisStep(null);
+      } else {
+        // Job analysis successful, now auto-trigger scoring
+        // The scoring will be triggered by the useEffect
+        console.log('✅ Job analysis complete, waiting for profile to trigger scoring...');
       }
-      // If successful, scoring will be triggered when component mounts or user reviews
     } catch (error) {
       console.error('Error analyzing job:', error);
+      setAnalysisError(error.message);
       alert(`Failed to analyze job description: ${error.message}`);
       // Go back to Step 1 on error
       setCurrentStep(1);
-    } finally {
-      setAnalyzing(false);
+      setIsAnalyzing(false);
+      setAnalysisStep(null);
     }
   };
 
@@ -305,7 +357,10 @@ function TailorCV() {
       return;
     }
 
-    setScoring(true);
+    // Update global state for status bar
+    setAnalysisStep('scoring');
+    setAnalysisProgress('Scoring profile fit with AI models...');
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/tailor/score-profile`, {
@@ -329,18 +384,36 @@ function TailorCV() {
       console.log('Scoring result:', data);
       setScores(data);
 
-      // Scoring complete - user can now review results and proceed to Step 3 manually
+      // Scoring complete - now automatically start recommendations in background
+      console.log('✅ Scoring complete, auto-triggering recommendations in background...');
+      const jobReqs = jobAnalysis.openai?.success ? jobAnalysis.openai.analysis : jobAnalysis.claude?.analysis;
+      if (jobReqs && !recommendations) {
+        // Start recommendations in background
+        handleGetRecommendations(jobReqs, true); // true = background mode
+      } else {
+        // If recommendations already exist or no job requirements, just end analysis
+        setAnalysisStep('complete');
+        setAnalysisProgress('Ready to save! Go to Smart Selection and save your tailored CV.');
+        setIsAnalyzing(false);  // Stop the analyzing animation, but keep the complete status
+      }
     } catch (error) {
       console.error('Error scoring profile:', error);
+      setAnalysisError(error.message);
       alert(`Failed to score profile: ${error.message}`);
-    } finally {
-      setScoring(false);
+      setIsAnalyzing(false);
+      setAnalysisStep(null);
     }
   };
 
   const handleGetRecommendations = async (jobRequirements, isBackground = false) => {
     if (!profile || !jobRequirements) {
       console.error('❌ Missing profile or job requirements for recommendations', { profile, jobRequirements });
+      return;
+    }
+
+    // ✅ CACHE CHECK: If we already have recommendations, skip API call
+    if (recommendations) {
+      console.log('✅ Using cached recommendations - skipping API call');
       return;
     }
 
@@ -357,8 +430,11 @@ function TailorCV() {
       console.log('⚡ Both AI models will run IN PARALLEL');
       console.log('⏰ Expected time: ~2-3 minutes (instead of 4-6 minutes sequential)');
       console.log('⏰ With large profiles (70+ nodes), wait time is much shorter now!');
-      setRecommendationsLoading(true);
     }
+
+    // Update global state for status bar
+    setAnalysisStep('recommendations');
+    setAnalysisProgress('Generating smart recommendations from AI models...');
 
     // 🧪 Use mock data if test mode is enabled
     if (useMockData) {
@@ -370,16 +446,36 @@ function TailorCV() {
         // Auto-select nodes based on the selected model's recommendations
         console.log(`🎯 Auto-selecting nodes from ${selectedModel} model...`);
 
-        // Extract node IDs where include=true from the selected model's recommendations
-        const modelRecs = MOCK_RECOMMENDATIONS_STEP3[selectedModel]?.recommendations?.selected_nodes || [];
-        const recommendedIds = new Set(
+        const recommendedIds = new Set();
+
+        if (selectedModel === 'both') {
+          // Combine recommendations from BOTH models (union)
+          console.log('   Combining recommendations from both OpenAI and Claude...');
+
+          // Apply OpenAI recommendations
+          const openaiRecs = MOCK_RECOMMENDATIONS_STEP3.openai?.recommendations?.selected_nodes || [];
+          const openaiIncluded = openaiRecs.filter(rec => rec.include === true);
+          openaiIncluded.forEach(rec => recommendedIds.add(rec.global_id));
+          console.log(`   OpenAI: added ${openaiIncluded.length} nodes (${openaiIncluded.length} included, ${openaiRecs.length - openaiIncluded.length} excluded)`);
+
+          // Apply Claude recommendations
+          const claudeRecs = MOCK_RECOMMENDATIONS_STEP3.claude?.recommendations?.selected_nodes || [];
+          const claudeIncluded = claudeRecs.filter(rec => rec.include === true);
+          claudeIncluded.forEach(rec => recommendedIds.add(rec.global_id));
+          console.log(`   Claude: added ${claudeIncluded.length} nodes (${claudeIncluded.length} included, ${claudeRecs.length - claudeIncluded.length} excluded)`);
+
+          console.log(`✅ Auto-selected ${recommendedIds.size} nodes total (union of both models)`);
+        } else {
+          // Extract node IDs where include=true from the selected model's recommendations
+          const modelRecs = MOCK_RECOMMENDATIONS_STEP3[selectedModel]?.recommendations?.selected_nodes || [];
           modelRecs
             .filter(rec => rec.include === true)
-            .map(rec => rec.global_id)
-        );
+            .forEach(rec => recommendedIds.add(rec.global_id));
 
-        console.log(`✅ Auto-selected ${recommendedIds.size} nodes based on ${selectedModel} recommendations`);
-        console.log(`   (${modelRecs.filter(rec => rec.include === true).length} included, ${modelRecs.filter(rec => rec.include === false).length} excluded)`);
+          console.log(`✅ Auto-selected ${recommendedIds.size} nodes from ${selectedModel}`);
+          console.log(`   (${modelRecs.filter(rec => rec.include === true).length} included, ${modelRecs.filter(rec => rec.include === false).length} excluded)`);
+        }
+
         setSelectedNodes(recommendedIds);
 
         if (isBackground) {
@@ -387,8 +483,12 @@ function TailorCV() {
           setIsPreFetching(false);
         } else {
           console.log('🏁 Recommendations loading finished');
-          setRecommendationsLoading(false);
         }
+
+        // Mark analysis as complete for mock data
+        setAnalysisStep('complete');
+        setAnalysisProgress('Ready to save! Go to Smart Selection and save your tailored CV.');
+        setIsAnalyzing(false);  // Stop the analyzing animation, but keep the complete status
       }, 1000); // 1 second delay to simulate loading
       return;
     }
@@ -451,19 +551,54 @@ function TailorCV() {
 
       // Auto-select nodes based on the selected model's recommendations
       console.log(`🎯 Auto-selecting nodes from ${selectedModel} model...`);
-      const modelRecs = data[selectedModel];
-      if (modelRecs && modelRecs.success && modelRecs.recommendations?.selected_nodes) {
-        const autoSelected = new Set();
-        modelRecs.recommendations.selected_nodes.forEach(node => {
-          if (node.include) {
-            autoSelected.add(node.global_id || node.node_id);
-          }
-        });
-        console.log(`✅ Auto-selected ${autoSelected.size} nodes`);
-        setSelectedNodes(autoSelected);
+
+      const autoSelected = new Set();
+
+      if (selectedModel === 'both') {
+        // Combine recommendations from BOTH models (union)
+        console.log('   Combining recommendations from both OpenAI and Claude...');
+
+        // Apply OpenAI recommendations
+        if (data.openai?.success && data.openai.recommendations?.selected_nodes) {
+          let openaiCount = 0;
+          data.openai.recommendations.selected_nodes.forEach(node => {
+            if (node.include) {
+              autoSelected.add(node.global_id || node.node_id);
+              openaiCount++;
+            }
+          });
+          console.log(`   OpenAI: added ${openaiCount} nodes`);
+        }
+
+        // Apply Claude recommendations
+        if (data.claude?.success && data.claude.recommendations?.selected_nodes) {
+          let claudeCount = 0;
+          data.claude.recommendations.selected_nodes.forEach(node => {
+            if (node.include) {
+              autoSelected.add(node.global_id || node.node_id);
+              claudeCount++;
+            }
+          });
+          console.log(`   Claude: added ${claudeCount} nodes`);
+        }
+
+        console.log(`✅ Auto-selected ${autoSelected.size} nodes total (union of both models)`);
       } else {
-        console.warn('⚠️ No recommendations found for auto-selection');
+        // Apply recommendations from specific model only
+        const modelRecs = data[selectedModel];
+        if (modelRecs && modelRecs.success && modelRecs.recommendations?.selected_nodes) {
+          modelRecs.recommendations.selected_nodes.forEach(node => {
+            if (node.include) {
+              autoSelected.add(node.global_id || node.node_id);
+            }
+          });
+          console.log(`✅ Auto-selected ${autoSelected.size} nodes from ${selectedModel}`);
+        } else {
+          console.warn(`⚠️ No recommendations found for auto-selection (model: ${selectedModel})`);
+        }
       }
+
+      setSelectedNodes(autoSelected);
     } catch (error) {
       clearTimeout(timeoutId);
       console.error('💥 Error getting recommendations:', error);
@@ -487,10 +622,12 @@ function TailorCV() {
       if (isBackground) {
         console.log('🏁 Background pre-fetch finished - ready for Step 3!');
         setIsPreFetching(false);
-      } else {
-        console.log('🏁 Recommendations loading finished');
-        setRecommendationsLoading(false);
       }
+
+      // Mark analysis as complete - keep status visible until CV is saved
+      setAnalysisStep('complete');
+      setAnalysisProgress('Ready to save! Go to Smart Selection and save your tailored CV.');
+      setIsAnalyzing(false);  // Stop the analyzing animation, but keep the complete status
     }
   };
 
@@ -500,6 +637,28 @@ function TailorCV() {
     if (jobReqs && !recommendations && !isPreFetching) {
       handleGetRecommendations(jobReqs, true); // true = background mode
     }
+  };
+
+  const handleResetWorkflow = () => {
+    if (!confirm('Are you sure you want to start over? All progress will be lost.')) {
+      return;
+    }
+
+    console.log('🔄 Resetting workflow - clearing all cached data');
+
+    // Reset all state
+    setCurrentStep(1);
+    setJobAnalysis(null);
+    setOpenaiAnalysis(null);
+    setClaudeAnalysis(null);
+    setScores(null);
+    setRecommendations(null);
+    setSelectedNodes(new Set());
+
+    // Keep job description, title, and company name for convenience
+    // User can edit them if needed
+
+    console.log('✅ Workflow reset complete - back to Step 1');
   };
 
   const handleSaveTailoredCV = async () => {
@@ -548,6 +707,11 @@ function TailorCV() {
       const data = await response.json();
       if (data.success) {
         const summary = data.summary || {};
+
+        // Clear the green analysis complete status after successful save
+        setAnalysisStep(null);
+        setAnalysisProgress('');
+
         alert(
           `✅ Tailored CV saved successfully!\n\n` +
           `📊 Summary:\n` +
@@ -645,30 +809,36 @@ function TailorCV() {
 
   return (
     <div className="tailor-cv">
-      {/* Floating Step Indicator */}
-      {(analyzing || scoring || recommendationsLoading || saving) && (
-        <div className="step-indicator">
-          <div className="step-indicator-icon">{STEPS[currentStep - 1].icon}</div>
-          <div className="step-indicator-text">Step {currentStep}/{STEPS.length}</div>
-        </div>
-      )}
+      {/* Floating Step Indicator - Now moved to global status bar */}
 
       {/* Progress Bar */}
       <div className="wizard-header">
         <div className="header-top">
           <h1>Create Tailored CV</h1>
-          {/* Test Mode Toggle */}
-          <label className="mock-data-toggle">
-            <input
-              type="checkbox"
-              checked={useMockData}
-              onChange={(e) => setUseMockData(e.target.checked)}
-            />
-            <span className="toggle-slider"></span>
-            <span className="toggle-label">
-              🧪 Test Mode
-            </span>
-          </label>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {/* Reset Button - only show if not on step 1 */}
+            {currentStep > 1 && (
+              <button
+                onClick={handleResetWorkflow}
+                className="btn-reset-workflow"
+                title="Start over with a new job"
+              >
+                🔄 Start Over
+              </button>
+            )}
+            {/* Test Mode Toggle */}
+            <label className="mock-data-toggle">
+              <input
+                type="checkbox"
+                checked={useMockData}
+                onChange={(e) => setUseMockData(e.target.checked)}
+              />
+              <span className="toggle-slider"></span>
+              <span className="toggle-label">
+                🧪 Test Mode
+              </span>
+            </label>
+          </div>
         </div>
         <div className="wizard-progress">
           {STEPS.map((step, index) => (
@@ -697,7 +867,7 @@ function TailorCV() {
             companyName={companyName}
             setCompanyName={setCompanyName}
             onNext={handleAnalyzeJob}
-            analyzing={analyzing}
+            analyzing={isAnalyzing}
           />
         )}
 
@@ -707,7 +877,7 @@ function TailorCV() {
             openaiAnalysis={openaiAnalysis}
             claudeAnalysis={claudeAnalysis}
             scores={scores}
-            scoring={scoring}
+            scoring={analysisStep === 'scoring'}
             profile={profile}
             recommendations={recommendations}
             isPreFetching={isPreFetching}
@@ -715,7 +885,7 @@ function TailorCV() {
             onNext={async () => {
               // Move to step 3 and trigger recommendations if not already loaded
               setCurrentStep(3);
-              if (!recommendations && !recommendationsLoading) {
+              if (!recommendations && analysisStep !== 'recommendations') {
                 const jobReqs = openaiAnalysis?.success ? openaiAnalysis.analysis : claudeAnalysis?.analysis;
                 if (jobReqs) {
                   await handleGetRecommendations(jobReqs);
@@ -739,7 +909,7 @@ function TailorCV() {
             toggleNodeSelection={toggleNodeSelection}
             selectedModel={selectedModel}
             applyModelRecommendations={applyModelRecommendations}
-            loading={recommendationsLoading}
+            loading={analysisStep === 'recommendations'}
             onSave={handleSaveTailoredCV}
             saving={saving}
             onBack={() => setCurrentStep(2)}
@@ -773,60 +943,211 @@ function TailorCV() {
 // ============================================================================
 
 function Step1JobDetails({ jobDescription, setJobDescription, jobTitle, setJobTitle, companyName, setCompanyName, onNext, analyzing }) {
+  const [inputMethod, setInputMethod] = useState('paste'); // 'paste' or 'url'
+  const [jobUrl, setJobUrl] = useState('');
+
+  const wordCount = jobDescription.trim().split(/\s+/).filter(w => w.length > 0).length;
+  const isValidLength = jobDescription.length >= 50;
+  const hasRequiredFields = jobTitle.trim().length > 0 && isValidLength;
+
   return (
-    <div className="wizard-step step-1">
-      <div className="step-header">
-        <h2>📋 Paste Job Description</h2>
-        <p>Enter the job details and description to get AI-powered CV tailoring</p>
-      </div>
+    <div className="wizard-step step-1-modern">
+      <div className="step-1-container">
+        {/* Left Panel - Visual Info */}
+        <div className="info-panel">
+          <div className="info-content">
+            <div className="info-icon">🎯</div>
+            <h2>AI-Powered CV Tailoring</h2>
+            <p className="info-subtitle">Get your CV optimized for this specific role</p>
 
-      <div className="step-body">
-        <div className="form-group">
-          <label>Job Title *</label>
-          <input
-            type="text"
-            value={jobTitle}
-            onChange={(e) => setJobTitle(e.target.value)}
-            placeholder="e.g., Senior Data Scientist"
-            className="form-input"
-          />
-        </div>
+            <div className="features-list">
+              <div className="feature-item">
+                <span className="feature-icon">🤖</span>
+                <div className="feature-text">
+                  <strong>Dual AI Analysis</strong>
+                  <span>OpenAI & Claude working in parallel</span>
+                </div>
+              </div>
+              <div className="feature-item">
+                <span className="feature-icon">✨</span>
+                <div className="feature-text">
+                  <strong>Smart Selection</strong>
+                  <span>AI recommends what to include/exclude</span>
+                </div>
+              </div>
+              <div className="feature-item">
+                <span className="feature-icon">📊</span>
+                <div className="feature-text">
+                  <strong>ATS Optimization</strong>
+                  <span>Maximize your compatibility score</span>
+                </div>
+              </div>
+            </div>
 
-        <div className="form-group">
-          <label>Company Name</label>
-          <input
-            type="text"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            placeholder="e.g., Google"
-            className="form-input"
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Job Description *</label>
-          <textarea
-            value={jobDescription}
-            onChange={(e) => setJobDescription(e.target.value)}
-            placeholder="Paste the full job description here..."
-            className="form-textarea"
-            rows={15}
-          />
-          <div className="char-count">
-            {jobDescription.length} characters
-            {jobDescription.length < 50 && <span className="warning"> (minimum 50 required)</span>}
+            <div className="stats-box">
+              <div className="stat-item">
+                <div className="stat-value">2x</div>
+                <div className="stat-label">Faster with AI</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value">95%</div>
+                <div className="stat-label">Match Rate</div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="step-actions">
-        <button
-          className="btn-primary btn-large"
-          onClick={onNext}
-          disabled={analyzing || !jobDescription || jobDescription.length < 50 || !jobTitle}
-        >
-          {analyzing ? 'Analyzing with AI...' : 'Analyze Job →'}
-        </button>
+        {/* Right Panel - Form */}
+        <div className="form-panel">
+          <div className="form-panel-header">
+            <h3>Job Details</h3>
+            <p>Tell us about the position you're applying for</p>
+          </div>
+
+          <div className="form-panel-body">
+            {/* Job Title */}
+            <div className="modern-form-group">
+              <label className="modern-label">
+                <span className="label-text">Job Title</span>
+                <span className="label-required">*</span>
+              </label>
+              <input
+                type="text"
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+                placeholder="Senior Data Scientist"
+                className="modern-input"
+              />
+            </div>
+
+            {/* Company Name */}
+            <div className="modern-form-group">
+              <label className="modern-label">
+                <span className="label-text">Company Name</span>
+                <span className="label-optional">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Amazon, Google, Microsoft..."
+                className="modern-input"
+              />
+            </div>
+
+            {/* Input Method Toggle */}
+            <div className="modern-form-group">
+              <label className="modern-label">
+                <span className="label-text">Job Description</span>
+                <span className="label-required">*</span>
+              </label>
+
+              <div className="input-method-toggle">
+                <button
+                  className={`toggle-btn ${inputMethod === 'paste' ? 'active' : ''}`}
+                  onClick={() => setInputMethod('paste')}
+                  type="button"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                  Paste Text
+                </button>
+                <button
+                  className={`toggle-btn ${inputMethod === 'url' ? 'active' : ''}`}
+                  onClick={() => setInputMethod('url')}
+                  type="button"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                  </svg>
+                  From URL
+                </button>
+              </div>
+
+              {inputMethod === 'paste' ? (
+                <>
+                  <textarea
+                    value={jobDescription}
+                    onChange={(e) => setJobDescription(e.target.value)}
+                    placeholder="Paste the complete job description here...&#10;&#10;Include responsibilities, requirements, qualifications, and any other relevant details."
+                    className="modern-textarea"
+                    rows={12}
+                  />
+                  <div className="input-meta">
+                    <div className="meta-info">
+                      <span className="meta-item">
+                        {jobDescription.length} characters
+                      </span>
+                      <span className="meta-separator">•</span>
+                      <span className="meta-item">
+                        ~{wordCount} words
+                      </span>
+                    </div>
+                    {!isValidLength && jobDescription.length > 0 && (
+                      <span className="meta-warning">
+                        Minimum 50 characters required
+                      </span>
+                    )}
+                    {isValidLength && (
+                      <span className="meta-success">
+                        ✓ Ready to analyze
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="url-input-wrapper">
+                    <span className="url-icon">🔗</span>
+                    <input
+                      type="url"
+                      value={jobUrl}
+                      onChange={(e) => setJobUrl(e.target.value)}
+                      placeholder="https://careers.company.com/job/12345"
+                      className="modern-input url-input"
+                      disabled
+                    />
+                  </div>
+                  <div className="coming-soon-badge">
+                    🚧 Coming Soon - URL import will be available in next update
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Action Button */}
+          <div className="form-panel-footer">
+            <button
+              className="btn-analyze-modern"
+              onClick={onNext}
+              disabled={analyzing || !hasRequiredFields || inputMethod === 'url'}
+            >
+              {analyzing ? (
+                <>
+                  <span className="btn-spinner">⏳</span>
+                  <span>Analyzing with AI...</span>
+                </>
+              ) : (
+                <>
+                  <span>Start AI Analysis</span>
+                  <span className="btn-arrow">→</span>
+                </>
+              )}
+            </button>
+            {!hasRequiredFields && (
+              <p className="validation-hint">
+                Please fill in job title and description to continue
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

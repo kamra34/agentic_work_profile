@@ -29,7 +29,10 @@ function GlobalAIStatusBar() {
     return () => clearInterval(interval);
   }, [isAnalyzing, getElapsedTime]);
 
-  // Don't show if not analyzing (but show complete state briefly)
+  // Show if:
+  // 1. Currently analyzing (isAnalyzing = true)
+  // 2. Analysis is complete (analysisStep = 'complete') - stay visible until user navigates away
+  // 3. There's an error (analysisError)
   if (!isAnalyzing && !analysisError && analysisStep !== 'complete') {
     return null;
   }
@@ -37,15 +40,15 @@ function GlobalAIStatusBar() {
   const getStepNumber = () => {
     switch (analysisStep) {
       case 'job-analysis':
-        return { current: 1, total: 3 };
+        return { current: 1, total: 3, icon: '📋' };
       case 'scoring':
-        return { current: 2, total: 3 };
+        return { current: 2, total: 3, icon: '🤖' };
       case 'recommendations':
-        return { current: 3, total: 3 };
+        return { current: 3, total: 3, icon: '✨' };
       case 'complete':
-        return { current: 3, total: 3, complete: true };
+        return { current: 3, total: 3, complete: true, icon: '✓' };
       default:
-        return { current: 1, total: 3 };
+        return { current: 1, total: 3, icon: '📋' };
     }
   };
 
@@ -83,10 +86,10 @@ function GlobalAIStatusBar() {
         <div className="status-left">
           {isAnalyzing && !analysisError && (
             <>
-              <div className="status-spinner"></div>
-              <div className="step-indicator">
-                <div className="step-circle">
-                  {stepInfo.current}/{stepInfo.total}
+              <div className="status-step-circle-wrapper">
+                <div className="status-step-circle analyzing">
+                  <div className="step-icon">{stepInfo.icon}</div>
+                  <div className="step-count">{stepInfo.current}/{stepInfo.total}</div>
                 </div>
               </div>
               <div className="status-text">
@@ -99,16 +102,16 @@ function GlobalAIStatusBar() {
           )}
           {isComplete && !analysisError && (
             <>
-              <div className="status-complete-icon">✓</div>
-              <div className="step-indicator">
-                <div className="step-circle complete">
-                  {stepInfo.current}/{stepInfo.total}
+              <div className="status-step-circle-wrapper">
+                <div className="status-step-circle complete">
+                  <div className="step-icon">{stepInfo.icon}</div>
+                  <div className="step-count">{stepInfo.current}/{stepInfo.total}</div>
                 </div>
               </div>
               <div className="status-text">
-                <div className="status-label">✅ Analysis Complete!</div>
+                <div className="status-label">✅ Analysis Complete - Ready to Save!</div>
                 <div className="status-detail">
-                  Remember to go to Smart Selection and save your tailored CV
+                  Go to Smart Selection (Step 3) and click "Save Tailored CV" to store your work
                 </div>
               </div>
             </>
