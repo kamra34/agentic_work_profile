@@ -256,6 +256,7 @@ class JobApplicationCreate(BaseModel):
     """Create a new job application from a tailored CV"""
     tailored_cv_id: int
     cv_format: str = "professional"  # professional, modern, compact, creative
+    pdf_customizations: Optional[dict] = None  # fontSize, spacing, colorIntensity, sectionOrder
     job_url: Optional[str] = None
     location: Optional[str] = None
     notes: Optional[str] = None

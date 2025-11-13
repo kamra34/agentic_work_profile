@@ -37,6 +37,151 @@ from schemas import (
 import ai_tailor_service
 import pdf_service
 
+# ============================================================================
+# SHARED HELPER FUNCTIONS
+# ============================================================================
+
+def transform_nodes_to_sections(nodes):
+    """
+    Transform hierarchical nodes into flat sections with entries - ONLY SELECTED NODES.
+    Handles any nesting level dynamically (not hardcoded to specific levels).
+
+    This is the SINGLE SOURCE OF TRUTH for node transformation used by:
+    - /api/tailor/{cv_id}/preview-pdf (CV Portfolio download)
+    - /api/tailor/{cv_id}/preview-metadata (Live preview stats)
+    - /api/tailor/{cv_id}/preview-image (Live preview images)
+    - /api/applications/{application_id}/download-pdf (Application Tracker download)
+
+    Using the same function ensures consistent PDF output across all endpoints.
+    """
+    sections = []
+
+    # Helper function to recursively collect all bullets from any depth
+    def collect_bullets_recursively(node, depth=0):
+        """Recursively collect all selected bullets/paragraphs from this node and its children"""
+        bullets = []
+
+        for child in node.get('children', []):
+            if not child.get('is_selected', False):
+                continue  # Skip unselected nodes
+
+            child_type = child.get('node_type')
+
+            # If this child is a bullet/paragraph, add it
+            if child_type in ['bullet', 'paragraph']:
+                bullets.append({
+                    'id': child.get('id', 0),
+                    'content': child.get('content', ''),
+                    'order': child.get('order', 0)
+                })
+
+            # If this child is an entry, treat it as a sub-entry
+            elif child_type == 'entry':
+                # Recursively collect bullets from this entry
+                sub_bullets = collect_bullets_recursively(child, depth + 1)
+                if sub_bullets:
+                    # This is a sub-entry with its own bullets
+                    bullets.append({
+                        'type': 'sub_entry',
+                        'title': child.get('title'),
+                        'items': sub_bullets
+                    })
+                elif child.get('content'):
+                    # Entry with just content, no bullets
+                    bullets.append({
+                        'id': child.get('id', 0),
+                        'content': child.get('content', ''),
+                        'order': child.get('order', 0)
+                    })
+
+            # For any other type, recurse into children
+            else:
+                sub_bullets = collect_bullets_recursively(child, depth + 1)
+                bullets.extend(sub_bullets)
+
+        return bullets
+
+    for node in nodes:
+        # Level 0 must always be 'section'
+        if node.get('node_type') != 'section' or not node.get('is_selected', False):
+            continue
+
+        section = {
+            'title': node.get('title', ''),
+            'section_type': node.get('title', '').lower().replace(' ', '_'),
+            'entries': []
+        }
+
+        # Process all children dynamically - could be entries, bullets, paragraphs at any level
+        for child in node.get('children', []):
+            if not child.get('is_selected', False):
+                continue
+
+            child_type = child.get('node_type')
+
+            # If it's a bullet/paragraph directly under section
+            if child_type in ['bullet', 'paragraph']:
+                # Create a simple entry with just this bullet
+                section['entries'].append({
+                    'title': None,
+                    'subtitle': None,
+                    'start_date': None,
+                    'end_date': None,
+                    'location': None,
+                    'description': None,
+                    'items': [{
+                        'id': child.get('id', 0),
+                        'content': child.get('content', ''),
+                        'order': child.get('order', 0)
+                    }],
+                    'sub_entries': []
+                })
+
+            # If it's an entry directly under section
+            elif child_type == 'entry':
+                # Collect all bullets recursively from this entry
+                all_bullets = collect_bullets_recursively(child)
+
+                # Separate regular bullets from sub-entries
+                regular_bullets = [b for b in all_bullets if not isinstance(b, dict) or b.get('type') != 'sub_entry']
+                sub_entries_data = [b for b in all_bullets if isinstance(b, dict) and b.get('type') == 'sub_entry']
+
+                entry = {
+                    'title': child.get('title'),
+                    'subtitle': child.get('subtitle'),
+                    'start_date': child.get('start_date'),
+                    'end_date': child.get('end_date'),
+                    'location': child.get('location'),
+                    'description': child.get('content') if child.get('content') else None,
+                    'items': regular_bullets,
+                    'sub_entries': sub_entries_data
+                }
+                section['entries'].append(entry)
+
+            # Handle any other node type by recursing
+            else:
+                bullets = collect_bullets_recursively(child)
+                if bullets:
+                    section['entries'].append({
+                        'title': None,
+                        'subtitle': None,
+                        'start_date': None,
+                        'end_date': None,
+                        'location': None,
+                        'description': None,
+                        'items': bullets,
+                        'sub_entries': []
+                    })
+
+        # Add section even if empty (some templates may need it)
+        sections.append(section)
+
+    return sections
+
+# ============================================================================
+# DATABASE & SECURITY SETUP
+# ============================================================================
+
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -55,10 +200,11 @@ security = HTTPBearer()
 
 app = FastAPI(title="Work Profile API - Hierarchical v3.0")
 
-# CORS
+# CORS - Allow frontend origins from environment variable
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1753,6 +1899,7 @@ async def create_job_application(
         location=application_data.location,
         final_content_snapshot=tailored_cv.content_snapshot,  # Current state with active contact fields
         cv_format=application_data.cv_format,
+        pdf_customizations=application_data.pdf_customizations,  # Save PDF settings
         initial_fit_scores=tailored_cv.fit_scores,
         initial_ats_scores=tailored_cv.ats_scores,
         final_fit_scores=final_fit_scores,
@@ -1804,6 +1951,69 @@ async def check_duplicate_application(
         }
 
     return {"exists": False}
+
+
+@app.post("/api/applications/{application_id}/download-pdf")
+async def download_application_pdf(
+    application_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate and download the PDF for a job application using saved settings.
+    """
+    # Get the job application
+    job_app = db.query(JobApplication).filter(
+        JobApplication.id == application_id,
+        JobApplication.user_id == current_user.id
+    ).first()
+
+    if not job_app:
+        raise HTTPException(status_code=404, detail="Job application not found")
+
+    # Use the shared transformation function to ensure consistency
+    sections = transform_nodes_to_sections(job_app.final_content_snapshot.get('nodes', []))
+
+    # Apply section reordering from saved customizations
+    customizations = job_app.pdf_customizations or {}
+    section_order = customizations.get('sectionOrder', [])
+    if section_order:
+        try:
+            section_map = {s['title']: s for s in sections}
+            reordered_sections = [section_map[title] for title in section_order if title in section_map]
+            remaining = [s for s in sections if s['title'] not in section_order]
+            sections = reordered_sections + remaining
+        except (KeyError, TypeError):
+            pass  # Use original order on error
+
+    selected_content = {
+        'contact_info': job_app.final_content_snapshot.get('contact_info', {}),
+        'sections': sections
+    }
+
+    cv_data = {
+        "selected_content": selected_content
+    }
+
+    # Generate PDF using saved settings
+    try:
+        generator = pdf_service.CVPDFGenerator(
+            template_name=job_app.cv_format,
+            customizations=customizations
+        )
+        pdf_buffer = generator.generate_pdf(cv_data, hidden_items=[])
+
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="CV_{job_app.job_title}_{job_app.company_name or "Application"}.pdf"'
+            }
+        )
+
+    except Exception as e:
+        print(f"Error generating application PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
 
 
 @app.get("/api/applications/list", response_model=List[JobApplicationResponse])
@@ -2007,142 +2217,27 @@ async def preview_tailored_cv_pdf(
     # Get customizations from request (fontSize, spacing, colorIntensity)
     customizations = request_data.get('customizations', {})
 
-    # Transform hierarchical nodes to flat sections for PDF service
-    def transform_nodes_to_sections(nodes):
-        """
-        Transform hierarchical nodes into flat sections with entries - ONLY SELECTED NODES.
-        Handles any nesting level dynamically (not hardcoded to specific levels).
-        """
-        sections = []
+    # Use the shared transformation function to ensure consistency
+    sections = transform_nodes_to_sections(snapshot.get('nodes', []))
 
-        print(f"[PreviewPDF] Transforming nodes for PDF - total root nodes: {len(nodes)}")
+    # Apply section reordering if specified in customizations
+    section_order = customizations.get('sectionOrder', [])
+    if section_order:
+        try:
+            # Create mapping of title to section
+            section_map = {s['title']: s for s in sections}
+            # Reorder based on titles
+            reordered_sections = [section_map[title] for title in section_order if title in section_map]
+            # Add any sections not in the order list at the end
+            remaining = [s for s in sections if s['title'] not in section_order]
+            sections = reordered_sections + remaining
+            print(f"[PreviewPDF] Sections reordered: {[s['title'] for s in sections]}")
+        except (KeyError, TypeError) as e:
+            print(f"[PreviewPDF] Error reordering sections: {e}, using original order")
 
-        # Helper function to recursively collect all bullets from any depth
-        def collect_bullets_recursively(node, depth=0):
-            """Recursively collect all selected bullets/paragraphs from this node and its children"""
-            bullets = []
-            indent = "  " * depth
-
-            for child in node.get('children', []):
-                if not child.get('is_selected', False):
-                    continue  # Skip unselected nodes
-
-                child_type = child.get('node_type')
-                print(f"{indent}[PreviewPDF] Processing {child_type} at depth {depth}: {child.get('title', child.get('content', '')[:30])}")
-
-                # If this child is a bullet/paragraph, add it
-                if child_type in ['bullet', 'paragraph']:
-                    bullets.append({
-                        'id': child.get('id', 0),
-                        'content': child.get('content', ''),
-                        'order': child.get('order', 0)
-                    })
-                    print(f"{indent}  ✓ Added bullet")
-
-                # If this child is an entry, treat it as a sub-entry
-                elif child_type == 'entry':
-                    # Recursively collect bullets from this entry
-                    sub_bullets = collect_bullets_recursively(child, depth + 1)
-                    if sub_bullets:
-                        # This is a sub-entry with its own bullets
-                        bullets.append({
-                            'type': 'sub_entry',
-                            'title': child.get('title'),
-                            'items': sub_bullets
-                        })
-                        print(f"{indent}  ✓ Added sub-entry with {len(sub_bullets)} bullets")
-                    elif child.get('content'):
-                        # Entry with just content, no bullets
-                        bullets.append({
-                            'id': child.get('id', 0),
-                            'content': child.get('content', ''),
-                            'order': child.get('order', 0)
-                        })
-
-                # For any other type, recurse into children
-                else:
-                    sub_bullets = collect_bullets_recursively(child, depth + 1)
-                    bullets.extend(sub_bullets)
-
-            return bullets
-
-        for node in nodes:
-            # Level 0 must always be 'section'
-            if node.get('node_type') != 'section' or not node.get('is_selected', False):
-                continue
-
-            section = {
-                'title': node.get('title', ''),
-                'section_type': node.get('title', '').lower().replace(' ', '_'),
-                'entries': []
-            }
-
-            print(f"[PreviewPDF] Processing section: {section['title']}")
-
-            # Process all children dynamically - could be entries, bullets, paragraphs at any level
-            for child in node.get('children', []):
-                if not child.get('is_selected', False):
-                    continue
-
-                child_type = child.get('node_type')
-                print(f"  [PreviewPDF] Level-1 child: {child_type}")
-
-                # If it's a bullet/paragraph directly under section
-                if child_type in ['bullet', 'paragraph']:
-                    entry = {
-                        'title': None,
-                        'subtitle': None,
-                        'start_date': None,
-                        'end_date': None,
-                        'location': None,
-                        'description': None,
-                        'items': [{
-                            'id': child.get('id', 0),
-                            'content': child.get('content', ''),
-                            'order': child.get('order', 0)
-                        }],
-                        'sub_entries': []
-                    }
-                    section['entries'].append(entry)
-                    print(f"    ✓ Added direct bullet under section")
-
-                # If it's an entry
-                elif child_type == 'entry':
-                    # Recursively collect all bullets from this entry (at any depth)
-                    all_bullets = collect_bullets_recursively(child, depth=1)
-
-                    # Separate regular bullets from sub-entries
-                    regular_bullets = [b for b in all_bullets if not isinstance(b, dict) or b.get('type') != 'sub_entry']
-                    sub_entries_data = [b for b in all_bullets if isinstance(b, dict) and b.get('type') == 'sub_entry']
-
-                    entry = {
-                        'title': child.get('title'),
-                        'subtitle': child.get('subtitle'),
-                        'start_date': child.get('start_date'),
-                        'end_date': child.get('end_date'),
-                        'location': child.get('location'),
-                        'description': child.get('content') if child.get('content_type') == 'text' else None,
-                        'items': regular_bullets,
-                        'sub_entries': sub_entries_data
-                    }
-
-                    # Only add entry if it has content
-                    if entry['items'] or entry['sub_entries'] or entry['description'] or entry['title']:
-                        section['entries'].append(entry)
-                        print(f"    ✓ Added entry '{entry['title']}' with {len(regular_bullets)} bullets and {len(sub_entries_data)} sub-entries")
-
-            # Only add section if it has entries
-            if section['entries']:
-                sections.append(section)
-                print(f"[PreviewPDF] ✓ Section '{section['title']}' added with {len(section['entries'])} entries")
-
-        print(f"[PreviewPDF] Total sections in PDF: {len(sections)}")
-        return sections
-
-    # Build selected_content structure for PDF service
     selected_content = {
         'contact_info': snapshot.get('contact_info', {}),
-        'sections': transform_nodes_to_sections(snapshot.get('nodes', []))
+        'sections': sections
     }
 
     cv_data = {
@@ -2186,8 +2281,9 @@ async def get_cv_preview_metadata(
 ):
     """
     Get metadata about the CV PDF (page count, word count, etc.) without generating full PDF.
-    Useful for live preview statistics.
+    Useful for live preview statistics (metadata endpoint).
     """
+    print(f"[PreviewMetadata] Request for CV {cv_id}")
     # Get the tailored CV
     db.expire_all()
     tailored_cv = db.query(TailoredCV).filter(
@@ -2207,98 +2303,27 @@ async def get_cv_preview_metadata(
     # Get the content snapshot
     snapshot = tailored_cv.content_snapshot
 
-    # Transform nodes to sections (reuse same logic as preview-pdf)
-    def transform_nodes_to_sections(nodes):
-        """Transform hierarchical nodes into flat sections - ONLY SELECTED NODES"""
-        sections = []
+    # Use the shared transformation function to ensure consistency
+    sections = transform_nodes_to_sections(snapshot.get('nodes', []))
 
-        def collect_bullets_recursively(node, depth=0):
-            """Recursively collect all selected bullets/paragraphs"""
-            bullets = []
-            for child in node.get('children', []):
-                if not child.get('is_selected', False):
-                    continue
+    # Apply section reordering if specified in customizations
+    section_order = customizations.get('sectionOrder', [])
+    if section_order:
+        try:
+            # Create mapping of title to section
+            section_map = {s['title']: s for s in sections}
+            # Reorder based on titles
+            reordered_sections = [section_map[title] for title in section_order if title in section_map]
+            # Add any sections not in the order list at the end
+            remaining = [s for s in sections if s['title'] not in section_order]
+            sections = reordered_sections + remaining
+            print(f"[PreviewMetadata] Sections reordered: {[s['title'] for s in sections]}")
+        except (KeyError, TypeError) as e:
+            print(f"[PreviewMetadata] Error reordering sections: {e}, using original order")
 
-                child_type = child.get('node_type')
-                if child_type in ['bullet', 'paragraph']:
-                    bullets.append({
-                        'id': child.get('id', 0),
-                        'content': child.get('content', ''),
-                        'order': child.get('order', 0)
-                    })
-                elif child_type == 'entry':
-                    sub_bullets = collect_bullets_recursively(child, depth + 1)
-                    if sub_bullets:
-                        bullets.append({
-                            'type': 'sub_entry',
-                            'title': child.get('title'),
-                            'items': sub_bullets
-                        })
-                    elif child.get('content'):
-                        bullets.append({
-                            'id': child.get('id', 0),
-                            'content': child.get('content', ''),
-                            'order': child.get('order', 0)
-                        })
-                else:
-                    sub_bullets = collect_bullets_recursively(child, depth + 1)
-                    bullets.extend(sub_bullets)
-            return bullets
-
-        for node in nodes:
-            if node.get('node_type') != 'section' or not node.get('is_selected', False):
-                continue
-
-            section = {
-                'title': node.get('title', ''),
-                'section_type': node.get('title', '').lower().replace(' ', '_'),
-                'entries': []
-            }
-
-            for child in node.get('children', []):
-                if not child.get('is_selected', False):
-                    continue
-
-                child_type = child.get('node_type')
-
-                if child_type in ['bullet', 'paragraph']:
-                    # Direct bullet under section
-                    section['entries'].append({
-                        'title': None,
-                        'items': [{
-                            'id': child.get('id', 0),
-                            'content': child.get('content', ''),
-                            'order': child.get('order', 0)
-                        }]
-                    })
-                elif child_type == 'entry':
-                    all_bullets = collect_bullets_recursively(child, depth=1)
-                    regular_bullets = [b for b in all_bullets if not isinstance(b, dict) or b.get('type') != 'sub_entry']
-                    sub_entries_data = [b for b in all_bullets if isinstance(b, dict) and b.get('type') == 'sub_entry']
-
-                    entry = {
-                        'title': child.get('title'),
-                        'subtitle': child.get('subtitle'),
-                        'start_date': child.get('start_date'),
-                        'end_date': child.get('end_date'),
-                        'location': child.get('location'),
-                        'description': child.get('content') if child.get('content_type') == 'text' else None,
-                        'items': regular_bullets,
-                        'sub_entries': sub_entries_data
-                    }
-
-                    if entry['items'] or entry['sub_entries'] or entry['description'] or entry['title']:
-                        section['entries'].append(entry)
-
-            if section['entries']:
-                sections.append(section)
-
-        return sections
-
-    # Build selected_content structure
     selected_content = {
         'contact_info': snapshot.get('contact_info', {}),
-        'sections': transform_nodes_to_sections(snapshot.get('nodes', []))
+        'sections': sections
     }
 
     cv_data = {
@@ -2330,8 +2355,9 @@ async def get_cv_preview_image(
 ):
     """
     Generate a PNG preview image of the CV's first page.
-    Useful for live preview thumbnail.
+    Useful for live preview thumbnail (image endpoint).
     """
+    print(f"[PreviewImage] Request for CV {cv_id}")
     # Get the tailored CV
     db.expire_all()
     tailored_cv = db.query(TailoredCV).filter(
@@ -2348,6 +2374,7 @@ async def get_cv_preview_image(
     cv_format = request_data.get('cv_format', 'professional')
     customizations = request_data.get('customizations', {})
     page_index = request_data.get('page_index', 0)
+    all_pages = request_data.get('all_pages', False)  # False = single page, True = all pages
 
     # Get the content snapshot
     snapshot = tailored_cv.content_snapshot
@@ -2411,9 +2438,26 @@ async def get_cv_preview_image(
         return sections
 
     # Build selected_content structure
+    sections = transform_nodes_to_sections(snapshot.get('nodes', []))
+
+    # Apply section reordering if specified in customizations
+    section_order = customizations.get('sectionOrder', [])
+    if section_order:
+        try:
+            # Create mapping of title to section
+            section_map = {s['title']: s for s in sections}
+            # Reorder based on titles
+            reordered_sections = [section_map[title] for title in section_order if title in section_map]
+            # Add any sections not in the order list at the end
+            remaining = [s for s in sections if s['title'] not in section_order]
+            sections = reordered_sections + remaining
+            print(f"[PreviewImage] Sections reordered: {[s['title'] for s in sections]}")
+        except (KeyError, TypeError) as e:
+            print(f"[PreviewImage] Error reordering sections: {e}, using original order")
+
     selected_content = {
         'contact_info': snapshot.get('contact_info', {}),
-        'sections': transform_nodes_to_sections(snapshot.get('nodes', []))
+        'sections': sections
     }
 
     cv_data = {
@@ -2422,14 +2466,27 @@ async def get_cv_preview_image(
 
     # Generate preview image using pdf_service
     try:
-        image_buffer = pdf_service.generate_cv_preview_image(
-            cv_data=cv_data,
-            hidden_items=[],
-            template_name=cv_format,
-            customizations=customizations,
-            page_index=page_index,
-            scale=1.5  # Good quality for thumbnails
-        )
+        if all_pages:
+            # Generate all pages for full-size modal
+            print(f"[PreviewImage] Generating all pages preview")
+            image_buffer = pdf_service.generate_cv_preview_all_pages(
+                cv_data=cv_data,
+                hidden_items=[],
+                template_name=cv_format,
+                customizations=customizations,
+                scale=1.5  # Good quality for preview
+            )
+        else:
+            # Generate single page (first page) for thumbnail
+            print(f"[PreviewImage] Generating single page preview (page {page_index})")
+            image_buffer = pdf_service.generate_cv_preview_image(
+                cv_data=cv_data,
+                hidden_items=[],
+                template_name=cv_format,
+                customizations=customizations,
+                page_index=page_index,
+                scale=2.0  # Higher quality for single page
+            )
 
         return StreamingResponse(
             image_buffer,

@@ -89,38 +89,77 @@ class PDFTemplate:
             "professional": {
                 "primary_color": "#1a202c",      # Dark gray/black
                 "secondary_color": "#2d3748",    # Medium gray
-                "accent_color": "#3182ce",       # Professional blue
+                "accent_color": "#2563eb",       # Professional blue
                 "font_size_name": 24,
-                "font_size_section": 14,
+                "font_size_section": 13,
+                "font_size_body": 10,
                 "spacing": "normal",
-                "line_thickness": 1.0
+                "line_thickness": 1.5,
+                "header_style": "centered",
+                "section_style": "underline",
+                "use_tables": False,
+                "font_name": "Helvetica",
+                "font_bold": "Helvetica-Bold"
             },
             "modern": {
-                "primary_color": "#1a202c",
-                "secondary_color": "#4a5568",
-                "accent_color": "#4299e1",       # Bright blue
-                "font_size_name": 26,
+                "primary_color": "#0f172a",      # Slate dark
+                "secondary_color": "#475569",    # Slate medium
+                "accent_color": "#0ea5e9",       # Sky blue
+                "font_size_name": 28,
                 "font_size_section": 14,
-                "spacing": "normal",
-                "line_thickness": 0.5
+                "font_size_body": 10,
+                "spacing": "relaxed",
+                "line_thickness": 0.5,
+                "header_style": "centered",
+                "section_style": "bold_line",
+                "use_tables": False,
+                "font_name": "Helvetica",
+                "font_bold": "Helvetica-Bold"
             },
             "compact": {
                 "primary_color": "#000000",
-                "secondary_color": "#333333",
-                "accent_color": "#0066cc",       # Standard blue
+                "secondary_color": "#374151",
+                "accent_color": "#059669",       # Emerald green
                 "font_size_name": 20,
-                "font_size_section": 12,
+                "font_size_section": 11,
+                "font_size_body": 9,
                 "spacing": "tight",
-                "line_thickness": 0.75
+                "line_thickness": 0.75,
+                "header_style": "left_aligned",
+                "section_style": "minimal",
+                "use_tables": True,
+                "font_name": "Helvetica",
+                "font_bold": "Helvetica-Bold"
             },
             "creative": {
-                "primary_color": "#2d3748",
-                "secondary_color": "#4a5568",
-                "accent_color": "#805ad5",       # Purple accent
-                "font_size_name": 28,
+                "primary_color": "#7c3aed",      # Violet
+                "secondary_color": "#4c1d95",    # Deep violet
+                "accent_color": "#c026d3",       # Fuchsia
+                "font_size_name": 30,
                 "font_size_section": 15,
+                "font_size_body": 10,
                 "spacing": "relaxed",
-                "line_thickness": 2.0
+                "line_thickness": 3.0,
+                "header_style": "creative",
+                "section_style": "colored_box",
+                "use_tables": False,
+                "font_name": "Helvetica",
+                "font_bold": "Helvetica-Bold"
+            },
+            "ats_optimized": {
+                "primary_color": "#000000",      # Pure black for ATS
+                "secondary_color": "#000000",    # Pure black
+                "accent_color": "#000000",       # No color accents
+                "font_size_name": 18,
+                "font_size_section": 12,
+                "font_size_body": 10,
+                "spacing": "normal",
+                "line_thickness": 1.0,
+                "header_style": "simple",
+                "section_style": "ats_simple",
+                "use_tables": False,
+                "font_name": "Helvetica",        # ATS-friendly font
+                "font_bold": "Helvetica-Bold"
             }
         }
         return configs.get(template_name, configs["professional"])
@@ -219,12 +258,12 @@ class PDFTemplate:
         styles.add(ParagraphStyle(
             name='CVBullet',
             parent=styles['Normal'],
-            fontSize=10 if config["spacing"] != "compact" else 9,
+            fontSize=config.get("font_size_body", 10),
             textColor=colors.HexColor(config["secondary_color"]),
             spaceAfter=int(4 * spacing_multiplier),
             leftIndent=20,
             bulletIndent=10,
-            fontName='Helvetica'
+            fontName=config.get("font_name", "Helvetica")
         ))
 
         # Description text
@@ -243,8 +282,43 @@ class PDFTemplate:
 class CVPDFGenerator:
     """Main PDF generator for CVs"""
 
-    def __init__(self, template_name: str = "modern"):
+    def __init__(self, template_name: str = "modern", customizations: Optional[Dict[str, str]] = None):
         self.template = PDFTemplate(template_name)
+        self.customizations = customizations or {}
+        self._apply_customizations()
+
+    def _apply_customizations(self):
+        """Apply user customizations to template config"""
+        config = self.template.config
+
+        # Apply font size customization
+        font_size = self.customizations.get('fontSize', 'normal')
+        if font_size == 'small':
+            config['font_size_name'] = int(config['font_size_name'] * 0.85)
+            config['font_size_section'] = int(config['font_size_section'] * 0.9)
+            config['font_size_body'] = int(config['font_size_body'] * 0.9)
+        elif font_size == 'large':
+            config['font_size_name'] = int(config['font_size_name'] * 1.15)
+            config['font_size_section'] = int(config['font_size_section'] * 1.1)
+            config['font_size_body'] = int(config['font_size_body'] * 1.1)
+
+        # Apply spacing customization (override template default)
+        spacing = self.customizations.get('spacing')
+        if spacing in ['tight', 'normal', 'relaxed']:
+            config['spacing'] = spacing
+
+        # Apply color intensity customization (for non-ATS templates)
+        color_intensity = self.customizations.get('colorIntensity', 'normal')
+        if self.template.template_name != 'ats_optimized':
+            if color_intensity == 'subtle':
+                # Make colors more subtle by lightening them
+                config['line_thickness'] = config['line_thickness'] * 0.7
+            elif color_intensity == 'bold':
+                # Make colors bolder
+                config['line_thickness'] = config['line_thickness'] * 1.3
+
+        # Regenerate styles with new config
+        self.template.styles = self.template._create_styles()
 
     def generate_pdf(
         self,
@@ -309,6 +383,8 @@ class CVPDFGenerator:
         """Build the header section with contact info"""
         story = []
         styles = self.template.styles
+        config = self.template.config
+        header_style = config.get("header_style", "centered")
 
         # Get contact info from selected_content
         selected_content = cv_data.get('selected_content', {})
@@ -316,15 +392,11 @@ class CVPDFGenerator:
 
         # Name
         full_name = contact_info.get('full_name', 'N/A')
-        story.append(Paragraph(sanitize_text(full_name), styles['CVName']))
 
         # Job title (if available) - support both field names
         job_title = contact_info.get('professional_title') or contact_info.get('job_title', '')
-        if job_title:
-            story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
 
-        # Contact details with icons and hyperlinks
-        # Using [in] and [gh] as text-based icons since PDF doesn't support emoji/SVG well
+        # Build contact parts
         contact_parts = []
         if contact_info.get('email'):
             contact_parts.append(contact_info['email'])
@@ -348,69 +420,104 @@ class CVPDFGenerator:
         # LinkedIn - support both field names
         linkedin_url = contact_info.get('linkedin_url') or contact_info.get('linkedin')
         if linkedin_url:
-            contact_parts.append(f'<a href="{linkedin_url}" color="#2d3748">[in] LinkedIn</a>')
+            if header_style == "simple" or header_style == "left_aligned":
+                contact_parts.append(f'LinkedIn: {linkedin_url}')
+            else:
+                contact_parts.append(f'<a href="{linkedin_url}" color="#2d3748">[in] LinkedIn</a>')
 
         # GitHub - support both field names
         github_url = contact_info.get('github_url') or contact_info.get('github')
         if github_url:
-            contact_parts.append(f'<a href="{github_url}" color="#2d3748">[gh] GitHub</a>')
+            if header_style == "simple" or header_style == "left_aligned":
+                contact_parts.append(f'GitHub: {github_url}')
+            else:
+                contact_parts.append(f'<a href="{github_url}" color="#2d3748">[gh] GitHub</a>')
 
         # Portfolio/Website - support both field names
         website_url = contact_info.get('portfolio_url') or contact_info.get('website')
         if website_url:
             contact_parts.append(f'<a href="{website_url}" color="#2d3748">{website_url}</a>')
 
-        if contact_parts:
-            contact_line = " | ".join(contact_parts)
-            story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+        # Build header based on style
+        if header_style == "simple":
+            # ATS-Optimized: Simple, left-aligned, single-line contact info
+            story.append(Paragraph(f"<b>{sanitize_text(full_name)}</b>", styles['CVName']))
+            if job_title:
+                story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
+            if contact_parts:
+                # Use bullet separator for ATS compatibility (more parseable than |)
+                contact_line = " • ".join(contact_parts)
+                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+            # Simple horizontal line separator
+            story.append(HRFlowable(
+                width="100%",
+                thickness=1.0,
+                color=colors.HexColor('#000000'),
+                spaceBefore=6,
+                spaceAfter=10
+            ))
 
-        # Horizontal line separator
-        story.append(HRFlowable(
-            width="100%",
-            thickness=self.template.config["line_thickness"],
-            color=colors.HexColor('#cbd5e0'),
-            spaceBefore=0,
-            spaceAfter=12
-        ))
+        elif header_style == "left_aligned":
+            # Compact: Left-aligned header
+            story.append(Paragraph(sanitize_text(full_name), styles['CVName']))
+            if job_title:
+                story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
+            if contact_parts:
+                contact_line = " • ".join(contact_parts)
+                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+            story.append(HRFlowable(
+                width="100%",
+                thickness=config["line_thickness"],
+                color=colors.HexColor(config["accent_color"]),
+                spaceBefore=6,
+                spaceAfter=10
+            ))
+
+        elif header_style == "creative":
+            # Creative: Bold, centered with colored accents
+            story.append(Paragraph(sanitize_text(full_name), styles['CVName']))
+            if job_title:
+                story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
+            if contact_parts:
+                contact_line = " | ".join(contact_parts)
+                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+            story.append(HRFlowable(
+                width="60%",
+                thickness=config["line_thickness"],
+                color=colors.HexColor(config["accent_color"]),
+                spaceBefore=8,
+                spaceAfter=12
+            ))
+
+        else:
+            # Default: Centered (professional, modern)
+            story.append(Paragraph(sanitize_text(full_name), styles['CVName']))
+            if job_title:
+                story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
+            if contact_parts:
+                contact_line = " | ".join(contact_parts)
+                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+            story.append(HRFlowable(
+                width="100%",
+                thickness=config["line_thickness"],
+                color=colors.HexColor('#cbd5e0'),
+                spaceBefore=0,
+                spaceAfter=12
+            ))
 
         return story
 
     def _build_sections(self, cv_data: Dict[str, Any], hidden_items: List[int]) -> List:
-        """Build all CV sections"""
+        """Build all CV sections in the order they are provided"""
         story = []
         styles = self.template.styles
 
         selected_content = cv_data.get('selected_content', {})
         sections = selected_content.get('sections', [])
 
-        # Define section order for professional CVs
-        section_order = [
-            'summary',
-            'work_experience',
-            'education',
-            'skills',
-            'projects',
-            'certifications',
-            'publications',
-            'awards',
-            'languages',
-            'volunteer'
-        ]
-
-        # Sort sections by defined order
-        sections_dict = {s['section_type']: s for s in sections}
-        ordered_sections = []
-        for section_type in section_order:
-            if section_type in sections_dict:
-                ordered_sections.append(sections_dict[section_type])
-
-        # Add any remaining sections not in the order
+        # Use sections in the order they are provided (already reordered in backend if needed)
+        # No need to reorder here - respect the order from the input
         for section in sections:
-            if section not in ordered_sections:
-                ordered_sections.append(section)
-
-        # Build each section
-        for section in ordered_sections:
             section_content = self._build_section(section, hidden_items)
             if section_content:  # Only add if there's visible content
                 story.extend(section_content)
@@ -421,6 +528,8 @@ class CVPDFGenerator:
         """Build a single section"""
         story = []
         styles = self.template.styles
+        config = self.template.config
+        section_style = config.get("section_style", "underline")
 
         section_title = section.get('title', '')
         section_type = section.get('section_type', '')
@@ -462,17 +571,55 @@ class CVPDFGenerator:
         if not visible_entries:
             return []
 
-        # Section heading
-        story.append(Paragraph(sanitize_text(section_title.upper()), styles['CVSectionHeading']))
+        # Section heading with style-specific formatting
+        if section_style == "ats_simple":
+            # ATS-Optimized: Simple uppercase with minimal decoration
+            story.append(Paragraph(sanitize_text(section_title.upper()), styles['CVSectionHeading']))
+            story.append(HRFlowable(
+                width="100%",
+                thickness=1.0,
+                color=colors.black,
+                spaceBefore=0,
+                spaceAfter=6
+            ))
 
-        # Add section divider line
-        story.append(HRFlowable(
-            width="100%",
-            thickness=self.template.config["line_thickness"] * 0.5,
-            color=colors.HexColor(self.template.config["accent_color"]),
-            spaceBefore=0,
-            spaceAfter=8
-        ))
+        elif section_style == "minimal":
+            # Compact: Minimal decoration
+            story.append(Paragraph(sanitize_text(section_title.upper()), styles['CVSectionHeading']))
+            story.append(Spacer(1, 0.05*inch))
+
+        elif section_style == "colored_box":
+            # Creative: Colored background box for section title
+            story.append(Paragraph(sanitize_text(section_title.upper()), styles['CVSectionHeading']))
+            story.append(HRFlowable(
+                width="100%",
+                thickness=config["line_thickness"],
+                color=colors.HexColor(config["accent_color"]),
+                spaceBefore=2,
+                spaceAfter=10
+            ))
+
+        elif section_style == "bold_line":
+            # Modern: Bold accent line
+            story.append(Paragraph(sanitize_text(section_title.upper()), styles['CVSectionHeading']))
+            story.append(HRFlowable(
+                width="30%",
+                thickness=config["line_thickness"] * 2,
+                color=colors.HexColor(config["accent_color"]),
+                spaceBefore=2,
+                spaceAfter=8
+            ))
+
+        else:
+            # Default: Underline (professional)
+            story.append(Paragraph(sanitize_text(section_title.upper()), styles['CVSectionHeading']))
+            story.append(HRFlowable(
+                width="100%",
+                thickness=config["line_thickness"] * 0.5,
+                color=colors.HexColor(config["accent_color"]),
+                spaceBefore=0,
+                spaceAfter=8
+            ))
 
         # Build entries
         for entry in visible_entries:
@@ -564,7 +711,8 @@ class CVPDFGenerator:
 def generate_cv_pdf(
     cv_data: Dict[str, Any],
     hidden_items: Optional[List[int]] = None,
-    template_name: str = "modern"
+    template_name: str = "modern",
+    customizations: Optional[Dict[str, str]] = None
 ) -> BytesIO:
     """
     Convenience function to generate a CV PDF
@@ -573,9 +721,225 @@ def generate_cv_pdf(
         cv_data: CV data dictionary
         hidden_items: List of item IDs to hide
         template_name: Name of the template to use
+        customizations: Dict with fontSize, spacing, colorIntensity options
 
     Returns:
         BytesIO buffer containing the PDF
     """
-    generator = CVPDFGenerator(template_name)
+    generator = CVPDFGenerator(template_name, customizations)
     return generator.generate_pdf(cv_data, hidden_items)
+
+
+def get_cv_pdf_metadata(
+    cv_data: Dict[str, Any],
+    hidden_items: Optional[List[int]] = None,
+    template_name: str = "modern",
+    customizations: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Generate metadata about the PDF without creating the full document.
+    Returns page count, word count, and other statistics.
+
+    Args:
+        cv_data: CV data dictionary
+        hidden_items: List of item IDs to hide
+        template_name: Name of the template to use
+        customizations: Dict with fontSize, spacing, colorIntensity options
+
+    Returns:
+        Dictionary with metadata: page_count, word_count, character_count, etc.
+    """
+    from PyPDF2 import PdfReader
+
+    # Generate the PDF first
+    generator = CVPDFGenerator(template_name, customizations)
+    pdf_buffer = generator.generate_pdf(cv_data, hidden_items)
+
+    # Read the PDF to get page count
+    pdf_reader = PdfReader(pdf_buffer)
+    page_count = len(pdf_reader.pages)
+
+    # Calculate word and character count from selected content
+    word_count = 0
+    character_count = 0
+    section_count = 0
+
+    selected_content = cv_data.get('selected_content', {})
+
+    # Count words from contact info
+    contact_info = selected_content.get('contact_info', {})
+    for field, value in contact_info.items():
+        if isinstance(value, str) and value:
+            words = value.split()
+            word_count += len(words)
+            character_count += len(value)
+
+    # Count words from sections
+    sections = selected_content.get('sections', [])
+    section_count = len(sections)
+
+    for section in sections:
+        # Section title
+        if section.get('title'):
+            words = section['title'].split()
+            word_count += len(words)
+            character_count += len(section['title'])
+
+        # Section entries
+        for entry in section.get('entries', []):
+            # Entry fields
+            for field in ['title', 'subtitle', 'location', 'description']:
+                if entry.get(field):
+                    words = entry[field].split()
+                    word_count += len(words)
+                    character_count += len(entry[field])
+
+            # Entry items (bullets)
+            for item in entry.get('items', []):
+                if isinstance(item, dict) and item.get('content'):
+                    words = item['content'].split()
+                    word_count += len(words)
+                    character_count += len(item['content'])
+                elif isinstance(item, str):
+                    words = item.split()
+                    word_count += len(words)
+                    character_count += len(item)
+
+    return {
+        'page_count': page_count,
+        'word_count': word_count,
+        'character_count': character_count,
+        'section_count': section_count,
+        'template': template_name,
+        'customizations': customizations or {}
+    }
+
+
+def generate_cv_preview_image(
+    cv_data: Dict[str, Any],
+    hidden_items: Optional[List[int]] = None,
+    template_name: str = "modern",
+    customizations: Optional[Dict[str, str]] = None,
+    page_index: int = 0,
+    scale: float = 2.0
+) -> BytesIO:
+    """
+    Generate a PNG preview image of a specific page from the CV PDF.
+
+    Args:
+        cv_data: CV data dictionary
+        hidden_items: List of item IDs to hide
+        template_name: Name of the template to use
+        customizations: Dict with fontSize, spacing, colorIntensity options
+        page_index: Which page to generate preview for (0-indexed)
+        scale: Scaling factor for image quality (higher = better quality, larger file)
+
+    Returns:
+        BytesIO buffer containing the PNG image
+    """
+    try:
+        from pdf2image import convert_from_bytes
+    except ImportError:
+        raise ImportError(
+            "pdf2image is required for preview generation. "
+            "Install it with: pip install pdf2image"
+        )
+
+    # Generate the PDF
+    generator = CVPDFGenerator(template_name, customizations)
+    pdf_buffer = generator.generate_pdf(cv_data, hidden_items)
+
+    # Convert PDF to images
+    images = convert_from_bytes(
+        pdf_buffer.getvalue(),
+        dpi=int(72 * scale),  # Scale DPI for quality
+        first_page=page_index + 1,
+        last_page=page_index + 1
+    )
+
+    if not images:
+        raise ValueError(f"Failed to generate preview for page {page_index}")
+
+    # Convert PIL Image to PNG bytes
+    img_buffer = BytesIO()
+    images[0].save(img_buffer, format='PNG', optimize=True)
+    img_buffer.seek(0)
+
+    return img_buffer
+
+
+def generate_cv_preview_all_pages(
+    cv_data: Dict[str, Any],
+    hidden_items: Optional[List[int]] = None,
+    template_name: str = "modern",
+    customizations: Optional[Dict[str, str]] = None,
+    scale: float = 1.5
+) -> BytesIO:
+    """
+    Generate a PNG preview image containing ALL pages from the CV PDF, stacked vertically.
+
+    Args:
+        cv_data: CV data dictionary
+        hidden_items: List of item IDs to hide
+        template_name: Name of the template to use
+        customizations: Dict with fontSize, spacing, colorIntensity options
+        scale: Scaling factor for image quality (higher = better quality, larger file)
+
+    Returns:
+        BytesIO buffer containing the PNG image with all pages
+    """
+    try:
+        from pdf2image import convert_from_bytes
+        from PIL import Image
+    except ImportError:
+        raise ImportError(
+            "pdf2image and PIL are required for preview generation. "
+            "Install them with: pip install pdf2image pillow"
+        )
+
+    # Generate the PDF
+    generator = CVPDFGenerator(template_name, customizations)
+    pdf_buffer = generator.generate_pdf(cv_data, hidden_items)
+
+    # Convert all PDF pages to images
+    images = convert_from_bytes(
+        pdf_buffer.getvalue(),
+        dpi=int(72 * scale)  # Scale DPI for quality
+    )
+
+    if not images:
+        raise ValueError("Failed to generate preview - no pages found")
+
+    # If only one page, return it directly
+    if len(images) == 1:
+        img_buffer = BytesIO()
+        images[0].save(img_buffer, format='PNG', optimize=True)
+        img_buffer.seek(0)
+        return img_buffer
+
+    # Stack multiple pages vertically with spacing between them
+    page_spacing = 20  # pixels between pages
+
+    # Calculate dimensions for the combined image
+    widths = [img.width for img in images]
+    heights = [img.height for img in images]
+    max_width = max(widths)
+    total_height = sum(heights) + (page_spacing * (len(images) - 1))
+
+    # Create a new image with white background
+    combined_image = Image.new('RGB', (max_width, total_height), 'white')
+
+    # Paste each page onto the combined image
+    y_offset = 0
+    for img in images:
+        # Center the image horizontally if it's narrower than max_width
+        x_offset = (max_width - img.width) // 2
+        combined_image.paste(img, (x_offset, y_offset))
+        y_offset += img.height + page_spacing
+
+    # Convert to PNG bytes
+    img_buffer = BytesIO()
+    combined_image.save(img_buffer, format='PNG', optimize=True)
+    img_buffer.seek(0)
+
+    return img_buffer

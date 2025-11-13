@@ -410,10 +410,6 @@ def enrich_recommendations_with_content(recommendations: List[Dict], user_profil
     openai_work = openai_recs.get("recommended_work_experience", []) if openai_recs else []
     claude_work = claude_recs.get("recommended_work_experience", []) if claude_recs else []
 
-    # DEBUG: Log what AI returned for work experience
-    print(f"[DEBUG] OpenAI work experience recommendations: {openai_work}")
-    print(f"[DEBUG] Claude work experience recommendations: {claude_work}")
-
     # Group by entry_id (both parent and sub-entries)
     work_by_entry = {}
     for exp in openai_work:

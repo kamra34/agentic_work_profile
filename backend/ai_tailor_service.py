@@ -67,9 +67,9 @@ Provide a critical, fact-based analysis:
 
 Return JSON:
 {{
-  "fit_score": 85,
+  "fit_score": <number 0-100>,
   "fit_reasoning": "Factual explanation of why this score. Be specific about what matches and what doesn't. No sugar-coating.",
-  "ats_score": 78,
+  "ats_score": <number 0-100>,
   "ats_reasoning": "Specific explanation of ATS compatibility. Mention keyword matches/misses, format issues.",
   "verdict": "SHOULD_APPLY or SHOULD_NOT_APPLY",
   "verdict_reasoning": "Clear, direct explanation of why the candidate should or should not apply. Focus on realistic chances and time investment value.",
@@ -174,7 +174,6 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         }
 
     try:
-        print(f"DEBUG: Calling Claude API with job description length: {len(job_description)}")
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=4096,
@@ -184,22 +183,28 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
             temperature=0.3
         )
 
-        print(f"DEBUG: Claude response type: {type(response)}")
-        print(f"DEBUG: Claude response content: {response.content if hasattr(response, 'content') else 'NO CONTENT'}")
-
         if not response.content or len(response.content) == 0:
             raise ValueError("Claude returned empty content")
 
         # Extract text and remove markdown code blocks if present
         text = response.content[0].text.strip()
+
         if text.startswith('```'):
             # Remove markdown code blocks
             lines = text.split('\n')
             # Remove first line (```json or ```) and last line (```)
-            text = '\n'.join(lines[1:-1])
+            if len(lines) > 2:
+                text = '\n'.join(lines[1:-1])
+            else:
+                raise ValueError(f"Invalid markdown format: only {len(lines)} lines")
+
+        # Sometimes Claude adds explanatory text after the JSON - extract only the JSON
+        # Find the last closing brace
+        last_brace = text.rfind('}')
+        if last_brace != -1:
+            text = text[:last_brace + 1]
 
         result = json.loads(text)
-        print(f"DEBUG: Claude analysis successful, keys: {result.keys()}")
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
@@ -389,13 +394,28 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
         request_duration = time.time() - request_start
         print(f"📥 [Claude-Recommend] Response received in {request_duration:.2f}s, parsing...")
         print(f"📊 [Claude-Recommend] Response type: {type(response)}, has content: {hasattr(response, 'content')}")
+
         # Extract text and remove markdown code blocks if present
+        if not response.content or len(response.content) == 0:
+            raise ValueError("Claude returned empty content")
+
         text = response.content[0].text.strip()
+        print(f"📝 [Claude-Recommend] Raw text length: {len(text)} chars")
+        print(f"📝 [Claude-Recommend] First 200 chars: {text[:200]}")
+
+        if not text:
+            raise ValueError("Claude returned empty text response")
+
         if text.startswith('```'):
             # Remove markdown code blocks
             lines = text.split('\n')
             # Remove first line (```json or ```) and last line (```)
-            text = '\n'.join(lines[1:-1])
+            if len(lines) > 2:
+                text = '\n'.join(lines[1:-1])
+            else:
+                # If only 2 lines, there's no content - something is wrong
+                raise ValueError(f"Invalid markdown format: only {len(lines)} lines")
+            print(f"📝 [Claude-Recommend] After removing markdown: {len(text)} chars")
 
         result = json.loads(text)
         print(f"✅ [Claude-Recommend] Success! Parsed {len(result.get('selected_nodes', []))} node recommendations")
