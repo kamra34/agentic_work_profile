@@ -24,6 +24,7 @@ function SavedCVDetail({ cvId, onBack }) {
   const [savingToTracker, setSavingToTracker] = useState(false);
   const [trackerFormData, setTrackerFormData] = useState({
     cv_format: 'professional',
+    pdf_customizations: null,  // Store last used PDF settings
     job_url: '',
     location: '',
     priority: 'medium',
@@ -758,7 +759,7 @@ function SavedCVDetail({ cvId, onBack }) {
   };
 
   // Generate PDF with selected template
-  const previewPDF = async (templateName) => {
+  const previewPDF = async (templateName, customizations = {}) => {
     try {
       setPreviewingPDF(true);
       setShowPreviewTemplateModal(false); // Close modal
@@ -771,7 +772,8 @@ function SavedCVDetail({ cvId, onBack }) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          cv_format: templateName
+          cv_format: templateName,
+          customizations: customizations
         })
       });
 
@@ -907,6 +909,7 @@ function SavedCVDetail({ cvId, onBack }) {
         body: JSON.stringify({
           tailored_cv_id: cvId,
           cv_format: trackerFormData.cv_format,
+          pdf_customizations: trackerFormData.pdf_customizations,
           job_url: trackerFormData.job_url,
           location: trackerFormData.location,
           notes: trackerFormData.notes,
@@ -1639,7 +1642,7 @@ function SavedCVDetail({ cvId, onBack }) {
             )}
           </div>
 
-          {/* Enhanced Export & Download CV Button */}
+          {/* Unified Finalize Application Button */}
           <button
             onClick={openPreviewTemplateModal}
             className="btn-preview-pdf-modern"
@@ -1657,48 +1660,13 @@ function SavedCVDetail({ cvId, onBack }) {
                   <polyline points="7 10 12 15 17 10"/>
                   <line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
-                <span>Export & Download CV</span>
+                <span>Finalize Application & Download CV</span>
               </>
             )}
           </button>
 
-          {/* Modern Save to Tracker Button */}
-          <button
-            onClick={() => setShowTrackerModal(true)}
-            className={`btn-save-tracker-modern ${isSavedToTracker ? 'saved' : ''}`}
-            disabled={isSavedToTracker || autoSaveStatus !== 'saved'}
-            title={
-              isSavedToTracker
-                ? 'Already saved to tracker'
-                : autoSaveStatus !== 'saved'
-                  ? 'Please wait for autosave to complete'
-                  : cvData.recalculated_scores && cvData.recalculated_scores.length > 0
-                    ? 'Click to save to Application Tracker'
-                    : 'Consider re-evaluating with AI before saving'
-            }
-          >
-            {isSavedToTracker ? (
-              <>
-                <svg className="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-                <span>Saved to Tracker</span>
-              </>
-            ) : (
-              <>
-                <svg className="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                  <polyline points="17 21 17 13 7 13 7 21"/>
-                  <polyline points="7 3 7 8 15 8"/>
-                </svg>
-                <span>Save to Tracker</span>
-                {autoSaveStatus === 'saved' && (!cvData.recalculated_scores || cvData.recalculated_scores.length === 0) && (
-                  <span className="btn-hint">Re-evaluate recommended</span>
-                )}
-              </>
-            )}
-          </button>
+          {/* Note: Save to Tracker is now integrated into "Finalize Application" button above */}
+          {/* The unified workflow ensures settings are always saved */}
         </div>
       </div>
 
@@ -1983,162 +1951,8 @@ function SavedCVDetail({ cvId, onBack }) {
         </div>
       </div>
 
-      {/* Application Tracker Modal */}
-      {showTrackerModal && (
-        <div className="tracker-modal-overlay" onClick={() => setShowTrackerModal(false)}>
-          <div className="tracker-modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="tracker-modal-header">
-              <h2>📋 Save to Application Tracker</h2>
-              <button
-                className="tracker-modal-close"
-                onClick={() => setShowTrackerModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="tracker-modal-body">
-              {/* CV Format Selector */}
-              <div className="tracker-form-group">
-                <label className="tracker-label">
-                  <span className="label-icon">🎨</span>
-                  CV Format
-                </label>
-                <select
-                  className="tracker-select"
-                  value={trackerFormData.cv_format}
-                  onChange={(e) => setTrackerFormData({ ...trackerFormData, cv_format: e.target.value })}
-                >
-                  <option value="professional">Professional</option>
-                  <option value="modern">Modern</option>
-                  <option value="compact">Compact</option>
-                  <option value="creative">Creative</option>
-                </select>
-                <span className="tracker-hint">Choose the resume template for PDF export</span>
-              </div>
-
-              {/* Job URL */}
-              <div className="tracker-form-group">
-                <label className="tracker-label">
-                  <span className="label-icon">🔗</span>
-                  Job URL (Optional)
-                </label>
-                <input
-                  type="url"
-                  className="tracker-input"
-                  placeholder="https://company.com/careers/job-123"
-                  value={trackerFormData.job_url}
-                  onChange={(e) => setTrackerFormData({ ...trackerFormData, job_url: e.target.value })}
-                />
-              </div>
-
-              {/* Location */}
-              <div className="tracker-form-group">
-                <label className="tracker-label">
-                  <span className="label-icon">📍</span>
-                  Location (Optional)
-                </label>
-                <input
-                  type="text"
-                  className="tracker-input"
-                  placeholder="San Francisco, CA"
-                  value={trackerFormData.location}
-                  onChange={(e) => setTrackerFormData({ ...trackerFormData, location: e.target.value })}
-                />
-              </div>
-
-              {/* Priority Selector */}
-              <div className="tracker-form-group">
-                <label className="tracker-label">
-                  <span className="label-icon">⭐</span>
-                  Priority
-                </label>
-                <select
-                  className="tracker-select"
-                  value={trackerFormData.priority}
-                  onChange={(e) => setTrackerFormData({ ...trackerFormData, priority: e.target.value })}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </div>
-
-              {/* Notes */}
-              <div className="tracker-form-group">
-                <label className="tracker-label">
-                  <span className="label-icon">📝</span>
-                  Notes (Optional)
-                </label>
-                <textarea
-                  className="tracker-textarea"
-                  placeholder="Add any notes about this application..."
-                  rows={3}
-                  value={trackerFormData.notes}
-                  onChange={(e) => setTrackerFormData({ ...trackerFormData, notes: e.target.value })}
-                />
-              </div>
-
-              {/* Cover Letter */}
-              <div className="tracker-form-group">
-                <label className="tracker-label">
-                  <span className="label-icon">✉️</span>
-                  Cover Letter (Optional)
-                </label>
-                <textarea
-                  className="tracker-textarea"
-                  placeholder="Paste your cover letter here..."
-                  rows={5}
-                  value={trackerFormData.cover_letter}
-                  onChange={(e) => setTrackerFormData({ ...trackerFormData, cover_letter: e.target.value })}
-                />
-              </div>
-
-              {/* Info Box */}
-              <div className="tracker-info-box">
-                <span className="info-icon">ℹ️</span>
-                <div className="info-text">
-                  <strong>What gets saved:</strong>
-                  <ul>
-                    <li>Current CV content with active contact fields</li>
-                    <li>Initial & recalculated AI scores</li>
-                    <li>Complete score history</li>
-                    <li>Status will be set to "Ready to Apply"</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <div className="tracker-modal-footer">
-              <button
-                className="tracker-btn-cancel"
-                onClick={() => setShowTrackerModal(false)}
-                disabled={savingToTracker}
-              >
-                Cancel
-              </button>
-              <button
-                className="tracker-btn-save"
-                onClick={saveToApplicationTracker}
-                disabled={savingToTracker}
-              >
-                {savingToTracker ? (
-                  <>
-                    <span className="spinner-tiny"></span>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <span className="action-icon">✓</span>
-                    Save to Tracker
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Application Tracker Modal - REMOVED: Now integrated into PDF Template Selector */}
+      {/* The unified workflow combines PDF customization and tracker saving in one step */}
 
       {/* PDF Template Selector Modal */}
       {showPreviewTemplateModal && (
@@ -2146,8 +1960,72 @@ function SavedCVDetail({ cvId, onBack }) {
           cvId={cvId}
           cvData={cvData}
           onClose={() => setShowPreviewTemplateModal(false)}
-          onGenerate={async (templateName, customizations) => {
-            await previewPDF(templateName);
+          onGenerate={async (templateName, customizations, jobFormData) => {
+            try {
+              const token = localStorage.getItem('token');
+
+              // Check for duplicate first
+              const checkResponse = await fetch(`${API_URL}/api/applications/check-duplicate/${cvId}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              });
+
+              if (checkResponse.ok) {
+                const duplicateCheck = await checkResponse.json();
+                if (duplicateCheck.exists) {
+                  alert(
+                    `This CV has already been saved to the Application Tracker!\n\n` +
+                    `Status: ${duplicateCheck.status}\n` +
+                    `Created: ${new Date(duplicateCheck.created_at).toLocaleString()}\n\n` +
+                    `You can view it in the Application Tracker page.`
+                  );
+                  return;
+                }
+              }
+
+              // Create job application with all settings
+              const createResponse = await fetch(`${API_URL}/api/applications/create`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  tailored_cv_id: cvId,
+                  cv_format: templateName,
+                  pdf_customizations: customizations,
+                  job_url: jobFormData.job_url,
+                  location: jobFormData.location,
+                  notes: jobFormData.notes,
+                  cover_letter: jobFormData.cover_letter,
+                  priority: jobFormData.priority
+                })
+              });
+
+              if (!createResponse.ok) {
+                throw new Error('Failed to save to Application Tracker');
+              }
+
+              const application = await createResponse.json();
+              console.log('[Unified Workflow] Successfully created application:', application.id);
+
+              // Set saved state
+              setApplicationId(application.id);
+              setIsSavedToTracker(true);
+
+              // Generate and download PDF
+              await previewPDF(templateName, customizations);
+
+              // Close modal
+              setShowPreviewTemplateModal(false);
+
+              // Show success message
+              alert('Success! Your application has been saved to the tracker and your CV is downloading.');
+            } catch (error) {
+              console.error('Error in unified workflow:', error);
+              alert('Failed to finalize application: ' + error.message);
+            }
           }}
         />
       )}

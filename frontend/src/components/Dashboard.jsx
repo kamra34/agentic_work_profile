@@ -4,6 +4,7 @@ import TailorCV from './TailorCV';
 import SavedCVsWrapper from './SavedCVsWrapper';
 import ApplicationTracker from './ApplicationTracker';
 import GlobalAIStatusBar from './GlobalAIStatusBar';
+import ProfilePage from './ProfilePage';
 import { useAIAnalysis } from '../context/AIAnalysisContext';
 import './Dashboard.css';
 
@@ -81,19 +82,28 @@ function Dashboard({ user, onLogout }) {
           <div className="sidebar-section">
             <div className="sidebar-section-title">📋 Profile Management</div>
             <button
+              className={`sidebar-item ${activeTab === 'user-profile' ? 'active' : ''}`}
+              onClick={() => setActiveTab('user-profile')}
+              title="View and edit your personal profile"
+            >
+              <span className="icon">👤</span>
+              <span className="label">My Profile</span>
+              <span className="badge badge-new">New</span>
+            </button>
+            <button
               className={`sidebar-item ${activeTab === 'profile' ? 'active' : ''} ${isAnalyzing ? 'disabled' : ''}`}
               onClick={() => {
                 if (isAnalyzing) {
-                  alert('⚠️ Cannot edit Master Profile while AI analysis is running.\n\nPlease wait for the analysis to complete or navigate to Tailor CV to cancel it.');
+                  alert('⚠️ Cannot edit Profile Pool while AI analysis is running.\n\nPlease wait for the analysis to complete or navigate to Tailor CV to cancel it.');
                   return;
                 }
                 setActiveTab('profile');
               }}
               disabled={isAnalyzing}
-              title={isAnalyzing ? 'Blocked during AI analysis' : 'Edit your master profile'}
+              title={isAnalyzing ? 'Blocked during AI analysis' : 'Your complete pool of experiences, skills, and achievements'}
             >
               <span className="icon">📝</span>
-              <span className="label">Master Profile</span>
+              <span className="label">Profile Pool</span>
               {isAnalyzing ? (
                 <span className="badge badge-locked">🔒 Locked</span>
               ) : (
@@ -108,16 +118,16 @@ function Dashboard({ user, onLogout }) {
               className={`sidebar-item ${activeTab === 'tailor' ? 'active' : ''}`}
               onClick={() => setActiveTab('tailor')}
             >
-              <span className="icon">🤖</span>
-              <span className="label">Create Tailored CV</span>
+              <span className="icon">✨</span>
+              <span className="label">Tailor CV</span>
               <span className="badge badge-ai">AI</span>
             </button>
             <button
               className={`sidebar-item ${activeTab === 'review' ? 'active' : ''}`}
               onClick={() => setActiveTab('review')}
             >
-              <span className="icon">💾</span>
-              <span className="label">Saved CVs</span>
+              <span className="icon">💼</span>
+              <span className="label">CV Portfolio</span>
             </button>
           </div>
 
@@ -135,6 +145,7 @@ function Dashboard({ user, onLogout }) {
 
         <main className="main-content">
           {activeTab === 'home' && <HomeView onNavigate={setActiveTab} />}
+          {activeTab === 'user-profile' && <ProfilePage />}
           {activeTab === 'profile' && <MasterProfile />}
           <div style={{ display: activeTab === 'tailor' ? 'block' : 'none' }}>
             <TailorCV />
@@ -152,59 +163,71 @@ function HomeView({ onNavigate }) {
   return (
     <div className="home-view">
       <div className="welcome-section">
-        <h1 className="welcome-title">Welcome to Your AI-Powered CV Builder</h1>
+        <h1 className="welcome-title">Welcome to Your Agentic CV Builder</h1>
         <p className="welcome-subtitle">
-          Your intelligent assistant for creating tailored CVs that land interviews. Build once, customize infinitely.
+          An intelligent AI-powered platform that transforms how you create CVs. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (GPT-4o + Claude Sonnet 4.5) analyze jobs and intelligently select the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
         </p>
       </div>
 
       <div className="workflow-container">
-        <h2 className="workflow-heading">Your CV Creation Workflow</h2>
+        <h2 className="workflow-heading">Your Complete Workflow</h2>
         <div className="steps-grid">
           <div className="step-card step-1">
             <div className="step-number">1</div>
-            <div className="step-icon">📝</div>
+            <div className="step-icon">👤</div>
             <div className="step-content">
-              <h3>Build Master Profile</h3>
-              <p>Create your comprehensive professional profile once. Add all experiences, skills, projects, and achievements - your complete career story in one place.</p>
-              <button className="step-btn" onClick={() => onNavigate('profile')}>
-                Go to Master Profile →
+              <h3>My Profile</h3>
+              <p>Set your core contact information (phone, email, name, LinkedIn, GitHub, portfolio) that will be used across all generated CVs. Your professional identity in one place.</p>
+              <button className="step-btn" onClick={() => onNavigate('user-profile')}>
+                Edit My Profile →
               </button>
             </div>
           </div>
 
           <div className="step-card step-2">
             <div className="step-number">2</div>
-            <div className="step-icon">🤖</div>
+            <div className="step-icon">📝</div>
             <div className="step-content">
-              <h3>Create Tailored CV</h3>
-              <p>Paste a job description and get dual-AI analysis (OpenAI + Claude). Get profile fit scores, ATS compatibility ratings, and let AI intelligently select the best items from your profile for this specific role.</p>
-              <button className="step-btn" onClick={() => onNavigate('tailor')}>
-                Create Tailored CV →
+              <h3>Profile Pool</h3>
+              <p>Your comprehensive repository of ALL experiences, skills, and achievements with unlimited nested structure. Sections, entries, sub-entries, bullet points, text paragraphs - organize your complete career story in any form you need.</p>
+              <button className="step-btn" onClick={() => onNavigate('profile')}>
+                Build Profile Pool →
               </button>
             </div>
           </div>
 
           <div className="step-card step-3">
             <div className="step-number">3</div>
-            <div className="step-icon">💾</div>
+            <div className="step-icon">✨</div>
             <div className="step-content">
-              <h3>Manage Saved CVs</h3>
-              <p>View all your saved tailored CVs. See job details, AI scores, and selected content. Toggle item visibility, recalculate ATS scores, preview in real-time, and download professional PDFs.</p>
-              <button className="step-btn" onClick={() => onNavigate('review')}>
-                View Saved CVs →
+              <h3>Tailor CV</h3>
+              <p>Paste a job description and watch dual-AI magic: GPT-4o and Claude analyze requirements, calculate your Profile Fit score and ATS compatibility, provide expert recruiter verdict on whether to apply, and intelligently SELECT (never generate) the best items from your Profile Pool optimized for this specific role. AI works in the background so you can continue and return when ready.</p>
+              <button className="step-btn" onClick={() => onNavigate('tailor')}>
+                Tailor with AI →
               </button>
             </div>
           </div>
 
           <div className="step-card step-4">
             <div className="step-number">4</div>
-            <div className="step-icon">📈</div>
+            <div className="step-icon">💼</div>
             <div className="step-content">
-              <h3>Track Applications</h3>
-              <p>Monitor all your applications in one dashboard. Track status from Applied to Interview to Offer, with scores, notes, and analytics for each opportunity.</p>
+              <h3>CV Portfolio</h3>
+              <p>View each tailored CV with complete job details and AI scores from both models. Include/exclude suggested parts and see real-time impact on your ATS score. Customize your CV, preview live, and export professional PDFs in multiple templates (Professional, Creative, Compact, ATS-Optimized).</p>
+              <button className="step-btn" onClick={() => onNavigate('review')}>
+                View Portfolio →
+              </button>
+            </div>
+          </div>
+
+          <div className="step-card step-5">
+            <div className="step-number">5</div>
+            <div className="step-icon">📊</div>
+            <div className="step-content">
+              <h3>Application Tracker</h3>
+              <p>See all applications in beautiful Kanban board or table view. Track status by dragging and dropping between columns (Applied → Phone Screen → Interview → Offer). Full timeline tracking with dates for each stage. Later download the exact CV used for each application.</p>
               <button className="step-btn" onClick={() => onNavigate('applications')}>
-                Open Tracker →
+                Track Applications →
               </button>
             </div>
           </div>
@@ -701,7 +724,7 @@ function TailorCVView() {
   return (
     <div className="tailor-cv-view">
       <div className="tailor-header">
-        <h1>🤖 Create Tailored CV</h1>
+        <h1>✨ Tailor CV</h1>
         <p className="tailor-subtitle">
           Paste any job description below. Our dual-AI system (OpenAI GPT-4o + Claude Sonnet 4.5) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role. Then save your tailored CV to review and finalize later.
         </p>
@@ -1819,7 +1842,7 @@ function ReviewFinalizeView() {
   return (
     <div className="review-finalize-wrapper">
       <div className="review-header">
-        <h1>💾 Saved CVs</h1>
+        <h1>💼 CV Portfolio</h1>
         <p className="review-subtitle">
           View all your saved tailored CVs. See complete job details, AI fit and ATS scores, and all AI-selected content. Toggle visibility of individual items, recalculate ATS scores based on your final selections, preview your CV in real-time, and download professional PDFs ready for applications.
         </p>

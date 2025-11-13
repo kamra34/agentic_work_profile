@@ -1,6 +1,8 @@
 # Environment variables
 .env
 .env.local
+temp/
+instructions.txt
 
 # Python
 __pycache__/
@@ -45,5 +47,18 @@ backend/uploads/
 backend/temp/
 frontend/temp/
 temp/
+
+# Development and testing files
+backend/mock_analysis_data.json
+backend/test_*.py
+backend/check_*.py
+backend/*_test.py
+backend/formatted_*.txt
+backend/test_*.json
+nul
+
+# Implementation notes (optional - remove if you want to keep these in repo)
+*_IMPLEMENTATION.md
+TEMPLATE_VISUAL_GUIDE.md
 
 .clau*
