@@ -1736,6 +1736,7 @@ async def create_job_application(
     tailored_cv.updated_at = datetime.utcnow()
 
     # Create the job application
+    current_time = datetime.utcnow()
     job_application = JobApplication(
         user_id=current_user.id,
         tailored_cv_id=tailored_cv.id,
@@ -1751,10 +1752,11 @@ async def create_job_application(
         final_ats_scores=final_ats_scores,
         score_history=score_history,
         status="ready_to_apply",  # Finalized and ready for submission
+        ready_date=current_time,  # Set timestamp for ready_to_apply status
         notes=application_data.notes,
         cover_letter=application_data.cover_letter,
         priority=application_data.priority,
-        finalized_at=datetime.utcnow()
+        finalized_at=current_time
     )
 
     print(f"[CreateJobApp] Creating job_application with:")
@@ -1855,6 +1857,15 @@ async def update_job_application(
 
     # Update fields
     update_fields = update_data.dict(exclude_unset=True)
+
+    # Handle date clearing when moving backward in the process
+    if 'clear_dates' in update_fields:
+        clear_dates = update_fields.pop('clear_dates')
+        if clear_dates:
+            for date_field in clear_dates:
+                if hasattr(application, date_field):
+                    setattr(application, date_field, None)
+                    print(f"[DateClear] Cleared {date_field} for application {application_id}")
 
     # If status is being updated, set the corresponding timestamp
     if 'status' in update_fields:
@@ -1985,6 +1996,9 @@ async def preview_tailored_cv_pdf(
 
     # Get cv_format from request, default to professional
     cv_format = request_data.get('cv_format', 'professional')
+
+    # Get customizations from request (fontSize, spacing, colorIntensity)
+    customizations = request_data.get('customizations', {})
 
     # Transform hierarchical nodes to flat sections for PDF service
     def transform_nodes_to_sections(nodes):
@@ -2133,7 +2147,8 @@ async def preview_tailored_cv_pdf(
         pdf_buffer = pdf_service.generate_cv_pdf(
             cv_data=cv_data,
             hidden_items=[],  # Preview shows all selected content
-            template_name=cv_format
+            template_name=cv_format,
+            customizations=customizations
         )
 
         # Create filename with job title and company name

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import ContactInfoSection from './ContactInfoSection';
+import PDFTemplateSelector from './PDFTemplateSelector';
 import './SavedCVDetail.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -1609,106 +1610,95 @@ function SavedCVDetail({ cvId, onBack }) {
           )}
         </div>
         <div className="top-bar-actions">
-          {/* Autosave Indicator */}
-          <div className="autosave-indicator">
+          {/* Modern Autosave Indicator - Subtle & Elegant */}
+          <div className={`autosave-indicator-modern ${autoSaveStatus}`}>
             {autoSaveStatus === 'saving' && (
-              <div className="autosave-saving">
-                <span className="spinner-tiny"></span>
-                <span>Saving...</span>
-              </div>
+              <>
+                <div className="save-spinner"></div>
+                <span className="save-text">Saving</span>
+              </>
             )}
             {autoSaveStatus === 'saved' && (
-              <div className="autosave-saved">
-                <span className="autosave-checkmark">✓</span>
-                <span>All changes saved</span>
-              </div>
+              <>
+                <svg className="save-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M5 8.5L7 10.5L11 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span className="save-text">Saved</span>
+              </>
             )}
             {autoSaveStatus === 'error' && (
-              <div className="autosave-error">
-                <span>⚠️</span>
-                <span>Autosave failed</span>
-              </div>
+              <>
+                <svg className="save-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M8 4V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <circle cx="8" cy="11.5" r="0.75" fill="currentColor"/>
+                </svg>
+                <span className="save-text">Error</span>
+              </>
             )}
           </div>
 
-          <div className="sequential-workflow">
-            {/* Preview PDF Button */}
-            <button
-              onClick={openPreviewTemplateModal}
-              className="btn-preview-pdf"
-              disabled={previewingPDF || autoSaveStatus === 'saving'}
-              style={{
-                marginRight: '1rem',
-                padding: '0.75rem 1.25rem',
-                backgroundColor: '#4299e1',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: (previewingPDF || autoSaveStatus === 'saving') ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                fontWeight: '500',
-                fontSize: '0.95rem',
-                opacity: (previewingPDF || autoSaveStatus === 'saving') ? 0.6 : 1,
-                transition: 'all 0.2s'
-              }}
-            >
-              {previewingPDF ? (
-                <>
-                  <span className="spinner-tiny"></span>
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <span>👁️</span>
-                  <span>Preview PDF</span>
-                </>
-              )}
-            </button>
+          {/* Enhanced Export & Download CV Button */}
+          <button
+            onClick={openPreviewTemplateModal}
+            className="btn-preview-pdf-modern"
+            disabled={previewingPDF || autoSaveStatus === 'saving'}
+          >
+            {previewingPDF ? (
+              <>
+                <div className="btn-spinner"></div>
+                <span>Generating PDF...</span>
+              </>
+            ) : (
+              <>
+                <svg className="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Export & Download CV</span>
+              </>
+            )}
+          </button>
 
-            {/* Step 1: Save to Tracker */}
-            <div className="workflow-step">
-              <button
-                onClick={() => setShowTrackerModal(true)}
-                className={`btn-workflow-step ${isSavedToTracker ? 'step-completed' : 'step-active'}`}
-                disabled={isSavedToTracker || autoSaveStatus === 'saving'}
-              >
-                <div className="step-number">
-                  {isSavedToTracker ? <span className="check-icon">✓</span> : <span>1</span>}
-                </div>
-                <div className="step-content">
-                  <div className="step-label">
-                    {isSavedToTracker ? 'Saved' : 'Save to Tracker'}
-                  </div>
-                  <div className="step-icon">📋</div>
-                </div>
-              </button>
-            </div>
-
-            {/* Connector Line 1→2 */}
-            <div className={`workflow-connector ${isSavedToTracker ? 'connector-active' : 'connector-inactive'}`}>
-              <div className="connector-line"></div>
-              <div className="connector-arrow">→</div>
-            </div>
-
-            {/* Step 2: Export PDF */}
-            <div className="workflow-step">
-              <button
-                onClick={exportToPDF}
-                className={`btn-workflow-step ${isSavedToTracker ? 'step-active' : 'step-disabled'}`}
-                disabled={!isSavedToTracker}
-              >
-                <div className="step-number">
-                  <span>2</span>
-                </div>
-                <div className="step-content">
-                  <div className="step-label">Export PDF</div>
-                  <div className="step-icon">📄</div>
-                </div>
-              </button>
-            </div>
-          </div>
+          {/* Modern Save to Tracker Button */}
+          <button
+            onClick={() => setShowTrackerModal(true)}
+            className={`btn-save-tracker-modern ${isSavedToTracker ? 'saved' : ''}`}
+            disabled={isSavedToTracker || autoSaveStatus !== 'saved'}
+            title={
+              isSavedToTracker
+                ? 'Already saved to tracker'
+                : autoSaveStatus !== 'saved'
+                  ? 'Please wait for autosave to complete'
+                  : cvData.recalculated_scores && cvData.recalculated_scores.length > 0
+                    ? 'Click to save to Application Tracker'
+                    : 'Consider re-evaluating with AI before saving'
+            }
+          >
+            {isSavedToTracker ? (
+              <>
+                <svg className="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <span>Saved to Tracker</span>
+              </>
+            ) : (
+              <>
+                <svg className="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                <span>Save to Tracker</span>
+                {autoSaveStatus === 'saved' && (!cvData.recalculated_scores || cvData.recalculated_scores.length === 0) && (
+                  <span className="btn-hint">Re-evaluate recommended</span>
+                )}
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -2150,89 +2140,16 @@ function SavedCVDetail({ cvId, onBack }) {
         </div>
       )}
 
-      {/* Preview PDF Template Selection Modal */}
+      {/* PDF Template Selector Modal */}
       {showPreviewTemplateModal && (
-        <div className="tracker-modal-overlay" onClick={() => setShowPreviewTemplateModal(false)}>
-          <div className="tracker-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="tracker-modal-header">
-              <h2>👁️ Select PDF Template</h2>
-              <button
-                className="tracker-modal-close"
-                onClick={() => setShowPreviewTemplateModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="tracker-modal-body">
-              <p style={{ marginBottom: '1.5rem', color: '#64748b' }}>
-                Choose a template to preview your CV
-              </p>
-
-              {/* Template Options */}
-              <div style={{ display: 'grid', gap: '0.75rem' }}>
-                {[
-                  { value: 'professional', label: 'Professional', icon: '💼', description: 'Classic and clean design' },
-                  { value: 'modern', label: 'Modern', icon: '✨', description: 'Contemporary with visual elements' },
-                  { value: 'compact', label: 'Compact', icon: '📄', description: 'Space-efficient single page' },
-                  { value: 'creative', label: 'Creative', icon: '🎨', description: 'Bold and unique design' }
-                ].map(template => (
-                  <div
-                    key={template.value}
-                    className={`template-option ${selectedPreviewTemplate === template.value ? 'selected' : ''}`}
-                    onClick={() => setSelectedPreviewTemplate(template.value)}
-                    style={{
-                      padding: '1rem',
-                      border: `2px solid ${selectedPreviewTemplate === template.value ? '#4299e1' : '#e2e8f0'}`,
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      backgroundColor: selectedPreviewTemplate === template.value ? '#ebf8ff' : 'white',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <span style={{ fontSize: '1.5rem' }}>{template.icon}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b' }}>{template.label}</div>
-                        <div style={{ fontSize: '0.875rem', color: '#64748b' }}>{template.description}</div>
-                      </div>
-                      {selectedPreviewTemplate === template.value && (
-                        <span style={{ color: '#4299e1', fontSize: '1.25rem' }}>✓</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="tracker-modal-footer">
-              <button
-                className="tracker-btn-cancel"
-                onClick={() => setShowPreviewTemplateModal(false)}
-                disabled={previewingPDF}
-              >
-                Cancel
-              </button>
-              <button
-                className="tracker-btn-save"
-                onClick={() => previewPDF(selectedPreviewTemplate)}
-                disabled={previewingPDF}
-              >
-                {previewingPDF ? (
-                  <>
-                    <span className="spinner-tiny"></span>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <span className="action-icon">📥</span>
-                    Download Preview
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PDFTemplateSelector
+          cvId={cvId}
+          cvData={cvData}
+          onClose={() => setShowPreviewTemplateModal(false)}
+          onGenerate={async (templateName, customizations) => {
+            await previewPDF(templateName);
+          }}
+        />
       )}
 
     </div>

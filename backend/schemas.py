@@ -52,6 +52,43 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class UserProfileInfo(BaseModel):
+    """User profile information for personal details page"""
+    full_name: str
+    email: str
+    phone_number: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    portfolio_url: Optional[str] = None
+    professional_title: Optional[str] = None
+    years_of_experience: Optional[int] = None
+    bio: Optional[str] = None
+    availability: str = 'available'
+    preferred_work_mode: str = 'hybrid'
+
+    class Config:
+        from_attributes = True
+
+
+class UserProfileInfoUpdate(BaseModel):
+    """Update user profile information"""
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    portfolio_url: Optional[str] = None
+    professional_title: Optional[str] = None
+    years_of_experience: Optional[int] = None
+    bio: Optional[str] = None
+    availability: Optional[str] = None
+    preferred_work_mode: Optional[str] = None
+
+
 # ============================================================================
 # ProfileNode Schemas (Universal - handles ALL content types)
 # ============================================================================
@@ -206,6 +243,74 @@ class TailoredCVResponse(BaseModel):
     application_date: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# JobApplication Schemas (Application Tracker)
+# ============================================================================
+
+class JobApplicationCreate(BaseModel):
+    """Create a new job application from a tailored CV"""
+    tailored_cv_id: int
+    cv_format: str = "professional"  # professional, modern, compact, creative
+    job_url: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    cover_letter: Optional[str] = None
+    priority: str = "medium"
+
+
+class JobApplicationUpdate(BaseModel):
+    """Update an existing job application"""
+    status: Optional[str] = None
+    application_date: Optional[datetime] = None
+    submission_method: Optional[str] = None
+    follow_up_date: Optional[datetime] = None
+    interview_dates: Optional[List[Dict[str, Any]]] = None
+    response_date: Optional[datetime] = None
+    response_type: Optional[str] = None
+    notes: Optional[str] = None
+    cover_letter: Optional[str] = None
+    priority: Optional[str] = None
+    reminder_date: Optional[datetime] = None
+    job_url: Optional[str] = None
+    location: Optional[str] = None
+    clear_dates: Optional[List[str]] = None  # List of date fields to clear when moving backward
+
+
+class JobApplicationResponse(BaseModel):
+    """Full job application details"""
+    id: int
+    user_id: int
+    tailored_cv_id: int
+    job_title: str
+    company_name: Optional[str]
+    job_url: Optional[str]
+    location: Optional[str]
+    final_content_snapshot: Dict[str, Any]
+    cv_format: str
+    initial_fit_scores: Optional[Dict[str, Any]]  # Full response with nested structures
+    initial_ats_scores: Optional[Dict[str, Any]]  # Full response with nested structures
+    final_fit_scores: Optional[Dict[str, Any]]  # Full response with nested structures
+    final_ats_scores: Optional[Dict[str, Any]]  # Full response with nested structures
+    score_history: Optional[List[Dict[str, Any]]]
+    status: str
+    application_date: Optional[datetime]
+    submission_method: Optional[str]
+    follow_up_date: Optional[datetime]
+    interview_dates: Optional[List[Dict[str, Any]]]
+    response_date: Optional[datetime]
+    response_type: Optional[str]
+    notes: Optional[str]
+    cover_letter: Optional[str]
+    priority: str
+    reminder_date: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+    finalized_at: Optional[datetime]
 
     class Config:
         from_attributes = True
