@@ -298,7 +298,18 @@ class JobApplicationResponse(BaseModel):
     final_ats_scores: Optional[Dict[str, Any]]  # Full response with nested structures
     score_history: Optional[List[Dict[str, Any]]]
     status: str
-    application_date: Optional[datetime]
+
+    # Timeline dates - track when application moved to each stage
+    ready_date: Optional[datetime]
+    applied_date: Optional[datetime]
+    phone_screen_date: Optional[datetime]
+    interview_date: Optional[datetime]
+    offer_date: Optional[datetime]
+    accepted_date: Optional[datetime]
+    rejected_date: Optional[datetime]
+    withdrawn_date: Optional[datetime]
+
+    application_date: Optional[datetime]  # Legacy field
     submission_method: Optional[str]
     follow_up_date: Optional[datetime]
     interview_dates: Optional[List[Dict[str, Any]]]
