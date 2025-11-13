@@ -1397,79 +1397,74 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
           <div className="detail-section-modern">
             <h3>📅 Timeline</h3>
             <div className="timeline-grid">
-              {/* Always show Created and Last Updated */}
+              {/* Always show Created */}
               <div className="timeline-item-detail">
                 <span className="timeline-label">📋 Created</span>
                 <span className="timeline-value">{new Date(app.created_at).toLocaleDateString()}</span>
               </div>
-              <div className="timeline-item-detail">
-                <span className="timeline-label">🔄 Last Updated</span>
-                <span className="timeline-value">{new Date(app.updated_at).toLocaleDateString()}</span>
-              </div>
 
-              {/* Show Ready to Apply if status is ready_to_apply or beyond (stage >= 2) */}
-              {(STATUS_CONFIG[app.status]?.stage >= 2) && app.ready_date && (
+              {/* Show all non-null dates in order */}
+              {app.ready_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">🎯 Ready to Apply</span>
                   <span className="timeline-value">{new Date(app.ready_date).toLocaleDateString()}</span>
                 </div>
               )}
 
-              {/* Show Applied if status is applied or beyond (stage >= 3) */}
-              {(STATUS_CONFIG[app.status]?.stage >= 3) && app.applied_date && (
+              {app.applied_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">📤 Applied</span>
                   <span className="timeline-value">{new Date(app.applied_date).toLocaleDateString()}</span>
                 </div>
               )}
 
-              {/* Show Phone Screen if status is phone_screen or beyond (stage >= 4) */}
-              {(STATUS_CONFIG[app.status]?.stage >= 4) && app.phone_screen_date && (
+              {app.phone_screen_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">📞 Phone Screen</span>
                   <span className="timeline-value">{new Date(app.phone_screen_date).toLocaleDateString()}</span>
                 </div>
               )}
 
-              {/* Show Interview if status is interview or beyond (stage >= 5) */}
-              {(STATUS_CONFIG[app.status]?.stage >= 5) && app.interview_date && (
+              {app.interview_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">💼 Interview</span>
                   <span className="timeline-value">{new Date(app.interview_date).toLocaleDateString()}</span>
                 </div>
               )}
 
-              {/* Show Offer Received if status is offer_received or beyond (stage >= 6) */}
-              {(STATUS_CONFIG[app.status]?.stage >= 6) && app.offer_date && (
+              {app.offer_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">🎁 Offer Received</span>
                   <span className="timeline-value">{new Date(app.offer_date).toLocaleDateString()}</span>
                 </div>
               )}
 
-              {/* Show Accepted if status is accepted (stage >= 7) */}
-              {(STATUS_CONFIG[app.status]?.stage >= 7) && app.accepted_date && (
+              {app.accepted_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">🎉 Accepted</span>
                   <span className="timeline-value">{new Date(app.accepted_date).toLocaleDateString()}</span>
                 </div>
               )}
 
-              {/* Show Rejected if status is rejected (stage === -1) */}
-              {app.status === 'rejected' && app.rejected_date && (
+              {app.rejected_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">❌ Rejected</span>
                   <span className="timeline-value">{new Date(app.rejected_date).toLocaleDateString()}</span>
                 </div>
               )}
 
-              {/* Show Withdrawn if status is withdrawn (stage === -2) */}
-              {app.status === 'withdrawn' && app.withdrawn_date && (
+              {app.withdrawn_date && (
                 <div className="timeline-item-detail">
                   <span className="timeline-label">🚫 Withdrawn</span>
                   <span className="timeline-value">{new Date(app.withdrawn_date).toLocaleDateString()}</span>
                 </div>
               )}
+
+              {/* Always show Last Updated at the end */}
+              <div className="timeline-item-detail">
+                <span className="timeline-label">🔄 Last Updated</span>
+                <span className="timeline-value">{new Date(app.updated_at).toLocaleDateString()}</span>
+              </div>
             </div>
           </div>
 
