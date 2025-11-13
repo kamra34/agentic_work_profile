@@ -681,32 +681,54 @@ function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onRefres
       interview: 5,
       offer_received: 6,
       accepted: 7,
-      rejected: -1,  // Terminal state
-      withdrawn: -2  // Terminal state
+      rejected: 8,  // Terminal state, but needs to be cleared if moving back
+      withdrawn: 9  // Terminal state, but needs to be cleared if moving back
     };
 
     const currentStage = statusOrder[currentStatus] || 0;
     const targetStage = statusOrder[targetStatus] || 0;
 
-    // If moving backward (lower stage number), clear dates for all statuses ahead of target
+    // Map status to date field
+    const statusDateMap = {
+      ready_to_apply: 'ready_date',
+      applied: 'applied_date',
+      phone_screen: 'phone_screen_date',
+      interview: 'interview_date',
+      offer_received: 'offer_date',
+      accepted: 'accepted_date',
+      rejected: 'rejected_date',
+      withdrawn: 'withdrawn_date'
+    };
+
+    // If moving backward (lower stage number) OR from terminal states, clear dates for all statuses ahead of target
     if (targetStage < currentStage && targetStage > 0) {
       const datesToClear = [];
 
-      // Map status to date field
-      const statusDateMap = {
-        ready_to_apply: 'ready_date',
-        applied: 'applied_date',
-        phone_screen: 'phone_screen_date',
-        interview: 'interview_date',
-        offer_received: 'offer_date',
-        accepted: 'accepted_date',
-        rejected: 'rejected_date',
-        withdrawn: 'withdrawn_date'
-      };
-
-      // Clear all dates for statuses ahead of the target
+      // Clear all dates for statuses ahead of the target (including terminal states)
       for (const [status, stage] of Object.entries(statusOrder)) {
-        if (stage > targetStage && stage > 0 && statusDateMap[status]) {
+        if (stage > targetStage && statusDateMap[status]) {
+          datesToClear.push(statusDateMap[status]);
+        }
+      }
+
+      return datesToClear;
+    }
+
+    // If moving from terminal state (rejected/withdrawn) back to any regular state
+    if ((currentStatus === 'rejected' || currentStatus === 'withdrawn') && targetStage > 0) {
+      const datesToClear = [];
+
+      // Clear terminal state dates
+      if (currentStatus === 'rejected') {
+        datesToClear.push('rejected_date');
+      }
+      if (currentStatus === 'withdrawn') {
+        datesToClear.push('withdrawn_date');
+      }
+
+      // Also clear all dates ahead of the target
+      for (const [status, stage] of Object.entries(statusOrder)) {
+        if (stage > targetStage && status !== 'rejected' && status !== 'withdrawn' && statusDateMap[status]) {
           datesToClear.push(statusDateMap[status]);
         }
       }
