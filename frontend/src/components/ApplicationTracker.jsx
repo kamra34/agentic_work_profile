@@ -379,10 +379,33 @@ function ApplicationTracker() {
     return openai && claude ? Math.round((openai + claude) / 2) : (openai || claude || 0);
   };
 
-  const downloadPDF = async (appId) => {
-    // TODO: Implement PDF download endpoint for job applications
-    alert('PDF download feature coming soon! You can view the application details in the modal.');
-    console.log('Download PDF for application:', appId);
+  const downloadPDF = async (appId, app) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/applications/${appId}/download-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download CV');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CV_${app.job_title}_${app.company_name || 'Application'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading CV:', error);
+      alert('Failed to download CV. Please try again.');
+    }
   };
 
   const groupByStatus = () => {
@@ -867,6 +890,37 @@ function KanbanCard({ app, onSelect, onUpdateStatus, onDeleteApp, getAverageScor
     onDeleteApp(app.id, app.isPreparing);
   };
 
+  const handleDownloadCV = async (e) => {
+    e.stopPropagation(); // Prevent card click event
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/applications/${app.id}/download-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download CV');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CV_${app.job_title}_${app.company_name || 'Application'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading CV:', error);
+      alert('Failed to download CV. Please try again.');
+    }
+  };
+
   const handleDragStart = (e) => {
     onDragStart(app);
   };
@@ -925,6 +979,13 @@ function KanbanCard({ app, onSelect, onUpdateStatus, onDeleteApp, getAverageScor
           {app.notes && (
             <span className="card-has-notes" title="Has notes">📝</span>
           )}
+          <button
+            className="btn-download-cv"
+            onClick={handleDownloadCV}
+            title="Download CV with applied settings"
+          >
+            📥
+          </button>
           <button
             className="btn-delete-card"
             onClick={handleDelete}
@@ -1035,7 +1096,7 @@ function TableView({ applications, onSelectApp, onDownloadPDF, onDeleteApp, getA
                     </button>
                     <button
                       className="btn-icon-modern"
-                      onClick={(e) => { e.stopPropagation(); onDownloadPDF(app.id); }}
+                      onClick={(e) => { e.stopPropagation(); onDownloadPDF(app.id, app); }}
                       title="Download PDF"
                     >
                       📥
@@ -1180,8 +1241,6 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
   const [isEditingStatus, setIsEditingStatus] = useState(false);
   const [newStatus, setNewStatus] = useState(app.status);
   const [statusNotes, setStatusNotes] = useState('');
-  const [showExportOptions, setShowExportOptions] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState(app.cv_format || 'professional');
   const [isExporting, setIsExporting] = useState(false);
 
   // Prevent body scroll when modal is open
@@ -1243,43 +1302,31 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
     try {
       const token = localStorage.getItem('token');
 
-      // Get the tailored_cv_id to export
-      const cvId = app.isPreparing ? app.id : app.tailored_cv_id;
-
-      if (!cvId) {
-        alert('No CV associated with this application');
-        return;
-      }
-
-      const response = await fetch(`${API_URL}/api/cv/${cvId}/export`, {
+      // Use the application download endpoint with saved settings
+      const response = await fetch(`${API_URL}/api/applications/${app.id}/download-pdf`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          format: selectedTemplate
-        })
+        }
       });
 
       if (!response.ok) {
-        throw new Error('Failed to export CV');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to export CV');
       }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${app.job_title || 'CV'}_${selectedTemplate}_${new Date().toISOString().split('T')[0]}.pdf`;
+      a.download = `CV_${app.job_title || 'Application'}_${app.company_name || ''}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-
-      setShowExportOptions(false);
     } catch (error) {
       console.error('Error exporting CV:', error);
-      alert('Failed to export CV. Please try again.');
+      alert('Failed to export CV: ' + error.message);
     } finally {
       setIsExporting(false);
     }
@@ -1480,42 +1527,41 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
           <div className="detail-actions-modern">
             {/* Export CV Section */}
             <div className="export-cv-section">
+              <div className="export-saved-settings-info">
+                <div className="saved-settings-header">
+                  <span className="info-icon">ℹ️</span>
+                  <span className="info-text">We will use the exact same settings from the creation step</span>
+                </div>
+                <div className="saved-settings-details">
+                  <div className="setting-item">
+                    <span className="setting-label">Template:</span>
+                    <span className="setting-value">{app.cv_format || 'professional'}</span>
+                  </div>
+                  {app.pdf_customizations && (
+                    <>
+                      <div className="setting-item">
+                        <span className="setting-label">Font Size:</span>
+                        <span className="setting-value">{app.pdf_customizations.fontSize || 'normal'}</span>
+                      </div>
+                      <div className="setting-item">
+                        <span className="setting-label">Spacing:</span>
+                        <span className="setting-value">{app.pdf_customizations.spacing || 'normal'}</span>
+                      </div>
+                      <div className="setting-item">
+                        <span className="setting-label">Color Intensity:</span>
+                        <span className="setting-value">{app.pdf_customizations.colorIntensity || 'normal'}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
               <button
                 className="btn-primary-modern"
-                onClick={() => setShowExportOptions(!showExportOptions)}
+                onClick={handleExportCV}
+                disabled={isExporting}
               >
-                📥 Export CV
+                {isExporting ? '⏳ Exporting...' : '📥 Export CV'}
               </button>
-
-              {showExportOptions && (
-                <div className="export-options-panel">
-                  <div className="export-template-info">
-                    <span className="template-label">Current Template:</span>
-                    <span className="template-name">{app.cv_format || 'professional'}</span>
-                  </div>
-                  <div className="export-template-selector">
-                    <label htmlFor="template-select">Select Template:</label>
-                    <select
-                      id="template-select"
-                      value={selectedTemplate}
-                      onChange={(e) => setSelectedTemplate(e.target.value)}
-                      className="template-dropdown"
-                    >
-                      <option value="professional">Professional</option>
-                      <option value="modern">Modern</option>
-                      <option value="compact">Compact</option>
-                      <option value="creative">Creative</option>
-                    </select>
-                  </div>
-                  <button
-                    className="btn-export"
-                    onClick={handleExportCV}
-                    disabled={isExporting}
-                  >
-                    {isExporting ? '⏳ Exporting...' : '📄 Export PDF'}
-                  </button>
-                </div>
-              )}
             </div>
 
             <button
