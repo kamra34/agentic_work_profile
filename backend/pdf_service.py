@@ -14,27 +14,125 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+import html
+
+
+def sanitize_text(text: str) -> str:
+    """
+    Sanitize text for PDF generation by replacing problematic Unicode characters
+    with safe alternatives and escaping HTML entities.
+
+    Args:
+        text: Raw text string that may contain Unicode characters
+
+    Returns:
+        Sanitized text safe for PDF generation
+    """
+    if not text:
+        return ""
+
+    # Replace common problematic Unicode characters with safe alternatives
+    replacements = {
+        '\u2013': '-',      # EN DASH
+        '\u2014': '--',     # EM DASH
+        '\u2018': "'",      # LEFT SINGLE QUOTATION MARK
+        '\u2019': "'",      # RIGHT SINGLE QUOTATION MARK
+        '\u201c': '"',      # LEFT DOUBLE QUOTATION MARK
+        '\u201d': '"',      # RIGHT DOUBLE QUOTATION MARK
+        '\u2022': '*',      # BULLET
+        '\u2026': '...',    # HORIZONTAL ELLIPSIS
+        '\u00a0': ' ',      # NON-BREAKING SPACE
+        '\u00b7': '*',      # MIDDLE DOT
+        '\u2019': "'",      # RIGHT SINGLE QUOTE
+        '\u00e9': 'e',      # é
+        '\u00e8': 'e',      # è
+        '\u00ea': 'e',      # ê
+        '\u00fc': 'u',      # ü
+        '\u00f6': 'o',      # ö
+        '\u00e4': 'a',      # ä
+    }
+
+    for unicode_char, replacement in replacements.items():
+        text = text.replace(unicode_char, replacement)
+
+    # Escape HTML entities to prevent XML parsing issues
+    text = html.escape(text)
+
+    return text
 
 
 class PDFTemplate:
-    """Base class for PDF templates"""
+    """Base class for PDF templates with support for multiple formats"""
 
     def __init__(self, template_name: str = "modern"):
         self.template_name = template_name
         self.page_size = letter
+
+        # Template-specific configurations
+        self.config = self._get_template_config(template_name)
         self.styles = self._create_styles()
 
+    def _get_template_config(self, template_name: str) -> dict:
+        """Get configuration for specific template"""
+        configs = {
+            "professional": {
+                "primary_color": "#1a202c",      # Dark gray/black
+                "secondary_color": "#2d3748",    # Medium gray
+                "accent_color": "#3182ce",       # Professional blue
+                "font_size_name": 24,
+                "font_size_section": 14,
+                "spacing": "normal",
+                "line_thickness": 1.0
+            },
+            "modern": {
+                "primary_color": "#1a202c",
+                "secondary_color": "#4a5568",
+                "accent_color": "#4299e1",       # Bright blue
+                "font_size_name": 26,
+                "font_size_section": 14,
+                "spacing": "normal",
+                "line_thickness": 0.5
+            },
+            "compact": {
+                "primary_color": "#000000",
+                "secondary_color": "#333333",
+                "accent_color": "#0066cc",       # Standard blue
+                "font_size_name": 20,
+                "font_size_section": 12,
+                "spacing": "tight",
+                "line_thickness": 0.75
+            },
+            "creative": {
+                "primary_color": "#2d3748",
+                "secondary_color": "#4a5568",
+                "accent_color": "#805ad5",       # Purple accent
+                "font_size_name": 28,
+                "font_size_section": 15,
+                "spacing": "relaxed",
+                "line_thickness": 2.0
+            }
+        }
+        return configs.get(template_name, configs["professional"])
+
     def _create_styles(self):
-        """Create custom paragraph styles"""
+        """Create custom paragraph styles based on template config"""
         styles = getSampleStyleSheet()
+        config = self.config
+
+        # Spacing adjustments based on template
+        spacing_multiplier = {
+            "tight": 0.7,
+            "normal": 1.0,
+            "relaxed": 1.3
+        }.get(config["spacing"], 1.0)
 
         # Name/Header style
         styles.add(ParagraphStyle(
             name='CVName',
             parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#1a202c'),
-            spaceAfter=6,
+            fontSize=config["font_size_name"],
+            textColor=colors.HexColor(config["primary_color"]),
+            spaceAfter=int(6 * spacing_multiplier),
             alignment=TA_CENTER,
             fontName='Helvetica-Bold'
         ))
@@ -65,13 +163,13 @@ class PDFTemplate:
         styles.add(ParagraphStyle(
             name='CVSectionHeading',
             parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#2d3748'),
-            spaceBefore=14,
-            spaceAfter=8,
+            fontSize=config["font_size_section"],
+            textColor=colors.HexColor(config["primary_color"]),
+            spaceBefore=int(14 * spacing_multiplier),
+            spaceAfter=int(8 * spacing_multiplier),
             fontName='Helvetica-Bold',
             borderWidth=0,
-            borderColor=colors.HexColor('#4299e1'),
+            borderColor=colors.HexColor(config["accent_color"]),
             borderPadding=0,
             leftIndent=0
         ))
@@ -110,9 +208,9 @@ class PDFTemplate:
         styles.add(ParagraphStyle(
             name='CVBullet',
             parent=styles['Normal'],
-            fontSize=10,
-            textColor=colors.HexColor('#2d3748'),
-            spaceAfter=4,
+            fontSize=10 if config["spacing"] != "compact" else 9,
+            textColor=colors.HexColor(config["secondary_color"]),
+            spaceAfter=int(4 * spacing_multiplier),
             leftIndent=20,
             bulletIndent=10,
             fontName='Helvetica'
@@ -191,40 +289,58 @@ class CVPDFGenerator:
 
         # Name
         full_name = contact_info.get('full_name', 'N/A')
-        story.append(Paragraph(full_name, styles['CVName']))
+        story.append(Paragraph(sanitize_text(full_name), styles['CVName']))
 
-        # Job title (if available)
-        job_title = contact_info.get('job_title', '')
+        # Job title (if available) - support both field names
+        job_title = contact_info.get('professional_title') or contact_info.get('job_title', '')
         if job_title:
-            story.append(Paragraph(job_title, styles['CVJobTitle']))
+            story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
 
         # Contact details with icons and hyperlinks
         # Using [in] and [gh] as text-based icons since PDF doesn't support emoji/SVG well
         contact_parts = []
         if contact_info.get('email'):
             contact_parts.append(contact_info['email'])
-        if contact_info.get('phone'):
-            contact_parts.append(contact_info['phone'])
-        if contact_info.get('location'):
-            contact_parts.append(contact_info['location'])
-        if contact_info.get('linkedin'):
-            linkedin_url = contact_info['linkedin']
+
+        # Support both phone and phone_number field names
+        phone = contact_info.get('phone_number') or contact_info.get('phone')
+        if phone:
+            contact_parts.append(phone)
+
+        # Build location from city and country, or use location field
+        location = contact_info.get('location')
+        if not location:
+            city = contact_info.get('city', '')
+            country = contact_info.get('country', '')
+            location_parts = [p for p in [city, country] if p]
+            if location_parts:
+                location = ', '.join(location_parts)
+        if location:
+            contact_parts.append(location)
+
+        # LinkedIn - support both field names
+        linkedin_url = contact_info.get('linkedin_url') or contact_info.get('linkedin')
+        if linkedin_url:
             contact_parts.append(f'<a href="{linkedin_url}" color="#2d3748">[in] LinkedIn</a>')
-        if contact_info.get('github'):
-            github_url = contact_info['github']
+
+        # GitHub - support both field names
+        github_url = contact_info.get('github_url') or contact_info.get('github')
+        if github_url:
             contact_parts.append(f'<a href="{github_url}" color="#2d3748">[gh] GitHub</a>')
-        if contact_info.get('website'):
-            website_url = contact_info['website']
+
+        # Portfolio/Website - support both field names
+        website_url = contact_info.get('portfolio_url') or contact_info.get('website')
+        if website_url:
             contact_parts.append(f'<a href="{website_url}" color="#2d3748">{website_url}</a>')
 
         if contact_parts:
             contact_line = " | ".join(contact_parts)
-            story.append(Paragraph(contact_line, styles['CVContact']))
+            story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
 
         # Horizontal line separator
         story.append(HRFlowable(
             width="100%",
-            thickness=1,
+            thickness=self.template.config["line_thickness"],
             color=colors.HexColor('#cbd5e0'),
             spaceBefore=0,
             spaceAfter=12
@@ -320,13 +436,13 @@ class CVPDFGenerator:
             return []
 
         # Section heading
-        story.append(Paragraph(section_title.upper(), styles['CVSectionHeading']))
+        story.append(Paragraph(sanitize_text(section_title.upper()), styles['CVSectionHeading']))
 
         # Add section divider line
         story.append(HRFlowable(
             width="100%",
-            thickness=0.5,
-            color=colors.HexColor('#4299e1'),
+            thickness=self.template.config["line_thickness"] * 0.5,
+            color=colors.HexColor(self.template.config["accent_color"]),
             spaceBefore=0,
             spaceAfter=8
         ))
@@ -345,12 +461,12 @@ class CVPDFGenerator:
         # Title (company, school, project name, etc.)
         title = entry.get('title', '')
         if title:
-            story.append(Paragraph(title, styles['CVEntryTitle']))
+            story.append(Paragraph(sanitize_text(title), styles['CVEntryTitle']))
 
         # Subtitle (position, degree, etc.)
         subtitle = entry.get('subtitle', '')
         if subtitle:
-            story.append(Paragraph(subtitle, styles['CVEntrySubtitle']))
+            story.append(Paragraph(sanitize_text(subtitle), styles['CVEntrySubtitle']))
 
         # Metadata (dates and location on same line)
         meta_parts = []
@@ -367,12 +483,12 @@ class CVPDFGenerator:
 
         if meta_parts:
             meta_line = " | ".join(meta_parts)
-            story.append(Paragraph(meta_line, styles['CVEntryMeta']))
+            story.append(Paragraph(sanitize_text(meta_line), styles['CVEntryMeta']))
 
         # Description (if any)
         description = entry.get('description', '')
         if description:
-            story.append(Paragraph(description, styles['CVDescription']))
+            story.append(Paragraph(sanitize_text(description), styles['CVDescription']))
 
         # Items (bullet points) at entry level
         items = entry.get('items', [])
@@ -386,7 +502,7 @@ class CVPDFGenerator:
             if content:
                 # Add bullet point
                 bullet_text = f"• {content}"
-                story.append(Paragraph(bullet_text, styles['CVBullet']))
+                story.append(Paragraph(sanitize_text(bullet_text), styles['CVBullet']))
 
         # Handle sub-entries (for hierarchical work experience)
         sub_entries = entry.get('sub_entries', [])
@@ -398,7 +514,7 @@ class CVPDFGenerator:
                     # Add some space before sub-entry
                     story.append(Spacer(1, 0.08*inch))
                     # Sub-entry title in italic/bold
-                    story.append(Paragraph(f"<i><b>{sub_title}</b></i>", styles['CVEntrySubtitle']))
+                    story.append(Paragraph(sanitize_text(f"<i><b>{sub_title}</b></i>"), styles['CVEntrySubtitle']))
 
                 # Sub-entry items
                 sub_items = sub_entry.get('items', [])
@@ -410,7 +526,7 @@ class CVPDFGenerator:
                     if content:
                         # Add bullet point
                         bullet_text = f"• {content}"
-                        story.append(Paragraph(bullet_text, styles['CVBullet']))
+                        story.append(Paragraph(sanitize_text(bullet_text), styles['CVBullet']))
 
         # Add spacing after entry
         story.append(Spacer(1, 0.15*inch))
