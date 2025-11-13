@@ -36,6 +36,8 @@ function SavedCVDetail({ cvId, onBack }) {
   const [isSavedToTracker, setIsSavedToTracker] = useState(false); // Saved to tracker
   const [applicationId, setApplicationId] = useState(null); // Store application ID for PDF export
   const [previewingPDF, setPreviewingPDF] = useState(false); // Preview PDF state
+  const [showPreviewTemplateModal, setShowPreviewTemplateModal] = useState(false); // Show template selection modal
+  const [selectedPreviewTemplate, setSelectedPreviewTemplate] = useState('professional'); // Selected template for preview
 
   useEffect(() => {
     fetchCVData();
@@ -749,9 +751,16 @@ function SavedCVDetail({ cvId, onBack }) {
   };
 
   // Preview PDF directly from current CV (without saving to tracker)
-  const previewPDF = async () => {
+  // Open template selection modal
+  const openPreviewTemplateModal = () => {
+    setShowPreviewTemplateModal(true);
+  };
+
+  // Generate PDF with selected template
+  const previewPDF = async (templateName) => {
     try {
       setPreviewingPDF(true);
+      setShowPreviewTemplateModal(false); // Close modal
 
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/tailor/${cvId}/preview-pdf`, {
@@ -761,7 +770,7 @@ function SavedCVDetail({ cvId, onBack }) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          cv_format: 'professional'  // Default format
+          cv_format: templateName
         })
       });
 
@@ -773,13 +782,13 @@ function SavedCVDetail({ cvId, onBack }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `CV_Preview_${cvData.job_title}_${cvData.company_name || 'Draft'}.pdf`;
+      a.download = `CV_Preview_${templateName}_${cvData.job_title}_${cvData.company_name || 'Draft'}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      console.log('[PreviewPDF] PDF downloaded successfully');
+      console.log(`[PreviewPDF] PDF downloaded successfully with template: ${templateName}`);
     } catch (err) {
       console.error('Error generating PDF preview:', err);
       alert('Failed to generate PDF preview: ' + err.message);
@@ -1625,7 +1634,7 @@ function SavedCVDetail({ cvId, onBack }) {
           <div className="sequential-workflow">
             {/* Preview PDF Button */}
             <button
-              onClick={previewPDF}
+              onClick={openPreviewTemplateModal}
               className="btn-preview-pdf"
               disabled={previewingPDF || autoSaveStatus === 'saving'}
               style={{
@@ -1635,13 +1644,13 @@ function SavedCVDetail({ cvId, onBack }) {
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
-                cursor: previewingPDF ? 'not-allowed' : 'pointer',
+                cursor: (previewingPDF || autoSaveStatus === 'saving') ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.5rem',
                 fontWeight: '500',
                 fontSize: '0.95rem',
-                opacity: previewingPDF ? 0.6 : 1,
+                opacity: (previewingPDF || autoSaveStatus === 'saving') ? 0.6 : 1,
                 transition: 'all 0.2s'
               }}
             >
@@ -2133,6 +2142,91 @@ function SavedCVDetail({ cvId, onBack }) {
                   <>
                     <span className="action-icon">✓</span>
                     Save to Tracker
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview PDF Template Selection Modal */}
+      {showPreviewTemplateModal && (
+        <div className="tracker-modal-overlay" onClick={() => setShowPreviewTemplateModal(false)}>
+          <div className="tracker-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="tracker-modal-header">
+              <h2>👁️ Select PDF Template</h2>
+              <button
+                className="tracker-modal-close"
+                onClick={() => setShowPreviewTemplateModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="tracker-modal-body">
+              <p style={{ marginBottom: '1.5rem', color: '#64748b' }}>
+                Choose a template to preview your CV
+              </p>
+
+              {/* Template Options */}
+              <div style={{ display: 'grid', gap: '0.75rem' }}>
+                {[
+                  { value: 'professional', label: 'Professional', icon: '💼', description: 'Classic and clean design' },
+                  { value: 'modern', label: 'Modern', icon: '✨', description: 'Contemporary with visual elements' },
+                  { value: 'compact', label: 'Compact', icon: '📄', description: 'Space-efficient single page' },
+                  { value: 'creative', label: 'Creative', icon: '🎨', description: 'Bold and unique design' }
+                ].map(template => (
+                  <div
+                    key={template.value}
+                    className={`template-option ${selectedPreviewTemplate === template.value ? 'selected' : ''}`}
+                    onClick={() => setSelectedPreviewTemplate(template.value)}
+                    style={{
+                      padding: '1rem',
+                      border: `2px solid ${selectedPreviewTemplate === template.value ? '#4299e1' : '#e2e8f0'}`,
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      backgroundColor: selectedPreviewTemplate === template.value ? '#ebf8ff' : 'white',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <span style={{ fontSize: '1.5rem' }}>{template.icon}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>{template.label}</div>
+                        <div style={{ fontSize: '0.875rem', color: '#64748b' }}>{template.description}</div>
+                      </div>
+                      {selectedPreviewTemplate === template.value && (
+                        <span style={{ color: '#4299e1', fontSize: '1.25rem' }}>✓</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="tracker-modal-footer">
+              <button
+                className="tracker-btn-cancel"
+                onClick={() => setShowPreviewTemplateModal(false)}
+                disabled={previewingPDF}
+              >
+                Cancel
+              </button>
+              <button
+                className="tracker-btn-save"
+                onClick={() => previewPDF(selectedPreviewTemplate)}
+                disabled={previewingPDF}
+              >
+                {previewingPDF ? (
+                  <>
+                    <span className="spinner-tiny"></span>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <span className="action-icon">📥</span>
+                    Download Preview
                   </>
                 )}
               </button>

@@ -1963,6 +1963,7 @@ async def move_application_to_preparing(
 @app.post("/api/tailor/{cv_id}/preview-pdf")
 async def preview_tailored_cv_pdf(
     cv_id: int,
+    request_data: dict,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -1982,8 +1983,8 @@ async def preview_tailored_cv_pdf(
     # Get the content snapshot (current state with all edits)
     snapshot = tailored_cv.content_snapshot
 
-    # Use professional format by default for preview
-    cv_format = "professional"
+    # Get cv_format from request, default to professional
+    cv_format = request_data.get('cv_format', 'professional')
 
     # Transform hierarchical nodes to flat sections for PDF service
     def transform_nodes_to_sections(nodes):
