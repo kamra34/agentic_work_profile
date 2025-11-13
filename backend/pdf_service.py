@@ -278,13 +278,29 @@ class CVPDFGenerator:
         story = []
 
         # Add header (name, contact info)
-        story.extend(self._build_header(cv_data))
+        try:
+            story.extend(self._build_header(cv_data))
+        except Exception as e:
+            print(f"[PDF] Error in _build_header: {e}")
+            raise
 
         # Add sections
-        story.extend(self._build_sections(cv_data, hidden_items))
+        try:
+            story.extend(self._build_sections(cv_data, hidden_items))
+        except Exception as e:
+            print(f"[PDF] Error in _build_sections: {e}")
+            raise
 
         # Build the PDF
-        doc.build(story)
+        try:
+            doc.build(story)
+        except Exception as e:
+            print(f"[PDF] Error in doc.build(): {e}")
+            print(f"[PDF] Story has {len(story)} elements")
+            # Print details of story elements for debugging
+            for i, element in enumerate(story[:10]):  # Print first 10 elements
+                print(f"[PDF] Story[{i}]: {type(element).__name__}")
+            raise
 
         buffer.seek(0)
         return buffer
