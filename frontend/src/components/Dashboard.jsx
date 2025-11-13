@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import MasterProfile from './MasterProfile';
 import TailorCV from './TailorCV';
-import TailoredCVs from './TailoredCVs';
+import SavedCVsWrapper from './SavedCVsWrapper';
 import ApplicationTracker from './ApplicationTracker';
+import GlobalAIStatusBar from './GlobalAIStatusBar';
+import { useAIAnalysis } from '../context/AIAnalysisContext';
 import './Dashboard.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -11,6 +13,7 @@ function Dashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('home');
   const [backendVersion, setBackendVersion] = useState(null);
   const [frontendVersion, setFrontendVersion] = useState(null);
+  const { isAnalyzing } = useAIAnalysis();
 
   useEffect(() => {
     fetchVersions();
@@ -38,6 +41,9 @@ function Dashboard({ user, onLogout }) {
 
   return (
     <div className="dashboard">
+      {/* Global AI Status Bar - Shows across all pages */}
+      <GlobalAIStatusBar />
+
       <nav className="navbar">
         <div className="navbar-content">
           <div className="navbar-left">
@@ -75,12 +81,24 @@ function Dashboard({ user, onLogout }) {
           <div className="sidebar-section">
             <div className="sidebar-section-title">📋 Profile Management</div>
             <button
-              className={`sidebar-item ${activeTab === 'profile' ? 'active' : ''}`}
-              onClick={() => setActiveTab('profile')}
+              className={`sidebar-item ${activeTab === 'profile' ? 'active' : ''} ${isAnalyzing ? 'disabled' : ''}`}
+              onClick={() => {
+                if (isAnalyzing) {
+                  alert('⚠️ Cannot edit Master Profile while AI analysis is running.\n\nPlease wait for the analysis to complete or navigate to Tailor CV to cancel it.');
+                  return;
+                }
+                setActiveTab('profile');
+              }}
+              disabled={isAnalyzing}
+              title={isAnalyzing ? 'Blocked during AI analysis' : 'Edit your master profile'}
             >
               <span className="icon">📝</span>
               <span className="label">Master Profile</span>
-              <span className="badge">Essential</span>
+              {isAnalyzing ? (
+                <span className="badge badge-locked">🔒 Locked</span>
+              ) : (
+                <span className="badge">Essential</span>
+              )}
             </button>
           </div>
 
@@ -118,8 +136,10 @@ function Dashboard({ user, onLogout }) {
         <main className="main-content">
           {activeTab === 'home' && <HomeView onNavigate={setActiveTab} />}
           {activeTab === 'profile' && <MasterProfile />}
-          {activeTab === 'tailor' && <TailorCV />}
-          {activeTab === 'review' && <TailoredCVs />}
+          <div style={{ display: activeTab === 'tailor' ? 'block' : 'none' }}>
+            <TailorCV />
+          </div>
+          {activeTab === 'review' && <SavedCVsWrapper />}
           {activeTab === 'applications' && <ApplicationTracker />}
         </main>
       </div>

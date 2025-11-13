@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
+import { AIAnalysisProvider } from './context/AIAnalysisContext';
 import './App.css';
 
 const API_URL = 'http://localhost:8000';
@@ -107,7 +108,11 @@ function App() {
   };
 
   if (user) {
-    return <Dashboard user={user} onLogout={handleLogout} />;
+    return (
+      <AIAnalysisProvider>
+        <Dashboard user={user} onLogout={handleLogout} />
+      </AIAnalysisProvider>
+    );
   }
 
   return (
