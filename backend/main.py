@@ -49,7 +49,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours to prevent interruptions during active work
 
 security = HTTPBearer()
 
@@ -146,6 +146,13 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     access_token = create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/api/refresh-token", response_model=Token)
+def refresh_token(current_user: User = Depends(get_current_user)):
+    """Refresh access token - extends the session for active users"""
+    access_token = create_access_token(data={"sub": str(current_user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -2168,6 +2175,273 @@ async def preview_tailored_cv_pdf(
     except Exception as e:
         print(f"Error generating preview PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate preview PDF: {str(e)}")
+
+
+@app.post("/api/tailor/{cv_id}/preview-metadata")
+async def get_cv_preview_metadata(
+    cv_id: int,
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get metadata about the CV PDF (page count, word count, etc.) without generating full PDF.
+    Useful for live preview statistics.
+    """
+    # Get the tailored CV
+    db.expire_all()
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    db.refresh(tailored_cv)
+
+    # Get parameters from request
+    cv_format = request_data.get('cv_format', 'professional')
+    customizations = request_data.get('customizations', {})
+
+    # Get the content snapshot
+    snapshot = tailored_cv.content_snapshot
+
+    # Transform nodes to sections (reuse same logic as preview-pdf)
+    def transform_nodes_to_sections(nodes):
+        """Transform hierarchical nodes into flat sections - ONLY SELECTED NODES"""
+        sections = []
+
+        def collect_bullets_recursively(node, depth=0):
+            """Recursively collect all selected bullets/paragraphs"""
+            bullets = []
+            for child in node.get('children', []):
+                if not child.get('is_selected', False):
+                    continue
+
+                child_type = child.get('node_type')
+                if child_type in ['bullet', 'paragraph']:
+                    bullets.append({
+                        'id': child.get('id', 0),
+                        'content': child.get('content', ''),
+                        'order': child.get('order', 0)
+                    })
+                elif child_type == 'entry':
+                    sub_bullets = collect_bullets_recursively(child, depth + 1)
+                    if sub_bullets:
+                        bullets.append({
+                            'type': 'sub_entry',
+                            'title': child.get('title'),
+                            'items': sub_bullets
+                        })
+                    elif child.get('content'):
+                        bullets.append({
+                            'id': child.get('id', 0),
+                            'content': child.get('content', ''),
+                            'order': child.get('order', 0)
+                        })
+                else:
+                    sub_bullets = collect_bullets_recursively(child, depth + 1)
+                    bullets.extend(sub_bullets)
+            return bullets
+
+        for node in nodes:
+            if node.get('node_type') != 'section' or not node.get('is_selected', False):
+                continue
+
+            section = {
+                'title': node.get('title', ''),
+                'section_type': node.get('title', '').lower().replace(' ', '_'),
+                'entries': []
+            }
+
+            for child in node.get('children', []):
+                if not child.get('is_selected', False):
+                    continue
+
+                child_type = child.get('node_type')
+
+                if child_type in ['bullet', 'paragraph']:
+                    # Direct bullet under section
+                    section['entries'].append({
+                        'title': None,
+                        'items': [{
+                            'id': child.get('id', 0),
+                            'content': child.get('content', ''),
+                            'order': child.get('order', 0)
+                        }]
+                    })
+                elif child_type == 'entry':
+                    all_bullets = collect_bullets_recursively(child, depth=1)
+                    regular_bullets = [b for b in all_bullets if not isinstance(b, dict) or b.get('type') != 'sub_entry']
+                    sub_entries_data = [b for b in all_bullets if isinstance(b, dict) and b.get('type') == 'sub_entry']
+
+                    entry = {
+                        'title': child.get('title'),
+                        'subtitle': child.get('subtitle'),
+                        'start_date': child.get('start_date'),
+                        'end_date': child.get('end_date'),
+                        'location': child.get('location'),
+                        'description': child.get('content') if child.get('content_type') == 'text' else None,
+                        'items': regular_bullets,
+                        'sub_entries': sub_entries_data
+                    }
+
+                    if entry['items'] or entry['sub_entries'] or entry['description'] or entry['title']:
+                        section['entries'].append(entry)
+
+            if section['entries']:
+                sections.append(section)
+
+        return sections
+
+    # Build selected_content structure
+    selected_content = {
+        'contact_info': snapshot.get('contact_info', {}),
+        'sections': transform_nodes_to_sections(snapshot.get('nodes', []))
+    }
+
+    cv_data = {
+        "selected_content": selected_content
+    }
+
+    # Get metadata using pdf_service
+    try:
+        metadata = pdf_service.get_cv_pdf_metadata(
+            cv_data=cv_data,
+            hidden_items=[],
+            template_name=cv_format,
+            customizations=customizations
+        )
+
+        return metadata
+
+    except Exception as e:
+        print(f"Error generating preview metadata: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate metadata: {str(e)}")
+
+
+@app.post("/api/tailor/{cv_id}/preview-image")
+async def get_cv_preview_image(
+    cv_id: int,
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a PNG preview image of the CV's first page.
+    Useful for live preview thumbnail.
+    """
+    # Get the tailored CV
+    db.expire_all()
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    db.refresh(tailored_cv)
+
+    # Get parameters from request
+    cv_format = request_data.get('cv_format', 'professional')
+    customizations = request_data.get('customizations', {})
+    page_index = request_data.get('page_index', 0)
+
+    # Get the content snapshot
+    snapshot = tailored_cv.content_snapshot
+
+    # Transform nodes to sections (same logic as above)
+    def transform_nodes_to_sections(nodes):
+        """Transform hierarchical nodes into flat sections - ONLY SELECTED NODES"""
+        sections = []
+
+        def collect_bullets_recursively(node, depth=0):
+            bullets = []
+            for child in node.get('children', []):
+                if not child.get('is_selected', False):
+                    continue
+                child_type = child.get('node_type')
+                if child_type in ['bullet', 'paragraph']:
+                    bullets.append({
+                        'id': child.get('id', 0),
+                        'content': child.get('content', ''),
+                        'order': child.get('order', 0)
+                    })
+                elif child_type == 'entry':
+                    sub_bullets = collect_bullets_recursively(child, depth + 1)
+                    if sub_bullets:
+                        bullets.append({'type': 'sub_entry', 'title': child.get('title'), 'items': sub_bullets})
+                    elif child.get('content'):
+                        bullets.append({'id': child.get('id', 0), 'content': child.get('content', ''), 'order': child.get('order', 0)})
+                else:
+                    sub_bullets = collect_bullets_recursively(child, depth + 1)
+                    bullets.extend(sub_bullets)
+            return bullets
+
+        for node in nodes:
+            if node.get('node_type') != 'section' or not node.get('is_selected', False):
+                continue
+            section = {'title': node.get('title', ''), 'section_type': node.get('title', '').lower().replace(' ', '_'), 'entries': []}
+            for child in node.get('children', []):
+                if not child.get('is_selected', False):
+                    continue
+                child_type = child.get('node_type')
+                if child_type in ['bullet', 'paragraph']:
+                    section['entries'].append({'title': None, 'items': [{'id': child.get('id', 0), 'content': child.get('content', ''), 'order': child.get('order', 0)}]})
+                elif child_type == 'entry':
+                    all_bullets = collect_bullets_recursively(child, depth=1)
+                    regular_bullets = [b for b in all_bullets if not isinstance(b, dict) or b.get('type') != 'sub_entry']
+                    sub_entries_data = [b for b in all_bullets if isinstance(b, dict) and b.get('type') == 'sub_entry']
+                    entry = {
+                        'title': child.get('title'),
+                        'subtitle': child.get('subtitle'),
+                        'start_date': child.get('start_date'),
+                        'end_date': child.get('end_date'),
+                        'location': child.get('location'),
+                        'description': child.get('content') if child.get('content_type') == 'text' else None,
+                        'items': regular_bullets,
+                        'sub_entries': sub_entries_data
+                    }
+                    if entry['items'] or entry['sub_entries'] or entry['description'] or entry['title']:
+                        section['entries'].append(entry)
+            if section['entries']:
+                sections.append(section)
+        return sections
+
+    # Build selected_content structure
+    selected_content = {
+        'contact_info': snapshot.get('contact_info', {}),
+        'sections': transform_nodes_to_sections(snapshot.get('nodes', []))
+    }
+
+    cv_data = {
+        "selected_content": selected_content
+    }
+
+    # Generate preview image using pdf_service
+    try:
+        image_buffer = pdf_service.generate_cv_preview_image(
+            cv_data=cv_data,
+            hidden_items=[],
+            template_name=cv_format,
+            customizations=customizations,
+            page_index=page_index,
+            scale=1.5  # Good quality for thumbnails
+        )
+
+        return StreamingResponse(
+            image_buffer,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "no-cache"  # Don't cache previews as they change frequently
+            }
+        )
+
+    except Exception as e:
+        print(f"Error generating preview image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate preview image: {str(e)}")
 
 
 @app.post("/api/applications/{application_id}/export-pdf")

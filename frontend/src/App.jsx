@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import { AIAnalysisProvider } from './context/AIAnalysisContext';
+import { setLogoutCallback, initializeActivityTracking, cleanupActivityTracking } from './utils/api';
 import './App.css';
 
 const API_URL = 'http://localhost:8000';
@@ -17,10 +18,20 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Set up logout callback for the API client
+    setLogoutCallback(handleLogout);
+
     const token = localStorage.getItem('token');
     if (token) {
       fetchCurrentUser(token);
+      // Initialize activity tracking for token refresh
+      initializeActivityTracking();
     }
+
+    // Cleanup on unmount
+    return () => {
+      cleanupActivityTracking();
+    };
   }, []);
 
   const fetchCurrentUser = async (token) => {
@@ -82,6 +93,8 @@ function App() {
       if (isLogin) {
         localStorage.setItem('token', data.access_token);
         await fetchCurrentUser(data.access_token);
+        // Initialize activity tracking after successful login
+        initializeActivityTracking();
       } else {
         setIsLogin(true);
         setFormData({ full_name: '', email: '', password: '' });
@@ -98,6 +111,7 @@ function App() {
     localStorage.removeItem('token');
     setUser(null);
     setFormData({ full_name: '', email: '', password: '' });
+    cleanupActivityTracking();
   };
 
   const handleChange = (e) => {
