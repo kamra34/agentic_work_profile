@@ -14,13 +14,12 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-import html
 
 
 def sanitize_text(text: str) -> str:
     """
     Sanitize text for PDF generation by replacing problematic Unicode characters
-    with safe alternatives and escaping HTML entities.
+    with safe ASCII alternatives. Uses encode/decode to handle all Unicode chars.
 
     Args:
         text: Raw text string that may contain Unicode characters
@@ -31,7 +30,7 @@ def sanitize_text(text: str) -> str:
     if not text:
         return ""
 
-    # Replace common problematic Unicode characters with safe alternatives
+    # First, replace common problematic Unicode characters with safe alternatives
     replacements = {
         '\u2013': '-',      # EN DASH
         '\u2014': '--',     # EM DASH
@@ -43,20 +42,32 @@ def sanitize_text(text: str) -> str:
         '\u2026': '...',    # HORIZONTAL ELLIPSIS
         '\u00a0': ' ',      # NON-BREAKING SPACE
         '\u00b7': '*',      # MIDDLE DOT
-        '\u2019': "'",      # RIGHT SINGLE QUOTE
         '\u00e9': 'e',      # é
         '\u00e8': 'e',      # è
         '\u00ea': 'e',      # ê
+        '\u00eb': 'e',      # ë
         '\u00fc': 'u',      # ü
         '\u00f6': 'o',      # ö
         '\u00e4': 'a',      # ä
+        '\u00c9': 'E',      # É
+        '\u00c8': 'E',      # È
+        '\u00ca': 'E',      # Ê
+        '\u2122': 'TM',     # TRADEMARK
+        '\u00ae': '(R)',    # REGISTERED SIGN
+        '\u00a9': '(C)',    # COPYRIGHT
     }
 
     for unicode_char, replacement in replacements.items():
         text = text.replace(unicode_char, replacement)
 
-    # Escape HTML entities to prevent XML parsing issues
-    text = html.escape(text)
+    # Convert any remaining non-ASCII characters using ASCII approximation
+    # This handles any Unicode we didn't explicitly replace
+    try:
+        # Try to encode as ASCII, replacing errors with '?'
+        text = text.encode('ascii', 'ignore').decode('ascii')
+    except Exception:
+        # Fallback: remove all non-ASCII characters
+        text = ''.join(char if ord(char) < 128 else '' for char in text)
 
     return text
 
