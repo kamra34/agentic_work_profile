@@ -163,7 +163,7 @@ function AIEditor({ entry, onClose, onApply }) {
               >
                 <span className="model-icon">🤖</span>
                 <span className="model-name">OpenAI GPT-4</span>
-                <span className="model-desc">Latest GPT-4o model</span>
+                <span className="model-desc">Latest GPT-5 model</span>
               </button>
               <button
                 onClick={() => handleModelSelect('claude')}

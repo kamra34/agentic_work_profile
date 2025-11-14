@@ -103,12 +103,12 @@ function ProfileUpload({ onUploadSuccess }) {
               onChange={(e) => setModel(e.target.value)}
               className="select-input"
             >
-              <option value="gpt-4o">GPT-4o (Recommended)</option>
-              <option value="gpt-4o-mini">GPT-4o Mini</option>
+              <option value="gpt-4o">GPT-5 (Recommended)</option>
+              <option value="gpt-4o-mini">GPT-5 Mini</option>
               <option value="gpt-4-turbo">GPT-4 Turbo</option>
             </select>
             <small className="helper-text">
-              GPT-4o provides the best accuracy for CV parsing
+              GPT-5 provides the best accuracy for CV parsing
             </small>
           </div>
 

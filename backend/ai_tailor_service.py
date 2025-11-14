@@ -55,7 +55,7 @@ Return a JSON object with:
 Be thorough and extract all relevant requirements."""
 
 
-SCORING_PROMPT = """You are a brutally honest technical recruiter and career advisor. Analyze this candidate profile against the job requirements with critical precision. Your goal is to save the candidate's time by being factual, direct, and realistic about their chances.
+SCORING_PROMPT = """You are a brutally honest technical recruiter and career advisor with 15+ years of experience in technical hiring and ATS systems. Analyze this candidate profile against the job requirements with critical precision. Your goal is to save the candidate's time by being factual, direct, and realistic about their chances.
 
 Job Requirements:
 {job_requirements}
@@ -63,29 +63,208 @@ Job Requirements:
 Candidate Profile:
 {profile_content}
 
-Provide a critical, fact-based analysis:
+## SCORING METHODOLOGY
+
+### FIT SCORE (0-100): Overall Match Quality
+
+Evaluate how well the candidate matches the role requirements using these weighted components:
+
+**Component Breakdown:**
+1. **Must-Have Requirements** (50% of fit_score)
+   - Count how many critical/required skills the candidate has
+   - Full match = 50 points, partial match = 25 points, no match = 0 points
+
+2. **Nice-to-Have Requirements** (20% of fit_score)
+   - Bonus points for additional desired skills
+   - Shows versatility and growth potential
+
+3. **Experience Level Alignment** (15% of fit_score)
+   - Does the candidate's seniority match the role level?
+   - Overqualified, underqualified, or just right?
+
+4. **Domain/Industry Knowledge** (15% of fit_score)
+   - Relevant industry experience
+   - Domain-specific expertise
+
+**Fit Score Scale:**
+- **90-100: EXCEPTIONAL** - Rare perfect match. Candidate exceeds requirements in multiple areas. Strong hire signal.
+  - Example: 9/10 must-haves + 80% nice-to-haves + perfect seniority match + deep domain expertise
+
+- **75-89: STRONG FIT** - Excellent match. Candidate meets all or nearly all key requirements. High interview probability.
+  - Example: 8/10 must-haves + 50% nice-to-haves + good seniority match + some domain knowledge
+
+- **60-74: GOOD FIT** - Solid match. Candidate meets most important requirements with minor gaps. Reasonable chance.
+  - Example: 6-7/10 must-haves + 30% nice-to-haves + acceptable seniority + transferable experience
+
+- **45-59: MODERATE/MARGINAL** - Meets baseline but significant gaps exist. Long shot but not impossible.
+  - Example: 5/10 must-haves + few nice-to-haves + some seniority mismatch + limited domain knowledge
+
+- **30-44: BELOW AVERAGE** - Missing several key requirements. Low probability of success. Consider only if desperate.
+  - Example: 3-4/10 must-haves + minimal nice-to-haves + wrong seniority level + unrelated background
+
+- **0-29: POOR FIT** - Major gaps in core requirements. Very unlikely to pass screening. Not recommended.
+  - Example: <3/10 must-haves + major skill gaps + significant experience mismatch
+
+### ATS SCORE (0-100): Automated Screening Compatibility
+
+Evaluate the likelihood of passing automated applicant tracking systems:
+
+**ATS Scoring Factors:**
+1. **Keyword Matching** (40% of ats_score)
+   - Count exact keyword matches from job description in candidate profile
+   - Include: technologies, tools, methodologies, certifications, job titles
+   - Exact match > semantic match > missing
+
+2. **Experience Format** (25% of ats_score)
+   - Clear job titles, dates, company names
+   - Quantified achievements and metrics
+   - Proper role descriptions
+
+3. **Education & Certifications** (20% of ats_score)
+   - Required degrees present and clearly stated
+   - Relevant certifications mentioned
+   - Proper formatting of credentials
+
+4. **Recency & Relevance** (15% of ats_score)
+   - Recent experience with required technologies
+   - Current/recent job titles matching target role
+   - No large unexplained gaps
+
+**ATS Score Scale:**
+- **85-100: EXCELLENT** - Will definitely pass ATS. Strong keyword density, perfect format, all checkboxes ticked.
+  - Example: 90%+ keyword matches, all required credentials, recent relevant experience
+
+- **70-84: GOOD** - Likely to pass ATS. Most keywords present, good format, minor gaps acceptable.
+  - Example: 70-80% keyword matches, most credentials, well-formatted experience
+
+- **55-69: MODERATE** - May pass ATS but not guaranteed. Missing some keywords or format issues.
+  - Example: 50-60% keyword matches, some credentials missing, experience less clear
+
+- **40-54: BELOW AVERAGE** - Low probability of passing ATS. Significant keyword gaps or format problems.
+  - Example: <50% keyword matches, missing key credentials, poor formatting
+
+- **0-39: POOR** - Very unlikely to pass ATS. Major keyword mismatches, missing critical requirements.
+  - Example: <30% keyword matches, no required credentials, incompatible format
+
+## VERDICT DECISION LOGIC
+
+Use this decision matrix based on both scores:
+
+**SHOULD_APPLY** - Recommend proceeding with application:
+- fit_score >= 70 AND ats_score >= 60, OR
+- fit_score >= 80 (even if ATS is 50-59, worth trying), OR
+- fit_score >= 65 AND ats_score >= 75 (great ATS optimization can compensate)
+
+**CONSIDER_APPLYING** - On the fence, depends on candidate's risk tolerance:
+- fit_score 55-69 AND ats_score 55-74, OR
+- fit_score >= 60 AND ats_score 45-59 (fit is there but ATS is risky), OR
+- fit_score 45-59 AND ats_score >= 70 (might get through ATS, then interview skill matters)
+
+**SHOULD_NOT_APPLY** - Not recommended, low probability of success:
+- fit_score < 55 AND ats_score < 55, OR
+- fit_score < 45 (regardless of ATS), OR
+- ats_score < 40 AND fit_score < 70 (won't get past screening)
+
+## CALIBRATION EXAMPLES
+
+**Example 1: Senior Backend Engineer Position**
+- Job requires: "5+ years Python, microservices, AWS, Kubernetes, SQL, team leadership"
+- Candidate has: 6 years Python, 4 years microservices, 3 years AWS, Kubernetes expert, PostgreSQL, led team of 5
+- Must-haves: 5/6 (missing nothing critical)
+- Nice-to-haves: Has CI/CD, Docker, Redis (bonus)
+- Fit Score: 87 (STRONG FIT)
+- ATS Score: 92 (EXCELLENT - all keywords present)
+- Verdict: SHOULD_APPLY
+
+**Example 2: Data Scientist Role**
+- Job requires: "PhD in CS/Stats, 3+ years ML, Python, TensorFlow, NLP, published research"
+- Candidate has: MS in CS (not PhD), 2 years ML, Python expert, PyTorch (not TensorFlow), no NLP, 1 blog post
+- Must-haves: 2/6 (missing PhD, insufficient years, wrong framework, no NLP, no publications)
+- Fit Score: 38 (BELOW AVERAGE)
+- ATS Score: 45 (BELOW AVERAGE - missing key keywords: PhD, TensorFlow, NLP, publications)
+- Verdict: SHOULD_NOT_APPLY
+
+**Example 3: Full Stack Developer**
+- Job requires: "React, Node.js, TypeScript, REST APIs, MongoDB, 3+ years"
+- Candidate has: React (4 years), Node.js (3 years), JavaScript (not TypeScript), REST APIs, MySQL (not MongoDB), 4 years total
+- Must-haves: 4/6 (has similar tech but not exact matches)
+- Fit Score: 68 (GOOD FIT - close enough, transferable skills)
+- ATS Score: 58 (MODERATE - missing exact keywords TypeScript, MongoDB)
+- Verdict: CONSIDER_APPLYING (fit is decent, could mention willingness to learn TypeScript/MongoDB in cover letter)
+
+**Example 4: Junior Product Manager**
+- Job requires: "1-2 years PM experience, user research, roadmap planning, SQL, analytics tools"
+- Candidate has: 3 years as Product Analyst (not PM), extensive user research, data analysis, SQL expert, Tableau/Mixpanel
+- Must-haves: 4/5 (related role, has most skills)
+- Fit Score: 72 (GOOD FIT - related experience counts)
+- ATS Score: 78 (GOOD - keywords present, though job title differs)
+- Verdict: SHOULD_APPLY (analyst-to-PM transition is common)
+
+## OUTPUT FORMAT
 
 Return JSON:
 {{
   "fit_score": <number 0-100>,
-  "fit_reasoning": "Factual explanation of why this score. Be specific about what matches and what doesn't. No sugar-coating.",
+  "fit_reasoning": "Detailed explanation with specific component breakdown. State exactly what matches and what doesn't. Reference the scoring methodology. Example: 'Must-haves: 7/10 (has Python, AWS, React but missing Kubernetes, GraphQL, TypeScript) = 35/50 points. Nice-to-haves: 3/5 = 12/20 points. Experience: Senior level matches = 15/15 points. Domain: fintech background relevant = 12/15 points. Total: 74/100.'",
+
   "ats_score": <number 0-100>,
-  "ats_reasoning": "Specific explanation of ATS compatibility. Mention keyword matches/misses, format issues.",
-  "verdict": "SHOULD_APPLY or SHOULD_NOT_APPLY",
-  "verdict_reasoning": "Clear, direct explanation of why the candidate should or should not apply. Focus on realistic chances and time investment value.",
-  "strengths": ["Specific strength with evidence from profile", ...],
-  "missing_skills": ["Skill required by job but absent from profile", ...],
-  "critical_gaps": ["Deal-breaker gaps that significantly hurt chances", ...],
-  "matching_skills": ["Skills the candidate has that match job requirements", ...],
-  "recommendations": ["Actionable recommendation 1", ...]
+  "ats_reasoning": "Specific explanation with keyword analysis. Example: 'Keywords: 18/25 matches (72%). Has exact matches for Python, AWS, microservices, Docker, CI/CD. Missing: Kubernetes, Terraform, Golang. Education: BS in CS present = full points. Format: well-structured with dates and metrics = strong. Recency: all required tech used in last 2 years = excellent. Total: 78/100.'",
+
+  "verdict": "SHOULD_APPLY or CONSIDER_APPLYING or SHOULD_NOT_APPLY",
+
+  "verdict_reasoning": "Clear, direct explanation using the decision matrix. Example: 'fit_score=74 and ats_score=78 both exceed thresholds (70/60). Strong match on core requirements with good keyword density. Recommend applying. Estimated interview probability: 60-70% if application is well-tailored.'",
+
+  "strengths": [
+    "Specific strength with evidence and impact. Example: 'Expert in Python with 6 years experience including advanced async programming - exceeds job requirement of 3 years'",
+    "Leadership experience managing team of 8 engineers - demonstrates readiness for senior role",
+    ...
+  ],
+
+  "missing_skills": [
+    "Skill required by job but absent from profile. Be specific. Example: 'Kubernetes - listed as required, no evidence in profile'",
+    "TypeScript - job requires, candidate only shows JavaScript experience",
+    ...
+  ],
+
+  "critical_gaps": [
+    "Deal-breaker gaps with severity assessment. Example: 'PhD required but candidate has MS - may be automatic disqualification depending on how strict requirement is'",
+    "No machine learning experience - this is 60% of the role and cannot be learned quickly",
+    ...
+  ],
+
+  "matching_skills": [
+    "Skills with direct evidence. Example: 'Python (6 years, advanced) - EXACT MATCH'",
+    "AWS (4 years, certified) - EXACT MATCH",
+    "Microservices architecture (designed 3 systems) - EXACT MATCH",
+    ...
+  ],
+
+  "recommendations": [
+    "Actionable, specific recommendation. Example: 'Highlight Kubernetes experience more prominently if you have any, even from side projects or learning'",
+    "Emphasize the 60% latency improvement achievement - quantified results stand out",
+    "Consider taking a TypeScript crash course and adding a small project to show learning agility",
+    ...
+  ]
 }}
 
-Be honest and critical. If the fit is poor, say so directly. If it's excellent, explain why with facts. Focus on:
-- Exact skill matches vs. missing requirements
-- Experience level alignment
-- Technical depth in required areas
-- Red flags or deal-breakers
-- Realistic probability of getting past screening"""
+## IMPORTANT GUIDELINES
+
+- **Be mathematically precise**: Show your scoring calculation, don't just guess numbers
+- **Be specific, not generic**: "Has Python" is weak. "6 years Python including async, FastAPI, pytest" is strong
+- **No sugar-coating**: If it's a poor fit, say so directly and explain why
+- **Consider context**: Junior vs Senior roles have different standards
+- **ATS reality check**: Many great candidates get filtered by ATS - be realistic about keyword gaps
+- **Provide hope when appropriate**: If score is marginal, suggest how to improve chances
+- **Be decisive**: Don't waffle. Use the full scale (not everything is 65-75)
+- **Think like a recruiter**: What would make YOU excited to interview this person? What would make you pass?
+
+Focus on:
+- Exact skill matches vs. missing requirements (with counts)
+- Experience level alignment (over/under/right-qualified)
+- Technical depth in required areas (beginner/intermediate/expert)
+- Red flags or deal-breakers (hard requirements, cultural mismatch)
+- Realistic probability of getting past screening (percentage estimate if possible)
+"""
 
 
 NODE_SELECTION_PROMPT = """You are an expert CV tailoring specialist and ATS optimization consultant. Your task is to recommend which profile nodes should be INCLUDED or EXCLUDED in a tailored CV for a specific job.
@@ -241,11 +420,14 @@ def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
         }
 
     try:
+        # Build the exact prompt that will be sent
+        user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
+
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an expert job requirement analyst. Always respond with valid JSON."},
-                {"role": "user", "content": JOB_ANALYSIS_PROMPT.format(job_description=job_description)}
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
             response_format={"type": "json_object"}
@@ -255,7 +437,8 @@ def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
         return {
             "success": True,
             "model": "openai-gpt-4o",
-            "analysis": result
+            "analysis": result,
+            "prompt_sent": user_prompt  # Include the exact prompt sent
         }
     except Exception as e:
         return {
@@ -276,11 +459,14 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         }
 
     try:
+        # Build the exact prompt that will be sent
+        user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
+
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=4096,
             messages=[
-                {"role": "user", "content": JOB_ANALYSIS_PROMPT.format(job_description=job_description)}
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.3
         )
@@ -310,7 +496,8 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
-            "analysis": result
+            "analysis": result,
+            "prompt_sent": user_prompt  # Include the exact prompt sent
         }
     except Exception as e:
         print(f"ERROR: Claude analysis failed: {type(e).__name__}: {str(e)}")
@@ -333,14 +520,17 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> D
         }
 
     try:
+        # Build the exact prompt that will be sent
+        user_prompt = SCORING_PROMPT.format(
+            job_requirements=json.dumps(job_requirements, indent=2),
+            profile_content=profile_content
+        )
+
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an expert recruiter and ATS specialist. Always respond with valid JSON."},
-                {"role": "user", "content": SCORING_PROMPT.format(
-                    job_requirements=json.dumps(job_requirements, indent=2),
-                    profile_content=profile_content
-                )}
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
             response_format={"type": "json_object"}
@@ -350,7 +540,8 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> D
         return {
             "success": True,
             "model": "openai-gpt-4o",
-            "scores": result
+            "scores": result,
+            "prompt_sent": user_prompt  # Include the exact prompt sent
         }
     except Exception as e:
         return {
@@ -370,14 +561,17 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
         }
 
     try:
+        # Build the exact prompt that will be sent
+        user_prompt = SCORING_PROMPT.format(
+            job_requirements=json.dumps(job_requirements, indent=2),
+            profile_content=profile_content
+        )
+
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=4096,
             messages=[
-                {"role": "user", "content": SCORING_PROMPT.format(
-                    job_requirements=json.dumps(job_requirements, indent=2),
-                    profile_content=profile_content
-                )}
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.3
         )
@@ -394,7 +588,8 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
-            "scores": result
+            "scores": result,
+            "prompt_sent": user_prompt  # Include the exact prompt sent
         }
     except Exception as e:
         return {
@@ -446,7 +641,8 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
         return {
             "success": True,
             "model": "openai-gpt-4o",
-            "recommendations": result
+            "recommendations": result,
+            "prompt_sent": prompt_content  # Include the exact prompt sent
         }
     except Exception as e:
         print(f"❌ [OpenAI-Recommend] Error: {type(e).__name__}: {str(e)}")
@@ -524,7 +720,8 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
-            "recommendations": result
+            "recommendations": result,
+            "prompt_sent": prompt_content  # Include the exact prompt sent
         }
     except Exception as e:
         print(f"❌ [Claude-Recommend] Error: {type(e).__name__}: {str(e)}")

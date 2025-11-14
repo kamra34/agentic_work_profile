@@ -165,7 +165,7 @@ function HomeView({ onNavigate }) {
       <div className="welcome-section">
         <h1 className="welcome-title">Welcome to Your Agentic CV Builder</h1>
         <p className="welcome-subtitle">
-          An intelligent AI-powered platform that transforms how you create CVs. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (GPT-4o + Claude Sonnet 4.5) analyze jobs and intelligently select the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
+          An intelligent AI-powered platform that transforms how you create CVs. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (GPT-5 + Claude Sonnet 4.5) analyze jobs and intelligently select the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
         </p>
       </div>
 
@@ -201,7 +201,7 @@ function HomeView({ onNavigate }) {
             <div className="step-icon">✨</div>
             <div className="step-content">
               <h3>Tailor CV</h3>
-              <p>Paste a job description and watch dual-AI magic: GPT-4o and Claude analyze requirements, calculate your Profile Fit score and ATS compatibility, provide expert recruiter verdict on whether to apply, and intelligently SELECT (never generate) the best items from your Profile Pool optimized for this specific role. AI works in the background so you can continue and return when ready.</p>
+              <p>Paste a job description and watch dual-AI magic: GPT-5 and Claude analyze requirements, calculate your Profile Fit score and ATS compatibility, provide expert recruiter verdict on whether to apply, and intelligently SELECT (never generate) the best items from your Profile Pool optimized for this specific role. AI works in the background so you can continue and return when ready.</p>
               <button className="step-btn" onClick={() => onNavigate('tailor')}>
                 Tailor with AI →
               </button>
@@ -240,7 +240,7 @@ function HomeView({ onNavigate }) {
           <div className="feature-card">
             <div className="feature-icon">🎯</div>
             <h4>Dual-AI Intelligence</h4>
-            <p>Get unbiased recommendations from both OpenAI GPT-4o and Claude Sonnet 4.5. Items selected by both models = strongest matches.</p>
+            <p>Get unbiased recommendations from both OpenAI GPT-5 and Claude Sonnet 4.5. Items selected by both models = strongest matches.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">⚡</div>
@@ -353,7 +353,7 @@ function TailorCVView() {
 
       // Step 1: Analyze job description with OpenAI
       setProgressStep('job-analysis');
-      setProgressDetails('Step 1/3: Analyzing job requirements with OpenAI GPT-4o and Claude Sonnet 4.5...');
+      setProgressDetails('Step 1/3: Analyzing job requirements with OpenAI GPT-5 and Claude Sonnet 4.5...');
       const jobStartTime = Date.now();
 
       const jobResponse = await fetch(`${API_URL}/api/job/analyze`, {
@@ -726,7 +726,7 @@ function TailorCVView() {
       <div className="tailor-header">
         <h1>✨ Tailor CV</h1>
         <p className="tailor-subtitle">
-          Paste any job description below. Our dual-AI system (OpenAI GPT-4o + Claude Sonnet 4.5) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role. Then save your tailored CV to review and finalize later.
+          Paste any job description below. Our dual-AI system (OpenAI GPT-5 + Claude Sonnet 4.5) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role. Then save your tailored CV to review and finalize later.
         </p>
       </div>
 
@@ -869,7 +869,7 @@ Requirements:
                 {jobAnalysisTime && <span className="timing-badge">⏱️ {jobAnalysisTime}s</span>}
               </h2>
               <p className="results-subtitle">
-                Powered by OpenAI GPT-4o and Anthropic Claude Sonnet 4.5
+                Powered by OpenAI GPT-5 and Anthropic Claude Sonnet 4.5
               </p>
             </div>
 
@@ -879,7 +879,7 @@ Requirements:
                   <div key={idx} className="analysis-column">
                     <div className="analysis-header">
                       <h3 className="provider-name">
-                        {result.provider === 'openai' ? '🟢 OpenAI GPT-4o' : '🔵 Anthropic Claude Sonnet 4.5'}
+                        {result.provider === 'openai' ? '🟢 OpenAI GPT-5' : '🔵 Anthropic Claude Sonnet 4.5'}
                       </h3>
                       {result.model && <span className="model-badge">{result.model}</span>}
                     </div>

@@ -6,10 +6,17 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 function ContactInfoSection({ cvId, initialContactInfo, onUpdate, onSaveStart, onSaveComplete }) {
   const [contactInfo, setContactInfo] = useState(initialContactInfo || {});
   const [activeFields, setActiveFields] = useState(() => {
-    // Initialize active fields based on which ones have values
+    // If _active_fields exists in the data, use it
+    if (initialContactInfo?._active_fields) {
+      return initialContactInfo._active_fields;
+    }
+
+    // Otherwise, initialize active fields based on which ones have values
     const initial = {};
     Object.keys(initialContactInfo || {}).forEach(key => {
-      initial[key] = !!initialContactInfo[key];
+      if (key !== '_active_fields') {
+        initial[key] = !!initialContactInfo[key];
+      }
     });
     return initial;
   });

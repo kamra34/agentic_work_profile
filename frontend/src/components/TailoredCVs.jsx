@@ -759,13 +759,13 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     if (hasOpenAI && hasClaude) {
       return (
         <span className="ai-badge ai-badge-both" title="Recommended by both AI models">
-          🟢 GPT-4o + 🔵 Claude
+          🟢 GPT-5 + 🔵 Claude
         </span>
       );
     } else if (hasOpenAI) {
       return (
-        <span className="ai-badge ai-badge-openai" title="Recommended by GPT-4o">
-          🟢 GPT-4o
+        <span className="ai-badge ai-badge-openai" title="Recommended by GPT-5">
+          🟢 GPT-5
         </span>
       );
     } else if (hasClaude) {
@@ -924,7 +924,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
               <div className="ai-reasoning-section">
                 {entry.reasoning.openai && (
                   <div className="ai-reasoning-item">
-                    <strong>🟢 GPT-4o:</strong> {entry.reasoning.openai}
+                    <strong>🟢 GPT-5:</strong> {entry.reasoning.openai}
                   </div>
                 )}
                 {entry.reasoning.claude && (
@@ -1139,7 +1139,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
             <h3>Selected Content for This CV</h3>
             <p className="content-subtitle">Only showing AI-recommended items for this job</p>
             <div className="ai-legend">
-              <span className="legend-compact">🟢 GPT-4o</span>
+              <span className="legend-compact">🟢 GPT-5</span>
               <span className="legend-compact">🔵 Claude</span>
               <span className="legend-compact">🟢🔵 Both agree</span>
             </div>
@@ -1200,7 +1200,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 transition: 'all 0.3s ease'
               }}
             >
-              🟢 GPT-4o Analysis
+              🟢 GPT-5 Analysis
             </button>
             <button
               onClick={() => setPreviewMode('claude')}
@@ -1243,7 +1243,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 return (
                   <div>
                     <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.5rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      🟢 OpenAI GPT-4o Job Requirements Analysis
+                      🟢 OpenAI GPT-5 Job Requirements Analysis
                     </h3>
                     {renderAnalysisSection('Job Category & Level',
                       `${openaiAnalysis.analysis.job_category || openaiAnalysis.analysis['Job Category'] || 'N/A'} - ${openaiAnalysis.analysis.job_level || openaiAnalysis.analysis['Job Level'] || 'N/A'}`

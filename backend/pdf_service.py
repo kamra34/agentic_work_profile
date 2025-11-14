@@ -11,26 +11,29 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.platypus.flowables import HRFlowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+import html
 
 
 def sanitize_text(text: str) -> str:
     """
     Sanitize text for PDF generation by replacing problematic Unicode characters
-    with safe ASCII alternatives. Uses encode/decode to handle all Unicode chars.
+    with safe alternatives that work with ReportLab's latin-1 encoding.
 
     Args:
         text: Raw text string that may contain Unicode characters
 
     Returns:
-        Sanitized text safe for PDF generation
+        Sanitized text safe for PDF generation with latin-1 encoding
     """
     if not text:
         return ""
 
-    # First, replace common problematic Unicode characters with safe alternatives
+    # Replace common problematic Unicode characters with safe alternatives
     replacements = {
         '\u2013': '-',      # EN DASH
         '\u2014': '--',     # EM DASH
@@ -42,34 +45,65 @@ def sanitize_text(text: str) -> str:
         '\u2026': '...',    # HORIZONTAL ELLIPSIS
         '\u00a0': ' ',      # NON-BREAKING SPACE
         '\u00b7': '*',      # MIDDLE DOT
-        '\u00e9': 'e',      # é
-        '\u00e8': 'e',      # è
-        '\u00ea': 'e',      # ê
-        '\u00eb': 'e',      # ë
-        '\u00fc': 'u',      # ü
-        '\u00f6': 'o',      # ö
-        '\u00e4': 'a',      # ä
-        '\u00c9': 'E',      # É
-        '\u00c8': 'E',      # È
-        '\u00ca': 'E',      # Ê
-        '\u2122': 'TM',     # TRADEMARK
+        '\u2122': 'TM',     # TRADEMARK SIGN
         '\u00ae': '(R)',    # REGISTERED SIGN
-        '\u00a9': '(C)',    # COPYRIGHT
+        '\u00a9': '(C)',    # COPYRIGHT SIGN
+        '\u00b0': ' deg',   # DEGREE SIGN
+        '\u00d7': 'x',      # MULTIPLICATION SIGN
+        '\u00f7': '/',      # DIVISION SIGN
+        '\u2190': '<-',     # LEFTWARDS ARROW
+        '\u2192': '->',     # RIGHTWARDS ARROW
+        '\u2191': '^',      # UPWARDS ARROW
+        '\u2193': 'v',      # DOWNWARDS ARROW
+        '\u2194': '<->',    # LEFT RIGHT ARROW
+        '\u2264': '<=',     # LESS-THAN OR EQUAL TO
+        '\u2265': '>=',     # GREATER-THAN OR EQUAL TO
+        '\u2260': '!=',     # NOT EQUAL TO
+        '\u2212': '-',      # MINUS SIGN
+        '\u00d7': 'x',      # MULTIPLICATION SIGN
+        '\u2032': "'",      # PRIME
+        '\u2033': "''",     # DOUBLE PRIME
+        '\u2019': "'",      # RIGHT SINGLE QUOTATION MARK (curly apostrophe)
+        '\u00ab': '<<',     # LEFT-POINTING DOUBLE ANGLE QUOTATION MARK
+        '\u00bb': '>>',     # RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
+        # Smart quotes and dashes
+        '\u2018': "'",
+        '\u2019': "'",
+        '\u201a': ',',
+        '\u201b': "'",
+        '\u201c': '"',
+        '\u201d': '"',
+        '\u201e': ',,',
+        '\u2032': "'",
+        '\u2033': '"',
     }
 
     for unicode_char, replacement in replacements.items():
         text = text.replace(unicode_char, replacement)
 
-    # Convert any remaining non-ASCII characters using ASCII approximation
-    # This handles any Unicode we didn't explicitly replace
-    try:
-        # Try to encode as ASCII, replacing errors with '?'
-        text = text.encode('ascii', 'ignore').decode('ascii')
-    except Exception:
-        # Fallback: remove all non-ASCII characters
-        text = ''.join(char if ord(char) < 128 else '' for char in text)
+    # Remove or replace any remaining characters outside latin-1 range (0-255)
+    # This prevents the 'latin-1' codec error
+    cleaned_chars = []
+    for char in text:
+        char_code = ord(char)
+        if char_code <= 255:
+            # Character is in latin-1 range, keep it
+            cleaned_chars.append(char)
+        elif char_code < 128:
+            # ASCII character, definitely keep it
+            cleaned_chars.append(char)
+        else:
+            # Character outside latin-1 range, try to find closest ASCII equivalent
+            # or just skip it (could also use 'replace' with '?')
+            try:
+                # Try to encode as ASCII and ignore if it fails
+                char.encode('ascii')
+                cleaned_chars.append(char)
+            except:
+                # Skip non-latin-1 characters
+                pass
 
-    return text
+    return ''.join(cleaned_chars)
 
 
 class PDFTemplate:

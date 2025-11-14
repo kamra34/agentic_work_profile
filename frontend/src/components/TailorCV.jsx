@@ -140,6 +140,7 @@ function TailorCV() {
   const [isPreFetching, setIsPreFetching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cvStatus, setCvStatus] = useState('draft');
+  const [recommendationsAutoApplied, setRecommendationsAutoApplied] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -753,6 +754,7 @@ function TailorCV() {
 
         // Reset local state
         setCvStatus('draft');
+        setRecommendationsAutoApplied(false); // Reset auto-apply flag for next session
 
         alert(
           `✅ Tailored CV saved successfully!\n\n` +
@@ -794,6 +796,7 @@ function TailorCV() {
 
     // Reset local state
     setCvStatus('draft');
+    setRecommendationsAutoApplied(false); // Reset auto-apply flag for next session
 
     console.log('✅ Analysis discarded - workflow reset complete');
 
@@ -983,6 +986,8 @@ function TailorCV() {
             onDiscard={handleDiscardAnalysis}
             saving={saving}
             onBack={() => setCurrentStep(2)}
+            recommendationsAutoApplied={recommendationsAutoApplied}
+            setRecommendationsAutoApplied={setRecommendationsAutoApplied}
           />
         )}
 
@@ -1435,7 +1440,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
         {/* AI Input Display - Job Analysis */}
         <AIInputDisplay
           title="🔍 Step 1: Job Analysis Input (Sent to AI)"
-          content={`=== JOB DESCRIPTION ===\n${jobDescription}\n\n=== EXACT PROMPT USED ===\n${JOB_ANALYSIS_PROMPT.replace('{job_description}', jobDescription)}`}
+          content={currentAnalysis?.prompt_sent || 'Analyzing...'}
           defaultExpanded={false}
         />
 
@@ -1443,7 +1448,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
         {(scoring || scores) && (
           <AIInputDisplay
             title="📊 Step 2: Profile Scoring Input (Sent to AI)"
-            content={`=== JOB REQUIREMENTS ===\n${currentAnalysis?.analysis ? JSON.stringify(currentAnalysis.analysis.requirements, null, 2) : 'Analyzing...'}\n\n=== YOUR FULL PROFILE ===\n${fullProfileText}\n\n=== EXACT PROMPT USED ===\n${SCORING_PROMPT.replace('{job_requirements}', JSON.stringify(currentAnalysis?.analysis?.requirements || {}, null, 2)).replace('{profile_content}', fullProfileText)}`}
+            content={scores?.openai?.prompt_sent || scores?.claude?.prompt_sent || 'Analyzing...'}
             defaultExpanded={false}
           />
         )}
@@ -1496,7 +1501,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             <div className="model-card-header">
               <div className="model-indicator openai-indicator"></div>
               <div className="model-name">
-                <strong>GPT-4o</strong>
+                <strong>GPT-5</strong>
                 <span className="model-provider">OpenAI</span>
               </div>
             </div>
@@ -1531,7 +1536,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             <div className="spinner-container">
               <div className="spinner" />
               <div className="spinner-text">Analyzing job requirements and scoring your profile...</div>
-              <div className="spinner-subtext">Using {selectedTab === 'openai' ? 'GPT-4o' : 'Claude Sonnet 4.5'}</div>
+              <div className="spinner-subtext">Using {selectedTab === 'openai' ? 'GPT-5' : 'Claude Sonnet 4.5'}</div>
             </div>
           </div>
         ) : !scores ? (
@@ -1708,7 +1713,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
 // Step 3: Node Selection
 // ============================================================================
 
-function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, scores, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onSave, onDiscard, saving, onBack }) {
+function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, scores, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onSave, onDiscard, saving, onBack, recommendationsAutoApplied, setRecommendationsAutoApplied }) {
   const flattenNodes = (nodes, result = []) => {
     nodes.forEach(node => {
       result.push(node);
@@ -1727,9 +1732,9 @@ function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, sc
   useEffect(() => {
     // Only auto-apply if:
     // 1. We have recommendations available
-    // 2. No nodes are currently selected (meaning user hasn't made manual selections yet)
+    // 2. Recommendations haven't been auto-applied yet
     // 3. We're not currently loading
-    if (recommendations && selectedNodes.size === 0 && !loading) {
+    if (recommendations && !recommendationsAutoApplied && !loading) {
       console.log('[Step3 Auto-Apply] Auto-applying recommendations on load');
       console.log('[Step3 Auto-Apply] Selected model:', selectedModel);
 
@@ -1751,10 +1756,11 @@ function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, sc
       if (recommendations[modelToApply]?.success) {
         console.log(`[Step3 Auto-Apply] Applying ${modelToApply} recommendations automatically`);
         applyModelRecommendations(modelToApply);
+        setRecommendationsAutoApplied(true); // Mark as auto-applied
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommendations, loading]); // Only run when recommendations or loading state changes
+  }, [recommendations, loading, recommendationsAutoApplied]); // Run when recommendations, loading, or auto-applied state changes
 
   // Download recommendations as JSON for mock data
   const downloadRecommendations = () => {
@@ -1907,10 +1913,8 @@ IMPORTANT:
 - Return recommendations for ALL nodes provided
 - The "id" is the database primary key - use it exactly as provided`;
 
-  // Show only the actual prompt sent to AI (with data filled in)
-  const aiInputContent = NODE_SELECTION_PROMPT
-    .replace('{job_requirements}', JSON.stringify(jobRequirements, null, 2))
-    .replace('{profile_nodes}', JSON.stringify(nodesForAI, null, 2));
+  // Get the exact prompt that was sent to the AI from the backend response
+  const aiInputContent = recommendations?.openai?.prompt_sent || recommendations?.claude?.prompt_sent || 'Loading recommendations...';
 
   return (
     <div className="wizard-step step-3">
@@ -2088,7 +2092,7 @@ function Step4SavePreview({ jobTitle, setJobTitle, companyName, setCompanyName, 
   const selectedCount = selectedNodes.size;
 
   // AI Summary for display
-  const aiSummary = `Analysis Results:\n- OpenAI GPT-4o: Fit ${scores?.openai?.scores?.fit_score || 'N/A'}, ATS ${scores?.openai?.scores?.ats_score || 'N/A'}\n- Claude Sonnet 4.5: Fit ${scores?.claude?.scores?.fit_score || 'N/A'}, ATS ${scores?.claude?.scores?.ats_score || 'N/A'}\n\nSelected ${selectedCount} profile items optimized for this role.`;
+  const aiSummary = `Analysis Results:\n- OpenAI GPT-5: Fit ${scores?.openai?.scores?.fit_score || 'N/A'}, ATS ${scores?.openai?.scores?.ats_score || 'N/A'}\n- Claude Sonnet 4.5: Fit ${scores?.claude?.scores?.fit_score || 'N/A'}, ATS ${scores?.claude?.scores?.ats_score || 'N/A'}\n\nSelected ${selectedCount} profile items optimized for this role.`;
 
   return (
     <div className="wizard-step step-4">

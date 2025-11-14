@@ -1176,6 +1176,12 @@ async def save_tailored_cv(
         "professional_title": current_user.professional_title
     }
 
+    # Initialize _active_fields based on which fields have values
+    active_fields = {}
+    for key, value in user_contact_info.items():
+        active_fields[key] = bool(value)  # True if field has a value, False otherwise
+    user_contact_info["_active_fields"] = active_fields
+
     # Create complete content snapshot
     content_snapshot = {
         "nodes": filtered_root_nodes,  # Hierarchical structure with only selected nodes
@@ -1521,6 +1527,12 @@ async def reset_cv_contact_info(
         "portfolio_url": current_user.portfolio_url,
         "professional_title": current_user.professional_title
     }
+
+    # Initialize _active_fields based on which fields have values
+    active_fields = {}
+    for key, value in user_contact_info.items():
+        active_fields[key] = bool(value)
+    user_contact_info["_active_fields"] = active_fields
 
     # Reset to current profile defaults
     if not tailored_cv.content_snapshot:
