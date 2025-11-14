@@ -130,6 +130,7 @@ function TailorCV() {
     analysisProgress, setAnalysisProgress,
     analysisError, setAnalysisError,
     analysisStartTime,
+    resetAnalysis,
   } = useAIAnalysis();
 
   // Local state (not shared globally)
@@ -708,9 +709,16 @@ function TailorCV() {
       if (data.success) {
         const summary = data.summary || {};
 
+        // Store values before reset for the success message
+        const savedJobTitle = jobTitle;
+        const savedCompanyName = companyName;
+
         // Clear the green analysis complete status after successful save
-        setAnalysisStep(null);
-        setAnalysisProgress('');
+        // Use resetAnalysis to properly clear the global status bar
+        resetAnalysis();
+
+        // Reset local state
+        setCvStatus('draft');
 
         alert(
           `✅ Tailored CV saved successfully!\n\n` +
@@ -718,7 +726,7 @@ function TailorCV() {
           `• Selected nodes: ${summary.selected_nodes || selectedNodes.size}\n` +
           `• Root sections: ${summary.root_sections || 'N/A'}\n` +
           `• AI model: ${summary.ai_model || selectedModel}\n` +
-          `• Job: ${jobTitle}${companyName ? ` at ${companyName}` : ''}`
+          `• Job: ${savedJobTitle}${savedCompanyName ? ` at ${savedCompanyName}` : ''}`
         );
         // Could navigate to the tailored CVs list page
       } else {
@@ -747,23 +755,11 @@ function TailorCV() {
 
     console.log('🗑️ [DISCARD] Discarding analysis and resetting workflow');
 
-    // Reset all state to initial values (same as handleResetWorkflow but with confirmation)
-    setCurrentStep(1);
-    setJobTitle('');
-    setCompanyName('');
-    setJobDescription('');
-    setScores(null);
-    setJobAnalysis(null);
-    setRecommendations(null);
-    setSelectedNodes(new Set());
-    setAllNodes([]);
-    setSelectedModel('openai');
-    setCvStatus('draft');
+    // Use the global context reset function to clear everything including the status bar
+    resetAnalysis();
 
-    // Clear analysis progress indicators
-    setAnalysisStep(null);
-    setAnalysisProgress('');
-    setIsAnalyzing(false);
+    // Reset local state
+    setCvStatus('draft');
 
     console.log('✅ Analysis discarded - workflow reset complete');
 
@@ -949,6 +945,7 @@ function TailorCV() {
             applyModelRecommendations={applyModelRecommendations}
             loading={analysisStep === 'recommendations'}
             onSave={handleSaveTailoredCV}
+            onDiscard={handleDiscardAnalysis}
             saving={saving}
             onBack={() => setCurrentStep(2)}
           />
@@ -1629,7 +1626,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
 // Step 3: Node Selection
 // ============================================================================
 
-function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, scores, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onSave, saving, onBack }) {
+function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, scores, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onSave, onDiscard, saving, onBack }) {
   const flattenNodes = (nodes, result = []) => {
     nodes.forEach(node => {
       result.push(node);
@@ -1862,7 +1859,7 @@ IMPORTANT:
                   </button>
                   <button
                     className="btn-discard-analysis"
-                    onClick={handleDiscardAnalysis}
+                    onClick={onDiscard}
                     disabled={saving}
                     title="Discard this analysis and start over"
                   >
