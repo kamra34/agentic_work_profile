@@ -1030,13 +1030,14 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
 
               {contentType === 'paragraph' && (
                 <div className="form-group">
-                  <label>Content</label>
+                  <label>Content {isUpdating && <span style={{fontSize: '0.9em', color: '#666'}}>⏳ Saving...</span>}</label>
                   <textarea
                     className="textarea-field"
                     placeholder="Enter text content..."
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     onBlur={() => updateSection({ content })}
+                    disabled={isUpdating}
                     rows={6}
                   />
                 </div>
@@ -1111,6 +1112,7 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
               sectionType={section.section_type}
               onSave={addEntry}
               onCancel={() => setShowAddEntry(false)}
+              isSaving={isAddingEntry}
             />
           )}
         </div>
@@ -1454,6 +1456,7 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
               initialData={entry}
               onSave={updateEntry}
               onCancel={() => setIsEditing(false)}
+              isSaving={isUpdating}
             />
           ) : (
             <>
@@ -1627,7 +1630,7 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
   );
 }
 
-function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, initialData = null }) {
+function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, initialData = null, isSaving = false }) {
   const [formData, setFormData] = useState(() => {
     if (initialData) {
       return {
@@ -1827,11 +1830,11 @@ function EntryForm({ sectionType, isSubEntry, isBulletGroup, onSave, onCancel, i
           </>
         )}
         <div className="form-actions">
-          <button type="button" className="btn-secondary" onClick={onCancel}>
+          <button type="button" className="btn-secondary" onClick={onCancel} disabled={isSaving}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary">
-            {isBulletGroup ? 'Add Group' : `Save ${getFormTitle().replace('Add ', '')}`}
+          <button type="submit" className="btn-primary" disabled={isSaving}>
+            {isSaving ? '⏳ Saving...' : (isBulletGroup ? 'Add Group' : `Save ${getFormTitle().replace('Add ', '')}`)}
           </button>
         </div>
       </form>
