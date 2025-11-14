@@ -1149,6 +1149,63 @@
   font-weight: 700;
 }
 
+/* AI Models Indicator in Header */
+.ai-models-indicator {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.indicator-label {
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.ai-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
+}
+
+.ai-model-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.ai-model-chip.openai {
+  background: #10a37f;
+  color: white;
+}
+
+.ai-model-chip.claude {
+  background: #d97757;
+  color: white;
+}
+
+.model-icon {
+  font-size: 0.9rem;
+}
+
+.model-name {
+  font-size: 0.75rem;
+  letter-spacing: 0.3px;
+}
+
+.model-color-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
 .legend-mini {
   display: flex;
   gap: 0.75rem;
@@ -1284,52 +1341,123 @@
   font-size: 0.85rem;
 }
 
-/* AI Indicators */
-.ai-indicators {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.ai-badge {
+/* Node Type Badge - Matching MasterProfile */
+.node-type-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.65rem;
-  border-radius: 12px;
-  font-size: 0.7rem;
+  justify-content: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  border: 1.5px solid;
+  min-width: 70px;
+  text-align: center;
 }
 
-.ai-badge.openai.recommended {
-  background: linear-gradient(135deg, #10a37f 0%, #0d8968 100%);
+.badge-section {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  border-color: #f59e0b;
+}
+
+.badge-entry {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e40af;
+  border-color: #3b82f6;
+}
+
+.badge-bullet {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
+  border-color: #10b981;
+}
+
+.badge-paragraph {
+  background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%);
+  color: #9f1239;
+  border-color: #ec4899;
+}
+
+/* AI Confidence Display - Innovative Dual-Bar Design */
+.ai-confidence-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+  min-width: 120px;
+}
+
+.confidence-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+.confidence-bar {
+  position: relative;
+  height: 18px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.confidence-fill {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.4rem;
+  border-radius: 9px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.confidence-fill::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: shimmer-confidence 2s ease-in-out infinite;
+}
+
+@keyframes shimmer-confidence {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.confidence-label {
+  font-size: 0.65rem;
+  font-weight: 700;
   color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.3px;
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.openai-bar .confidence-fill {
   box-shadow: 0 2px 6px rgba(16, 163, 127, 0.3);
 }
 
-.ai-badge.openai.not-recommended {
-  background: #f0fdf4;
-  color: #059669;
-  border: 1px solid #a7f3d0;
-}
-
-.ai-badge.claude.recommended {
-  background: linear-gradient(135deg, #d97757 0%, #c96646 100%);
-  color: white;
-  box-shadow: 0 2px 6px rgba(217, 119, 87, 0.3);
-}
-
-.ai-badge.claude.not-recommended {
-  background: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
-}
-
-.confidence-score {
-  font-size: 0.7rem;
-  opacity: 0.9;
+.claude-bar .confidence-fill {
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
 }
 
 /* Action Buttons on Nodes */

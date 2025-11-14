@@ -1070,8 +1070,10 @@ function SavedCVDetail({ cvId, onBack }) {
             </button>
           )}
 
-          {/* Node Icon */}
-          {node.icon && <span className="node-icon">{node.icon}</span>}
+          {/* Node Type Badge - Matching MasterProfile */}
+          <span className={`node-type-badge badge-${node.node_type}`}>
+            {node.node_type.toUpperCase()}
+          </span>
 
           {/* Node Content */}
           <div className="node-content-wrapper">
@@ -1166,39 +1168,61 @@ function SavedCVDetail({ cvId, onBack }) {
               </div>
             ) : (
               // View Mode
-              <>
-                <div className="node-title-section">
-                  {node.title && <span className="node-title-text">{node.title}</span>}
-                  {!node.title && node.content && (
-                    <span className="node-title-text">{node.content.length > 100 ? node.content.substring(0, 100) + '...' : node.content}</span>
-                  )}
-                  {node.subtitle && <span className="node-subtitle-text"> • {node.subtitle}</span>}
-                </div>
-
-                {/* AI Recommendation Badges */}
-                <div className="ai-indicators">
-                  {aiRecs.openai && (
-                    <div
-                      className={`ai-badge openai ${aiRecs.openai.include ? 'recommended' : 'not-recommended'}`}
-                      title={`OpenAI (${(aiRecs.openai.confidence * 100).toFixed(0)}%): ${aiRecs.openai.reason}`}
-                    >
-                      <span className="badge-label">GPT</span>
-                      <span className="confidence-score">{(aiRecs.openai.confidence * 100).toFixed(0)}%</span>
-                    </div>
-                  )}
-                  {aiRecs.claude && (
-                    <div
-                      className={`ai-badge claude ${aiRecs.claude.include ? 'recommended' : 'not-recommended'}`}
-                      title={`Claude (${(aiRecs.claude.confidence * 100).toFixed(0)}%): ${aiRecs.claude.reason}`}
-                    >
-                      <span className="badge-label">Claude</span>
-                      <span className="confidence-score">{(aiRecs.claude.confidence * 100).toFixed(0)}%</span>
-                    </div>
-                  )}
-                </div>
-              </>
+              <div className="node-title-section">
+                {node.title && <span className="node-title-text">{node.title}</span>}
+                {!node.title && node.content && (
+                  <span className="node-title-text">{node.content.length > 100 ? node.content.substring(0, 100) + '...' : node.content}</span>
+                )}
+                {node.subtitle && <span className="node-subtitle-text"> • {node.subtitle}</span>}
+              </div>
             )}
           </div>
+
+          {/* AI Recommendation Badges - Innovative dual-bar design */}
+          {editingNode !== node.global_id && (aiRecs.openai?.include || aiRecs.claude?.include) && (
+            <div className="ai-confidence-display">
+              {(aiRecs.openai?.include || aiRecs.claude?.include) && (
+                <div className="confidence-bars">
+                  {aiRecs.openai?.include && (
+                    <div
+                      className="confidence-bar openai-bar"
+                      title={`GPT-4: ${(aiRecs.openai.confidence * 100).toFixed(0)}% - ${aiRecs.openai.reason}`}
+                    >
+                      <div
+                        className="confidence-fill"
+                        style={{
+                          width: `${aiRecs.openai.confidence * 100}%`,
+                          background: `linear-gradient(90deg,
+                            ${aiRecs.openai.confidence > 0.7 ? '#10a37f' : aiRecs.openai.confidence > 0.5 ? '#f59e0b' : '#ef4444'} 0%,
+                            ${aiRecs.openai.confidence > 0.7 ? '#0d8968' : aiRecs.openai.confidence > 0.5 ? '#d97706' : '#dc2626'} 100%)`
+                        }}
+                      >
+                        <span className="confidence-label">🤖 {(aiRecs.openai.confidence * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  )}
+                  {aiRecs.claude?.include && (
+                    <div
+                      className="confidence-bar claude-bar"
+                      title={`Claude: ${(aiRecs.claude.confidence * 100).toFixed(0)}% - ${aiRecs.claude.reason}`}
+                    >
+                      <div
+                        className="confidence-fill"
+                        style={{
+                          width: `${aiRecs.claude.confidence * 100}%`,
+                          background: `linear-gradient(90deg,
+                            ${aiRecs.claude.confidence > 0.7 ? '#667eea' : aiRecs.claude.confidence > 0.5 ? '#f59e0b' : '#ef4444'} 0%,
+                            ${aiRecs.claude.confidence > 0.7 ? '#764ba2' : aiRecs.claude.confidence > 0.5 ? '#d97706' : '#dc2626'} 100%)`
+                        }}
+                      >
+                        <span className="confidence-label">🧠 {(aiRecs.claude.confidence * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Action Buttons */}
           {editingNode !== node.global_id && (
@@ -1875,15 +1899,22 @@ function SavedCVDetail({ cvId, onBack }) {
         <div className="editor-panel">
           <div className="editor-header">
             <h2>CV Content Structure</h2>
-            <div className="legend-mini">
-              <span className="legend-item">
-                <span className="ai-badge openai recommended" style={{padding: '0.2rem 0.5rem', fontSize: '0.65rem'}}>GPT</span>
-                OpenAI
-              </span>
-              <span className="legend-item">
-                <span className="ai-badge claude recommended" style={{padding: '0.2rem 0.5rem', fontSize: '0.65rem'}}>C</span>
-                Claude
-              </span>
+            <div className="ai-models-indicator">
+              <span className="indicator-label">AI Models:</span>
+              {cvData.recommendations?.openai?.recommendations?.selected_nodes && (
+                <div className="ai-model-chip openai">
+                  <span className="model-icon">🤖</span>
+                  <span className="model-name">OpenAI</span>
+                  <span className="model-color-indicator"></span>
+                </div>
+              )}
+              {cvData.recommendations?.claude?.recommendations?.selected_nodes && (
+                <div className="ai-model-chip claude">
+                  <span className="model-icon">🧠</span>
+                  <span className="model-name">Claude</span>
+                  <span className="model-color-indicator"></span>
+                </div>
+              )}
             </div>
           </div>
 

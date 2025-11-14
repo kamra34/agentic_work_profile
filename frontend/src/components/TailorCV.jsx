@@ -439,45 +439,79 @@ function TailorCV() {
 
     // 🧪 Use mock data if test mode is enabled
     if (useMockData) {
-      console.log('🧪 TEST MODE: Using mock recommendations data');
+      console.log('🧪 TEST MODE: Generating dynamic mock recommendations based on actual profile');
       setTimeout(() => {
-        console.log('✅ Mock recommendations loaded');
-        setRecommendations(MOCK_RECOMMENDATIONS_STEP3);
+        // Generate recommendations for ALL nodes in the current profile
+        const allNodes = [];
+        const flattenNodes = (nodes) => {
+          nodes.forEach(node => {
+            allNodes.push(node);
+            if (node.children && node.children.length > 0) {
+              flattenNodes(node.children);
+            }
+          });
+        };
+        flattenNodes(profile?.nodes || []);
 
-        // Auto-select nodes based on the selected model's recommendations
-        console.log(`🎯 Auto-selecting nodes from ${selectedModel} model...`);
+        console.log(`📊 Found ${allNodes.length} nodes in profile, generating recommendations...`);
 
-        const recommendedIds = new Set();
+        // Create mock recommendations for each node (80% include, 20% exclude)
+        const generateNodeRecommendations = () => {
+          return allNodes.map((node, index) => {
+            const shouldInclude = Math.random() > 0.2; // 80% chance to include
+            const confidence = shouldInclude
+              ? 0.75 + (Math.random() * 0.25)  // 75-100% for included
+              : 0.5 + (Math.random() * 0.25);   // 50-75% for excluded
 
-        if (selectedModel === 'both') {
-          // Combine recommendations from BOTH models (union)
-          console.log('   Combining recommendations from both OpenAI and Claude...');
+            return {
+              id: node.id,  // Use actual node ID from profile
+              include: shouldInclude,
+              confidence: confidence,
+              reason: shouldInclude
+                ? `This ${node.node_type} is relevant to the job requirements and strengthens the candidate's profile.`
+                : `This ${node.node_type} is less critical for this specific role.`,
+              relevance_tags: shouldInclude ? ["relevant", node.node_type] : ["optional"]
+            };
+          });
+        };
 
-          // Apply OpenAI recommendations
-          const openaiRecs = MOCK_RECOMMENDATIONS_STEP3.openai?.recommendations?.selected_nodes || [];
-          const openaiIncluded = openaiRecs.filter(rec => rec.include === true);
-          openaiIncluded.forEach(rec => recommendedIds.add(rec.global_id));
-          console.log(`   OpenAI: added ${openaiIncluded.length} nodes (${openaiIncluded.length} included, ${openaiRecs.length - openaiIncluded.length} excluded)`);
+        const mockRecommendations = {
+          openai: {
+            success: true,
+            model: "openai-gpt-4o",
+            recommendations: {
+              selected_nodes: generateNodeRecommendations(),
+              selection_summary: {
+                total_nodes: allNodes.length,
+                recommended_include: Math.floor(allNodes.length * 0.8),
+                recommended_exclude: Math.ceil(allNodes.length * 0.2)
+              },
+              tailoring_strategy: "Mock strategy: Focus on relevant experience and skills for this role."
+            }
+          },
+          claude: {
+            success: true,
+            model: "claude-sonnet-4.5",
+            recommendations: {
+              selected_nodes: generateNodeRecommendations(),
+              selection_summary: {
+                total_nodes: allNodes.length,
+                recommended_include: Math.floor(allNodes.length * 0.75),
+                recommended_exclude: Math.ceil(allNodes.length * 0.25)
+              },
+              tailoring_strategy: "Mock strategy: Emphasize technical depth and leadership experience."
+            }
+          },
+          total_nodes: allNodes.length
+        };
 
-          // Apply Claude recommendations
-          const claudeRecs = MOCK_RECOMMENDATIONS_STEP3.claude?.recommendations?.selected_nodes || [];
-          const claudeIncluded = claudeRecs.filter(rec => rec.include === true);
-          claudeIncluded.forEach(rec => recommendedIds.add(rec.global_id));
-          console.log(`   Claude: added ${claudeIncluded.length} nodes (${claudeIncluded.length} included, ${claudeRecs.length - claudeIncluded.length} excluded)`);
+        console.log('✅ Mock recommendations generated:', {
+          total_nodes: allNodes.length,
+          openai_included: mockRecommendations.openai.recommendations.selection_summary.recommended_include,
+          claude_included: mockRecommendations.claude.recommendations.selection_summary.recommended_include
+        });
 
-          console.log(`✅ Auto-selected ${recommendedIds.size} nodes total (union of both models)`);
-        } else {
-          // Extract node IDs where include=true from the selected model's recommendations
-          const modelRecs = MOCK_RECOMMENDATIONS_STEP3[selectedModel]?.recommendations?.selected_nodes || [];
-          modelRecs
-            .filter(rec => rec.include === true)
-            .forEach(rec => recommendedIds.add(rec.global_id));
-
-          console.log(`✅ Auto-selected ${recommendedIds.size} nodes from ${selectedModel}`);
-          console.log(`   (${modelRecs.filter(rec => rec.include === true).length} included, ${modelRecs.filter(rec => rec.include === false).length} excluded)`);
-        }
-
-        setSelectedNodes(recommendedIds);
+        setRecommendations(mockRecommendations);
 
         if (isBackground) {
           console.log('🏁 Background pre-fetch finished - ready for Step 3!');
@@ -902,6 +936,7 @@ function TailorCV() {
             setCompanyName={setCompanyName}
             onNext={handleAnalyzeJob}
             analyzing={isAnalyzing}
+            useMockData={useMockData}
           />
         )}
 
@@ -977,13 +1012,60 @@ function TailorCV() {
 // Step 1: Job Details
 // ============================================================================
 
-function Step1JobDetails({ jobDescription, setJobDescription, jobTitle, setJobTitle, companyName, setCompanyName, onNext, analyzing }) {
+function Step1JobDetails({ jobDescription, setJobDescription, jobTitle, setJobTitle, companyName, setCompanyName, onNext, analyzing, useMockData }) {
   const [inputMethod, setInputMethod] = useState('paste'); // 'paste' or 'url'
   const [jobUrl, setJobUrl] = useState('');
+  const [hasFilledTestData, setHasFilledTestData] = useState(false);
 
   const wordCount = jobDescription.trim().split(/\s+/).filter(w => w.length > 0).length;
   const isValidLength = jobDescription.length >= 50;
   const hasRequiredFields = jobTitle.trim().length > 0 && isValidLength;
+
+  // Auto-fill test data when test mode is enabled
+  useEffect(() => {
+    if (useMockData && !hasFilledTestData) {
+      setJobTitle('Lead Data Scientist - AI/ML Platform');
+      setCompanyName('Tech Company');
+      setJobDescription(`Lead Data Scientist - AI/ML Platform
+
+We are seeking an experienced Lead Data Scientist to join our AI/ML Platform team. You will lead the development of production-scale machine learning systems and mentor a team of data scientists and ML engineers.
+
+Key Responsibilities:
+• Lead development and deployment of production ML systems at scale
+• Mentor and manage a team of data scientists and ML engineers
+• Design and implement MLOps infrastructure and best practices
+• Collaborate with cross-functional stakeholders to drive technical strategy
+• Build and optimize retrieval systems for large-scale document processing
+• Establish experiment tracking, model monitoring, and rollback strategies
+
+Must-Have Requirements:
+• Advanced degree in quantitative field (PhD/MS in Computer Science, Statistics, or related)
+• 6-10+ years experience in Data Science/ML/AI
+• 2+ years leading teams or programs
+• Hands-on expertise with Python and SQL
+• Production experience with AWS (Bedrock, SageMaker, Lambda, Step Functions)
+• Deep experience with retrieval systems, vector indexes, and chunking strategies
+• MLOps fluency: containers, CI/CD, experiment tracking, model monitoring
+• Strong communication and technical writing skills
+• Evidence-based decision making and ability to defend technical choices
+
+Nice-to-Have:
+• Experience with R or MATLAB
+• Familiarity with other cloud platforms (Azure, GCP)
+• Published research in ML/AI
+
+We offer competitive compensation, remote flexibility, and the opportunity to work on cutting-edge AI solutions with real business impact.`);
+      setHasFilledTestData(true);
+      console.log('🧪 Test data auto-filled');
+    } else if (!useMockData && hasFilledTestData) {
+      // Clear data when test mode is disabled
+      setJobTitle('');
+      setCompanyName('');
+      setJobDescription('');
+      setHasFilledTestData(false);
+      console.log('🧪 Test data cleared');
+    }
+  }, [useMockData, hasFilledTestData, setJobTitle, setCompanyName, setJobDescription]);
 
   return (
     <div className="wizard-step step-1-modern">
@@ -1640,6 +1722,39 @@ function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, sc
   const allNodes = profile?.nodes ? flattenNodes(profile.nodes) : [];
   const selectedCount = selectedNodes.size;
   const totalCount = allNodes.length;
+
+  // Auto-apply recommendations when component first loads with valid recommendations
+  useEffect(() => {
+    // Only auto-apply if:
+    // 1. We have recommendations available
+    // 2. No nodes are currently selected (meaning user hasn't made manual selections yet)
+    // 3. We're not currently loading
+    if (recommendations && selectedNodes.size === 0 && !loading) {
+      console.log('[Step3 Auto-Apply] Auto-applying recommendations on load');
+      console.log('[Step3 Auto-Apply] Selected model:', selectedModel);
+
+      // Determine which model to auto-apply based on availability
+      let modelToApply = selectedModel;
+
+      // If selectedModel is 'both' or invalid, default to first available model
+      if (selectedModel === 'both' || !recommendations[selectedModel]?.success) {
+        if (recommendations.openai?.success) {
+          modelToApply = 'openai';
+          console.log('[Step3 Auto-Apply] Defaulting to OpenAI (first available)');
+        } else if (recommendations.claude?.success) {
+          modelToApply = 'claude';
+          console.log('[Step3 Auto-Apply] Defaulting to Claude (OpenAI not available)');
+        }
+      }
+
+      // Apply recommendations from the determined model
+      if (recommendations[modelToApply]?.success) {
+        console.log(`[Step3 Auto-Apply] Applying ${modelToApply} recommendations automatically`);
+        applyModelRecommendations(modelToApply);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendations, loading]); // Only run when recommendations or loading state changes
 
   // Download recommendations as JSON for mock data
   const downloadRecommendations = () => {

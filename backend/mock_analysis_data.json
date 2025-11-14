@@ -1,153 +1,542 @@
 {
   "job_analysis": {
-    "job_description": "Senior Leadership Role - Head of Data & AI\n\nWe are seeking an experienced leader to drive our data and AI strategy...",
-    "analyses": [
-      {
-        "provider": "openai",
-        "model": "gpt-4o",
-        "analysis": {
-          "job_category": "Leadership",
-          "job_level": "Senior/Executive",
+    "openai": {
+      "success": true,
+      "model": "openai-gpt-4o",
+      "analysis": {
+        "job_metadata": {
+          "title": "Lead Data Scientist - AI/ML Platform",
+          "company": "Tech Company",
+          "seniority_level": "Lead/Senior",
+          "location": "Remote",
+          "job_type": "Full-time"
+        },
+        "requirements": {
           "technical_skills": [
-            "AI/ML Strategy",
-            "Data Architecture",
-            "Microsoft Azure",
-            "Databricks",
-            "Data Lake/Lakehouse",
-            "MLOps",
-            "GenAI/LLM",
             "Python",
-            "SQL"
+            "R",
+            "MATLAB",
+            "SQL",
+            "AWS",
+            "Bedrock",
+            "SageMaker",
+            "Lambda",
+            "Step Functions",
+            "vector indexes",
+            "chunking",
+            "metadata",
+            "MLOps",
+            "containers",
+            "CI/CD",
+            "experiment tracking",
+            "model monitoring",
+            "rollback strategies"
           ],
           "soft_skills": [
-            "Strategic Leadership",
-            "Team Building",
-            "Stakeholder Management",
-            "Communication",
-            "Mentoring"
+            "strong communication",
+            "clear writing",
+            "evidence-based decision making",
+            "team leadership",
+            "stakeholder management"
           ],
-          "education_requirements": "PhD or Master's in Computer Science, Data Science, or related field",
-          "experience_requirements": "7-10+ years of leadership experience in AI/ML and data science",
-          "preferred_qualifications": [
-            "Experience in regulated industries (financial services)",
-            "Azure and Databricks expertise",
-            "Data governance experience"
-          ]
-        }
-      },
-      {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-20250514",
-        "analysis": {
-          "job_category": "Leadership",
-          "job_level": "Senior/Executive",
-          "technical_skills": [
-            "AI/ML Leadership",
-            "Data Platform Architecture",
-            "Microsoft Azure",
-            "Databricks",
-            "Data Governance",
-            "MLOps",
-            "GenAI/LLM",
+          "experience_years": "6-10+",
+          "education": ["Advanced degree in a quantitative field (PhD/MS in Computer Science, Statistics, or related)"],
+          "certifications": [],
+          "responsibilities": [
+            "Lead development of production ML systems",
+            "Mentor and manage data science team",
+            "Design and implement MLOps infrastructure",
+            "Collaborate with cross-functional stakeholders"
+          ],
+          "key_keywords": [
             "Python",
-            "SQL"
-          ],
-          "soft_skills": [
-            "Strategic Vision",
-            "Executive Communication",
-            "Team Leadership",
-            "Cross-functional Collaboration",
-            "Change Management"
-          ],
-          "education_requirements": "PhD preferred in relevant technical field",
-          "experience_requirements": "7-10+ years leading AI/ML teams in enterprise environments",
-          "preferred_qualifications": [
-            "Financial services experience",
-            "Enterprise data platform experience",
-            "Regulatory compliance knowledge"
+            "AWS",
+            "MLOps",
+            "retrieval systems",
+            "production experience",
+            "team leadership"
           ]
-        }
+        },
+        "must_haves": [
+          "Advanced degree in a quantitative field",
+          "6–10+ years experience in DS/ML/AI",
+          "2+ years leading teams or programs",
+          "Hands-on experience with Python",
+          "Experience with AWS or equivalent clouds",
+          "Production experience with retrieval systems",
+          "Fluency in MLOps"
+        ],
+        "nice_to_haves": ["Familiarity with R/MATLAB", "Experience with Azure or GCP"],
+        "role_summary": "Senior data science role requiring advanced degree and extensive experience in production ML systems",
+        "company_culture": "Fast-paced, innovation-driven environment with focus on cutting-edge AI solutions"
       }
-    ]
+    },
+    "claude": {
+      "success": true,
+      "model": "claude-sonnet-4.5",
+      "analysis": {
+        "job_metadata": {
+          "title": "Lead Data Scientist - AI/ML Platform",
+          "company": "Tech Company",
+          "seniority_level": "Senior/Lead",
+          "location": "Remote",
+          "job_type": "Full-time"
+        },
+        "requirements": {
+          "technical_skills": [
+            "Python",
+            "SQL",
+            "R",
+            "MATLAB",
+            "AWS Bedrock",
+            "AWS SageMaker",
+            "AWS Lambda",
+            "AWS Step Functions",
+            "Vector indexes",
+            "Retrieval systems",
+            "MLOps",
+            "Containers",
+            "CI/CD",
+            "Experiment tracking",
+            "Model monitoring",
+            "Rollback strategies",
+            "Data Science",
+            "Machine Learning",
+            "Artificial Intelligence",
+            "Modern data tooling",
+            "Chunking",
+            "Metadata management",
+            "Evaluation systems"
+          ],
+          "soft_skills": [
+            "Leadership",
+            "Team management",
+            "Program management",
+            "Clear communication",
+            "Technical writing",
+            "Evidence-based decision making",
+            "Ability to avoid jargon",
+            "Ability to defend decisions"
+          ],
+          "experience_years": "6-10+",
+          "education": [
+            "Advanced degree in quantitative field (PhD/MS in EE, CS, Statistics, or related)"
+          ],
+          "certifications": [],
+          "responsibilities": [
+            "Lead development and deployment of production ML systems",
+            "Mentor data scientists and ML engineers",
+            "Establish MLOps best practices",
+            "Drive technical strategy for ML platform"
+          ],
+          "key_keywords": [
+            "Python",
+            "AWS",
+            "MLOps",
+            "retrieval systems",
+            "production",
+            "leadership"
+          ]
+        },
+        "must_haves": [
+          "Advanced degree in quantitative field (PhD/MS in EE, CS, Statistics, or related)",
+          "6-10+ years experience in DS/ML/AI",
+          "2+ years leading teams or programs",
+          "Hands-on Python expertise",
+          "SQL proficiency",
+          "AWS experience (Bedrock, SageMaker, Lambda, Step Functions)",
+          "Production experience with retrieval systems",
+          "MLOps fluency including containers, CI/CD, experiment tracking, model monitoring",
+          "Strong communication and technical writing skills"
+        ],
+        "nice_to_haves": [
+          "R programming language familiarity",
+          "MATLAB familiarity",
+          "Experience with equivalent cloud platforms (non-AWS)"
+        ],
+        "role_summary": "Senior-level data scientist position requiring advanced quantitative degree and extensive production ML experience",
+        "company_culture": "Innovative, collaborative environment focused on delivering impactful AI solutions"
+      }
+    }
   },
-  "fit_analysis": {
-    "job_analysis": {},
-    "user_profile_summary": {},
-    "fit_analyses": [
-      {
-        "provider": "openai",
-        "model": "gpt-4o",
-        "fit_analysis": {
-          "fit_percentage": 78,
-          "fit_summary": "The candidate is a strong match for the leadership role in data and AI, meeting most of the key requirements. However, there are notable gaps in specific technical expertise and industry experience that could impact their suitability for the role.",
-          "strengths": [
-            "PhD in Electrical Engineering with a focus on AI and analytics",
-            "Extensive leadership experience in AI and data science",
-            "Strong skills in AI/ML model development and operationalization",
-            "Proven track record in strategic leadership and team building"
-          ],
-          "critical_gaps": [
-            "Lacks explicit experience with Microsoft Azure and Databricks",
-            "Limited evidence of experience in regulated industries, particularly financial services",
-            "No direct mention of data lake/lakehouse platform expertise"
-          ],
-          "experience_match": "The candidate has over 10 years of relevant leadership experience, which aligns well with the senior-level requirement.",
-          "technical_skills_match": 70,
-          "ats_compatibility": {
-            "keyword_match": 75,
-            "skills_coverage": 68,
-            "has_metrics": true,
-            "action_verbs_score": 82,
-            "overall_ats_score": 76,
-            "ats_notes": "Strong keyword presence and action verbs. Resume includes quantifiable achievements. Could improve by adding more Azure/Databricks specific terms."
-          },
-          "recommendation": {
-            "should_apply": true,
-            "reasoning": "The candidate should apply as they meet most of the key requirements and have a strong leadership background in AI. However, they should be prepared to address gaps in specific technical expertise and industry experience during the application process."
-          }
-        }
-      },
-      {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-20250514",
-        "fit_analysis": {
-          "fit_percentage": 72,
-          "fit_summary": "Strong technical match with solid AI/ML leadership experience, but significant gaps in required Microsoft Azure expertise and data architecture fundamentals. Candidate has AWS experience but lacks the specific Azure/Databricks platform knowledge that is central to this role.",
-          "strengths": [
-            "Excellent AI/ML leadership experience with 5+ years leading cross-functional teams",
-            "Strong hands-on experience with GenAI, LLM implementations, and agent-based systems",
-            "Proven track record in operationalizing AI/ML models from prototype to production",
-            "PhD in relevant field (Electrical Engineering/Automatic Control) with strong analytical foundation",
-            "Demonstrated people leadership, mentoring, and team building capabilities",
-            "Experience with MLOps, CI/CD, and cloud deployment practices",
-            "Strong stakeholder management and executive communication skills",
-            "Research background with peer-reviewed publications shows deep technical expertise"
-          ],
-          "critical_gaps": [
-            "No demonstrated experience with Microsoft Azure (has AWS experience instead)",
-            "No specific Databricks platform experience mentioned",
-            "Lacks explicit data architecture and data lake/lakehouse platform expertise",
-            "No experience in regulated industries, particularly financial services",
-            "Missing the required 7-10+ years of leadership experience (appears to have ~5 years)",
-            "No mention of data governance, quality, and compliance experience",
-            "Limited evidence of building data platforms and pipelines at enterprise scale"
-          ],
-          "experience_match": "Moderate - Has 5+ years of AI/ML leadership but falls short of the required 7-10+ years. Leadership experience is solid but not at the senior level required.",
-          "technical_skills_match": 50,
-          "ats_compatibility": {
-            "keyword_match": 65,
-            "skills_coverage": 55,
-            "has_metrics": true,
-            "action_verbs_score": 78,
-            "overall_ats_score": 67,
-            "ats_notes": "Good use of action verbs and metrics, but missing critical keywords like 'Azure', 'Databricks', 'financial services', and 'data governance'. ATS systems heavily weighted toward these terms may rank this resume lower."
-          },
-          "recommendation": {
-            "should_apply": false,
-            "reasoning": "While the candidate has strong AI/ML experience, the significant gaps in required Azure/Databricks expertise and the experience level mismatch make this role a stretch. The candidate would be better suited for roles that leverage their AWS experience or mid-level leadership positions."
-          }
-        }
+  "fit_scores": {
+    "openai": {
+      "success": true,
+      "model": "openai-gpt-4o",
+      "scores": {
+        "fit_score": 85,
+        "fit_reasoning": "The candidate has a strong alignment with the job requirements, particularly in technical skills and leadership experience. They have extensive experience with Python, AWS, and MLOps, which are critical for the role. Their background in leading AI and ML projects, as well as their academic credentials, align well with the seniority and educational requirements. However, there is a slight gap in direct mention of experience with some specific AWS services like Step Functions and Lambda, although their experience with AWS in general is robust.",
+        "ats_score": 78,
+        "ats_reasoning": "The candidate's profile includes many of the key keywords such as 'Python', 'AWS', 'MLOps', and 'AI'. However, the profile could benefit from explicitly mentioning 'retrieval systems' and 'production experience' more prominently. The format is well-structured, but the narrative style might obscure some keywords for automated parsing systems.",
+        "verdict": "SHOULD_APPLY",
+        "verdict_reasoning": "The candidate should apply as they meet most of the critical requirements and have a strong background in the necessary technical and leadership areas. The minor gaps identified are unlikely to be deal-breakers given their overall strong fit.",
+        "strengths": [
+          "Extensive experience with Python and AWS",
+          "Proven leadership in AI/ML project delivery",
+          "PhD in a relevant field",
+          "Experience with MLOps and CI/CD"
+        ],
+        "missing_skills": ["Explicit mention of Step Functions and Lambda"],
+        "critical_gaps": [],
+        "matching_skills": [
+          "Python",
+          "AWS",
+          "MLOps",
+          "Containers",
+          "CI/CD",
+          "Experiment tracking",
+          "Model monitoring",
+          "Rollback strategies"
+        ],
+        "recommendations": [
+          "Highlight specific experience with AWS Step Functions and Lambda in the resume.",
+          "Ensure keywords like 'retrieval systems' and 'production experience' are explicitly mentioned.",
+          "Consider restructuring the profile to emphasize key skills and experiences more clearly for ATS parsing."
+        ]
       }
-    ]
+    },
+    "claude": {
+      "success": true,
+      "model": "claude-sonnet-4.5",
+      "scores": {
+        "fit_score": 92,
+        "fit_reasoning": "This candidate is exceptionally well-aligned with the role requirements. They have 10+ years of ML/DS experience (exceeds 6-10+ requirement), PhD in EE (matches education requirement), 5+ years leading teams at Ericsson (exceeds 2+ leadership requirement), and hands-on production experience with nearly every technical requirement: Python, AWS Bedrock/SageMaker/Lambda/Step Functions, RAG systems, MLOps, containers, CI/CD. The specific mention of 'contract analysis AI system processing 10K+ documents monthly' and 'vector search implementation' demonstrates exactly the production retrieval systems experience required. Only minor gaps are explicit R/MATLAB usage and some specific MLOps tools.",
+        "ats_score": 88,
+        "ats_reasoning": "Strong keyword density with exact matches for critical terms: Python, AWS, Bedrock, SageMaker, Lambda, Step Functions, MLOps, containers, CI/CD, vector indexes, RAG, production experience, PhD, team leadership. The profile uses industry-standard terminology and includes specific metrics (10K+ documents, 94% accuracy). Minor ATS concerns: some skills mentioned in summary but not detailed in experience section.",
+        "verdict": "SHOULD_APPLY",
+        "verdict_reasoning": "This is an excellent match with 90%+ alignment on must-haves. The candidate exceeds experience requirements, has the exact educational background, demonstrates proven leadership at a major tech company, and shows hands-on experience with the specific AWS services and ML production systems mentioned in the job. The detailed, results-oriented descriptions suggest they can articulate their experience well in interviews. This is worth the time investment - high probability of passing initial screening and strong interview potential.",
+        "strengths": [
+          "PhD in Electrical Engineering from reputable university - exactly matches education requirement",
+          "10+ years ML/DS experience significantly exceeds 6-10+ requirement",
+          "5+ years leading cross-functional ML teams at Ericsson - well above 2+ leadership requirement",
+          "Direct production experience with AWS Bedrock, SageMaker, Lambda, Step Functions - exact tech stack match",
+          "Proven RAG and vector search implementation experience with measurable results (10K+ documents, 94% accuracy)",
+          "Strong MLOps background with containers, CI/CD, monitoring, and rollback strategies",
+          "Published research in IEEE Transactions demonstrates technical depth and communication skills",
+          "Enterprise-scale production experience with real business impact and stakeholder management"
+        ],
+        "missing_skills": [
+          "No explicit mention of R or MATLAB usage (though listed in skills section)",
+          "Specific experiment tracking tools not mentioned",
+          "Model monitoring specifics could be more detailed"
+        ],
+        "critical_gaps": [],
+        "matching_skills": [
+          "Python (extensively mentioned)",
+          "SQL (listed in skills)",
+          "AWS Bedrock, SageMaker, Lambda, Step Functions (detailed experience)",
+          "Vector indexes and chunking strategies (specific production experience)",
+          "MLOps, containers, CI/CD (hands-on experience)",
+          "Team leadership (5+ years at Ericsson)",
+          "Production retrieval systems (contract analysis AI system)",
+          "PhD in Electrical Engineering",
+          "Strong communication and writing (evidenced by publications and stakeholder management)"
+        ],
+        "recommendations": [
+          "Apply immediately - this is an exceptional fit with minimal gaps",
+          "Emphasize the specific AWS services experience and production scale metrics in your application",
+          "Prepare detailed examples of your MLOps practices and model monitoring approaches for interviews",
+          "Highlight the business impact of your AI systems (10K+ documents processed, multiple awards)",
+          "Be ready to discuss specific technical challenges you've solved in production RAG systems"
+        ]
+      }
+    }
+  },
+  "recommendations": {
+    "openai": {
+      "success": true,
+      "model": "openai-gpt-4o",
+      "recommendations": {
+        "selected_nodes": [
+          {
+            "id": 65,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "The summary section is crucial for providing an overview of the candidate's qualifications and experience.",
+            "relevance_tags": ["overview", "introduction"]
+          },
+          {
+            "id": 77,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Demonstrates leadership and hands-on Python development, aligning with the job's must-have requirements.",
+            "relevance_tags": ["leadership", "Python"]
+          },
+          {
+            "id": 78,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Highlights experience with AWS and chunking strategies, directly relevant to the job requirements.",
+            "relevance_tags": ["AWS", "chunking"]
+          },
+          {
+            "id": 79,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "Shows technical depth and problem-solving in vector search, relevant to the role.",
+            "relevance_tags": ["vector indexes", "problem-solving"]
+          },
+          {
+            "id": 81,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "Experience with containers and monitoring aligns with MLOps requirements.",
+            "relevance_tags": ["containers", "monitoring"]
+          },
+          {
+            "id": 82,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Experience with AWS services like Bedrock, SageMaker, and Lambda is highly relevant.",
+            "relevance_tags": ["AWS", "SageMaker", "Lambda"]
+          },
+          {
+            "id": 83,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "Demonstrates experience with rollback strategies, a key requirement.",
+            "relevance_tags": ["rollback strategies", "MLOps"]
+          },
+          {
+            "id": 84,
+            "include": true,
+            "confidence": 0.85,
+            "reason": "Highlights strong communication skills, a soft skill requirement.",
+            "relevance_tags": ["communication", "soft skills"]
+          },
+          {
+            "id": 85,
+            "include": false,
+            "confidence": 0.7,
+            "reason": "While relevant, this node is less critical compared to others for the specific job requirements.",
+            "relevance_tags": ["integration", "coordination"]
+          },
+          {
+            "id": 86,
+            "include": false,
+            "confidence": 0.7,
+            "reason": "Project management details are less emphasized in the job description.",
+            "relevance_tags": ["project management"]
+          },
+          {
+            "id": 64,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "Professional experience is essential to demonstrate the candidate's work history.",
+            "relevance_tags": ["experience", "work history"]
+          },
+          {
+            "id": 71,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Current role as a Lead Data Scientist aligns with the seniority level required.",
+            "relevance_tags": ["leadership", "current role"]
+          },
+          {
+            "id": 128,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "Education section is crucial for demonstrating the candidate's academic background.",
+            "relevance_tags": ["education", "background"]
+          },
+          {
+            "id": 129,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Ph.D. in a quantitative field meets the advanced degree requirement.",
+            "relevance_tags": ["Ph.D.", "quantitative"]
+          },
+          {
+            "id": 131,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "Core skills section is essential to highlight the candidate's key competencies.",
+            "relevance_tags": ["skills", "competencies"]
+          },
+          {
+            "id": 134,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Proficiency in Python, R, and MATLAB directly aligns with the job requirements.",
+            "relevance_tags": ["Python", "R", "MATLAB"]
+          },
+          {
+            "id": 135,
+            "include": true,
+            "confidence": 0.85,
+            "reason": "Machine learning and AI skills are highly relevant to the role.",
+            "relevance_tags": ["machine learning", "AI"]
+          },
+          {
+            "id": 138,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "CI/CD pipelines and MLOps practices are key requirements.",
+            "relevance_tags": ["CI/CD", "MLOps"]
+          },
+          {
+            "id": 142,
+            "include": true,
+            "confidence": 0.9,
+            "reason": "Machine learning experience aligns with the job's experience requirement.",
+            "relevance_tags": ["machine learning", "experience"]
+          }
+        ],
+        "selection_summary": {
+          "total_nodes": 50,
+          "recommended_include": 35,
+          "recommended_exclude": 15
+        },
+        "tailoring_strategy": "The strategy focuses on aligning the candidate's experience and skills with the job requirements, emphasizing technical proficiencies, leadership experience, and relevant achievements to strengthen the candidate's fit for the senior data science role."
+      }
+    },
+    "claude": {
+      "success": true,
+      "model": "claude-sonnet-4.5",
+      "recommendations": {
+        "selected_nodes": [
+          {
+            "id": 65,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Essential section header for CV structure",
+            "relevance_tags": ["structure"]
+          },
+          {
+            "id": 77,
+            "include": true,
+            "confidence": 0.98,
+            "reason": "Perfect match - demonstrates team leadership, Python expertise, and hands-on technical approach required for Lead role",
+            "relevance_tags": ["leadership", "python", "team_management", "production"]
+          },
+          {
+            "id": 78,
+            "include": true,
+            "confidence": 0.99,
+            "reason": "Excellent match - shows AWS Bedrock, RAG pipelines, production scale, and chunking strategies - all key requirements",
+            "relevance_tags": ["aws", "bedrock", "rag", "production", "chunking", "retrieval_systems"]
+          },
+          {
+            "id": 79,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Demonstrates technical leadership balance and vector search experience (vector indexes requirement)",
+            "relevance_tags": ["leadership", "vector_indexes", "technical_depth"]
+          },
+          {
+            "id": 81,
+            "include": true,
+            "confidence": 0.97,
+            "reason": "Strong MLOps demonstration - containers, monitoring, production systems - core requirements",
+            "relevance_tags": ["mlops", "containers", "model_monitoring", "production"]
+          },
+          {
+            "id": 82,
+            "include": true,
+            "confidence": 0.99,
+            "reason": "Perfect AWS match - Bedrock, SageMaker, Lambda all listed as requirements",
+            "relevance_tags": ["aws", "bedrock", "sagemaker", "lambda", "production"]
+          },
+          {
+            "id": 83,
+            "include": true,
+            "confidence": 0.96,
+            "reason": "Shows rollback strategies and production experience - both key requirements",
+            "relevance_tags": ["rollback_strategies", "production", "ai_agents"]
+          },
+          {
+            "id": 84,
+            "include": true,
+            "confidence": 0.92,
+            "reason": "Demonstrates strong communication skills and evidence-based decision making",
+            "relevance_tags": ["communication", "leadership", "evidence_based"]
+          },
+          {
+            "id": 85,
+            "include": true,
+            "confidence": 0.85,
+            "reason": "Shows program management and coordination skills relevant for Lead role",
+            "relevance_tags": ["program_management", "coordination"]
+          },
+          {
+            "id": 86,
+            "include": true,
+            "confidence": 0.88,
+            "reason": "Demonstrates project structuring and delivery management skills for Lead position",
+            "relevance_tags": ["project_management", "delivery", "metrics"]
+          },
+          {
+            "id": 64,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Essential section header for CV structure",
+            "relevance_tags": ["structure"]
+          },
+          {
+            "id": 71,
+            "include": true,
+            "confidence": 0.98,
+            "reason": "Current Lead role title perfectly matches seniority level and shows 4+ years in position",
+            "relevance_tags": ["leadership", "seniority", "current_role"]
+          },
+          {
+            "id": 128,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Essential section header - education is a must-have requirement",
+            "relevance_tags": ["structure", "education"]
+          },
+          {
+            "id": 129,
+            "include": true,
+            "confidence": 0.98,
+            "reason": "PhD in quantitative field - directly matches 'Advanced degree in quantitative field' must-have requirement",
+            "relevance_tags": ["phd", "quantitative", "advanced_degree", "must_have"]
+          },
+          {
+            "id": 131,
+            "include": true,
+            "confidence": 0.95,
+            "reason": "Essential section header for skills",
+            "relevance_tags": ["structure", "skills"]
+          },
+          {
+            "id": 134,
+            "include": true,
+            "confidence": 0.98,
+            "reason": "Perfect match - Python (must-have), R and MATLAB (nice-to-have), SQL all listed as requirements",
+            "relevance_tags": ["python", "r", "matlab", "sql", "must_have"]
+          },
+          {
+            "id": 135,
+            "include": true,
+            "confidence": 0.96,
+            "reason": "Core ML and AI skills directly relevant to DS/ML/AI experience requirement",
+            "relevance_tags": ["ml", "ai", "generative_ai"]
+          },
+          {
+            "id": 138,
+            "include": true,
+            "confidence": 0.96,
+            "reason": "Perfect match - CI/CD and MLOps both listed as technical requirements",
+            "relevance_tags": ["cicd", "mlops", "must_have"]
+          },
+          {
+            "id": 142,
+            "include": true,
+            "confidence": 0.98,
+            "reason": "Perfect match - 10+ years ML experience exceeds 6-10+ years DS/ML/AI requirement",
+            "relevance_tags": ["ml", "experience", "must_have"]
+          }
+        ],
+        "selection_summary": {
+          "total_nodes": 61,
+          "recommended_include": 54,
+          "recommended_exclude": 7
+        },
+        "tailoring_strategy": "This CV is exceptionally well-matched for the Lead Data Science role. The strategy focuses on highlighting the candidate's perfect alignment with must-have requirements: PhD in quantitative field, 10+ years ML experience, current Lead role with 4+ years duration, hands-on Python expertise, extensive AWS experience (Bedrock, SageMaker, Lambda, Step Functions), production RAG/retrieval systems experience, and strong MLOps capabilities. The candidate demonstrates the rare combination of technical depth and leadership breadth required for senior roles."
+      }
+    },
+    "total_nodes": 70
   }
 }
