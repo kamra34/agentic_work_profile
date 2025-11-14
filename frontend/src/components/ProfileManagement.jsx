@@ -379,6 +379,8 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
   const [refreshKey, setRefreshKey] = useState(0);
   const [contactInfoExpanded, setContactInfoExpanded] = useState(false);
   const [draggedSectionId, setDraggedSectionId] = useState(null);
+  const [isAddingSections, setIsAddingSections] = useState(false);
+  const [isSavingContact, setIsSavingContact] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -389,6 +391,7 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
   }, [profile, refreshKey]);
 
   const saveContactInfo = async () => {
+    setIsSavingContact(true);
     try {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/api/profiles/${profile.id}`, {
@@ -406,6 +409,8 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
     } catch (err) {
       console.error('Error updating contact info:', err);
       alert('Error updating contact information');
+    } finally {
+      setIsSavingContact(false);
     }
   };
 
@@ -415,6 +420,9 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
   };
 
   const addSection = async (sectionType) => {
+    if (isAddingSections) return; // Prevent double-clicks
+    setIsAddingSections(true);
+
     const sectionConfig = SECTION_TYPES.find(s => s.value === sectionType);
 
     // Determine default content type based on section type
@@ -453,6 +461,8 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
     } catch (err) {
       console.error('Error adding section:', err);
       alert('Error adding section');
+    } finally {
+      setIsAddingSections(false);
     }
   };
 
@@ -574,11 +584,11 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
               />
             </div>
             <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setShowContactEdit(false)}>
+              <button className="btn-secondary" onClick={() => setShowContactEdit(false)} disabled={isSavingContact}>
                 Cancel
               </button>
-              <button className="btn-primary" onClick={saveContactInfo}>
-                Save
+              <button className="btn-primary" onClick={saveContactInfo} disabled={isSavingContact}>
+                {isSavingContact ? '⏳ Saving...' : 'Save'}
               </button>
             </div>
           </div>
@@ -633,9 +643,11 @@ function ProfileEditor({ profile, onUpdate, sectionRefs, sectionExpandHandlers }
                   key={type.value}
                   className="section-type-card"
                   onClick={() => addSection(type.value)}
+                  disabled={isAddingSections}
+                  style={{ opacity: isAddingSections ? 0.6 : 1, cursor: isAddingSections ? 'wait' : 'pointer' }}
                 >
                   <span className="section-type-icon">{type.icon}</span>
-                  <span className="section-type-label">{type.label}</span>
+                  <span className="section-type-label">{isAddingSections ? '⏳ Adding...' : type.label}</span>
                 </button>
               ))}
             </div>
@@ -726,8 +738,9 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
   const [content, setContent] = useState(section.content || '');
   const [contentType, setContentType] = useState(section.content_type);
   const [showAddEntry, setShowAddEntry] = useState(false);
-  const [showContentTypeSelector, setShowContentTypeSelector] = useState(false);
-  const contentRefs = useRef({});
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isAddingEntry, setIsAddingEntry] = useState(false);
 
   const sectionConfig = SECTION_TYPES.find(s => s.value === section.section_type);
   const isSummarySection = section.section_type === 'summary';
@@ -752,6 +765,7 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
   }, [section.content, section.content_type]);
 
   const updateSection = async (updates) => {
+    setIsUpdating(true);
     try {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/api/sections/${section.id}`, {
@@ -768,6 +782,9 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
       await onUpdate();
     } catch (err) {
       console.error('Error updating section:', err);
+      alert('Error updating section');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -798,7 +815,9 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
 
   const deleteSection = async () => {
     if (!confirm(`Delete "${section.title}" section?`)) return;
+    if (isDeleting) return;
 
+    setIsDeleting(true);
     try {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/api/sections/${section.id}`, {
@@ -810,10 +829,16 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
       await onUpdate();
     } catch (err) {
       console.error('Error deleting section:', err);
+      alert('Error deleting section');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const addEntry = async (entryData) => {
+    if (isAddingEntry) return;
+    setIsAddingEntry(true);
+
     try {
       const token = localStorage.getItem('token');
       // Calculate the order for the new entry
@@ -841,6 +866,8 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
     } catch (err) {
       console.error('Error adding entry:', err);
       alert('Error adding entry');
+    } finally {
+      setIsAddingEntry(false);
     }
   };
 
@@ -968,8 +995,8 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
           {getEntryCountLabel() && <span className="entry-count">{getEntryCountLabel()}</span>}
         </div>
         <div className="section-actions">
-          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); deleteSection(); }}>
-            🗑️
+          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); deleteSection(); }} disabled={isDeleting || isUpdating} title={isDeleting ? 'Deleting...' : 'Delete section'}>
+            {isDeleting ? '⏳' : '🗑️'}
           </button>
           <span className="expand-icon">{expanded ? '▼' : '▶'}</span>
         </div>
@@ -1051,8 +1078,8 @@ function SectionCard({ section, profileId, onUpdate, sectionRef, expandHandler, 
               <div className="section-entries-area">
                 <div className="entries-header">
                   <h4>{getEntriesLabel(section.section_type)}</h4>
-                  <button className="btn-add-entry" onClick={() => setShowAddEntry(true)}>
-                    + {getAddButtonLabel(section.section_type)}
+                  <button className="btn-add-entry" onClick={() => setShowAddEntry(true)} disabled={isAddingEntry || isUpdating}>
+                    {isAddingEntry ? '⏳ Adding...' : `+ ${getAddButtonLabel(section.section_type)}`}
                   </button>
                 </div>
 
@@ -1102,6 +1129,9 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
   const [editingItemContent, setEditingItemContent] = useState('');
   const [draggedEntryId, setDraggedEntryId] = useState(null);
   const [draggedItemId, setDraggedItemId] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isAddingItem, setIsAddingItem] = useState(false);
 
   // For work experience and education: level 0 = job/degree, level 1 = bullet group
   const canHaveBulletGroups = (sectionType === 'work_experience' || sectionType === 'education') && level === 0;
@@ -1109,7 +1139,9 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
 
   const deleteEntry = async () => {
     if (!confirm('Delete this entry?')) return;
+    if (isDeleting) return;
 
+    setIsDeleting(true);
     try {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/api/entries/${entry.id}`, {
@@ -1121,10 +1153,16 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
       await onUpdate();
     } catch (err) {
       console.error('Error deleting entry:', err);
+      alert('Error deleting entry');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const updateEntry = async (entryData) => {
+    if (isUpdating) return;
+    setIsUpdating(true);
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/entries/${entry.id}`, {
@@ -1146,6 +1184,8 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
     } catch (err) {
       console.error('Error updating entry:', err);
       alert('Error updating entry');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -1216,6 +1256,9 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
   };
 
   const addItem = async (content) => {
+    if (isAddingItem) return;
+    setIsAddingItem(true);
+
     try {
       const token = localStorage.getItem('token');
       await fetch(`${API_URL}/api/entries/${entry.id}/items`, {
@@ -1234,6 +1277,9 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
       await onUpdate();
     } catch (err) {
       console.error('Error adding item:', err);
+      alert('Error adding item');
+    } finally {
+      setIsAddingItem(false);
     }
   };
 
@@ -1389,11 +1435,11 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
           </div>
         </div>
         <div className="entry-actions">
-          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setIsEditing(true); setExpanded(true); }}>
+          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setIsEditing(true); setExpanded(true); }} disabled={isDeleting || isUpdating}>
             ✏️
           </button>
-          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); deleteEntry(); }}>
-            🗑️
+          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); deleteEntry(); }} disabled={isDeleting || isUpdating} title={isDeleting ? 'Deleting...' : 'Delete entry'}>
+            {isDeleting ? '⏳' : '🗑️'}
           </button>
         </div>
       </div>
@@ -1503,8 +1549,8 @@ function EntryCard({ entry, sectionId, sectionType, maxNesting, level = 0, onUpd
                 />
               </div>
             ) : (
-              <button className="btn-add-item" onClick={() => setShowAddItem(true)}>
-                + Add Bullet Point
+              <button className="btn-add-item" onClick={() => setShowAddItem(true)} disabled={isAddingItem || isUpdating}>
+                {isAddingItem ? '⏳ Adding...' : '+ Add Bullet Point'}
               </button>
             )
           )}
