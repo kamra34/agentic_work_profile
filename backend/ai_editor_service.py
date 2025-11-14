@@ -235,7 +235,7 @@ def format_entry_context(entry: Dict[str, Any], all_entries: List[Dict[str, Any]
     return context
 
 
-def edit_with_openai(entry: Dict[str, Any], all_entries: List[Dict[str, Any]], model: str = "gpt-4o") -> Dict[str, Any]:
+def edit_with_openai(entry: Dict[str, Any], all_entries: List[Dict[str, Any]], model: str = "gpt-5") -> Dict[str, Any]:
     """Use OpenAI to critique and improve CV entry"""
     context = format_entry_context(entry, all_entries)
 
@@ -347,7 +347,7 @@ Format: {"verdict": "Pass", "hard_critique": [], "humanized_rewrites": [...all e
             # If structured response is expected, use JSON mode
             if wants_structured_response:
                 response = client.chat.completions.create(
-                    model=model or "gpt-4o",
+                    model=model or "gpt-5",
                     messages=[{"role": "system", "content": CRITIC_SYSTEM_PROMPT}] + enhanced_messages,
                     response_format={"type": "json_object"},
                     temperature=0.3
@@ -355,7 +355,7 @@ Format: {"verdict": "Pass", "hard_critique": [], "humanized_rewrites": [...all e
                 return json.loads(response.choices[0].message.content)
             else:
                 response = client.chat.completions.create(
-                    model=model or "gpt-4o",
+                    model=model or "gpt-5",
                     messages=[{"role": "system", "content": CRITIC_SYSTEM_PROMPT}] + enhanced_messages,
                     temperature=0.3
                 )

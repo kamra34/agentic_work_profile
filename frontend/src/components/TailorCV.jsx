@@ -732,6 +732,44 @@ function TailorCV() {
     }
   };
 
+  const handleDiscardAnalysis = async () => {
+    // Confirm with user before discarding
+    const confirmed = window.confirm(
+      '🗑️ Discard Analysis?\n\n' +
+      'This will clear all AI recommendations and reset the workflow.\n' +
+      'You will need to start over from Step 1.\n\n' +
+      'Are you sure you want to discard this analysis?'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    console.log('🗑️ [DISCARD] Discarding analysis and resetting workflow');
+
+    // Reset all state to initial values (same as handleResetWorkflow but with confirmation)
+    setCurrentStep(1);
+    setJobTitle('');
+    setCompanyName('');
+    setJobDescription('');
+    setScores(null);
+    setJobAnalysis(null);
+    setRecommendations(null);
+    setSelectedNodes(new Set());
+    setAllNodes([]);
+    setSelectedModel('openai');
+    setCvStatus('draft');
+
+    // Clear analysis progress indicators
+    setAnalysisStep(null);
+    setAnalysisProgress('');
+    setIsAnalyzing(false);
+
+    console.log('✅ Analysis discarded - workflow reset complete');
+
+    alert('✅ Analysis has been discarded.\n\nYou can now start a new CV tailoring session.');
+  };
+
   const toggleNodeSelection = (globalId) => {
     const newSelected = new Set(selectedNodes);
     if (newSelected.has(globalId)) {
@@ -1821,6 +1859,15 @@ IMPORTANT:
                   >
                     <span className="btn-icon">📥</span>
                     <span className="btn-text">Download Data</span>
+                  </button>
+                  <button
+                    className="btn-discard-analysis"
+                    onClick={handleDiscardAnalysis}
+                    disabled={saving}
+                    title="Discard this analysis and start over"
+                  >
+                    <span className="btn-icon">🗑️</span>
+                    <span className="btn-text">Discard Analysis</span>
                   </button>
                   <button
                     className="btn-save-tailored-cv"
