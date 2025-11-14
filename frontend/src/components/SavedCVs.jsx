@@ -490,7 +490,7 @@ function SavedCVs({ onSelectCV }) {
                       <span className="score-row-label">Profile Fit</span>
                       <div className="score-values">
                         {cv.fit_scores?.openai?.scores?.fit_score !== null && cv.fit_scores?.openai?.scores?.fit_score !== undefined ? (
-                          <span className="score openai-score" title="OpenAI GPT-4">
+                          <span className="score openai-score" title="OpenAI GPT-5">
                             {cv.fit_scores.openai.scores.fit_score}
                           </span>
                         ) : (
@@ -510,7 +510,7 @@ function SavedCVs({ onSelectCV }) {
                       <span className="score-row-label">ATS Score</span>
                       <div className="score-values">
                         {cv.ats_scores?.openai?.scores?.ats_score !== null && cv.ats_scores?.openai?.scores?.ats_score !== undefined ? (
-                          <span className="score openai-score" title="OpenAI GPT-4">
+                          <span className="score openai-score" title="OpenAI GPT-5">
                             {cv.ats_scores.openai.scores.ats_score}
                           </span>
                         ) : (

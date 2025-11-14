@@ -5,7 +5,7 @@
 export const MOCK_RECOMMENDATIONS_STEP3 = {
   "openai": {
     "success": true,
-    "model": "openai-gpt-4o",
+    "model": "openai-gpt-5o",
     "recommendations": {
       "selected_nodes": [
         {

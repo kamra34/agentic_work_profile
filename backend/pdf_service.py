@@ -1,7 +1,10 @@
 """
 PDF Generation Service for Professional CVs
 Supports multiple templates and customization options
+Version: 3.16.2-fixed
 """
+
+print("[PDF_SERVICE] Module loaded - Version 3.16.2-fixed - Bullet separator fixed")
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
@@ -41,7 +44,7 @@ def sanitize_text(text: str) -> str:
         '\u2019': "'",      # RIGHT SINGLE QUOTATION MARK
         '\u201c': '"',      # LEFT DOUBLE QUOTATION MARK
         '\u201d': '"',      # RIGHT DOUBLE QUOTATION MARK
-        '\u2022': '*',      # BULLET
+        '\u2022': '-',      # BULLET (changed from * to - for better readability)
         '\u2026': '...',    # HORIZONTAL ELLIPSIS
         '\u00a0': ' ',      # NON-BREAKING SPACE
         '\u00b7': '*',      # MIDDLE DOT
@@ -406,8 +409,18 @@ class CVPDFGenerator:
             print(f"[PDF] Error in doc.build(): {e}")
             print(f"[PDF] Story has {len(story)} elements")
             # Print details of story elements for debugging
-            for i, element in enumerate(story[:10]):  # Print first 10 elements
-                print(f"[PDF] Story[{i}]: {type(element).__name__}")
+            for i, element in enumerate(story[:20]):  # Print first 20 elements
+                if hasattr(element, 'text'):
+                    # Check if text contains non-latin-1 characters
+                    try:
+                        element.text.encode('latin-1')
+                        print(f"[PDF] Story[{i}]: {type(element).__name__} - OK")
+                    except UnicodeEncodeError as ue:
+                        print(f"[PDF] Story[{i}]: {type(element).__name__} - ENCODING ERROR!")
+                        print(f"[PDF]   Text: {element.text[:100]}")
+                        print(f"[PDF]   Error: {ue}")
+                else:
+                    print(f"[PDF] Story[{i}]: {type(element).__name__}")
             raise
 
         buffer.seek(0)
@@ -430,30 +443,31 @@ class CVPDFGenerator:
         # Job title (if available) - support both field names
         job_title = contact_info.get('professional_title') or contact_info.get('job_title', '')
 
-        # Build contact parts
+        # Build contact parts (sanitize all text to prevent encoding errors)
         contact_parts = []
         if contact_info.get('email'):
-            contact_parts.append(contact_info['email'])
+            contact_parts.append(sanitize_text(contact_info['email']))
 
         # Support both phone and phone_number field names
         phone = contact_info.get('phone_number') or contact_info.get('phone')
         if phone:
-            contact_parts.append(phone)
+            contact_parts.append(sanitize_text(phone))
 
         # Build location from city and country, or use location field
         location = contact_info.get('location')
         if not location:
             city = contact_info.get('city', '')
             country = contact_info.get('country', '')
-            location_parts = [p for p in [city, country] if p]
+            location_parts = [sanitize_text(p) for p in [city, country] if p]
             if location_parts:
                 location = ', '.join(location_parts)
         if location:
-            contact_parts.append(location)
+            contact_parts.append(sanitize_text(location))
 
         # LinkedIn - support both field names
         linkedin_url = contact_info.get('linkedin_url') or contact_info.get('linkedin')
         if linkedin_url:
+            linkedin_url = sanitize_text(linkedin_url)
             if header_style == "simple" or header_style == "left_aligned":
                 contact_parts.append(f'LinkedIn: {linkedin_url}')
             else:
@@ -462,6 +476,7 @@ class CVPDFGenerator:
         # GitHub - support both field names
         github_url = contact_info.get('github_url') or contact_info.get('github')
         if github_url:
+            github_url = sanitize_text(github_url)
             if header_style == "simple" or header_style == "left_aligned":
                 contact_parts.append(f'GitHub: {github_url}')
             else:
@@ -470,18 +485,21 @@ class CVPDFGenerator:
         # Portfolio/Website - support both field names
         website_url = contact_info.get('portfolio_url') or contact_info.get('website')
         if website_url:
+            website_url = sanitize_text(website_url)
             contact_parts.append(f'<a href="{website_url}" color="#2d3748">{website_url}</a>')
 
         # Build header based on style
         if header_style == "simple":
             # ATS-Optimized: Simple, left-aligned, single-line contact info
-            story.append(Paragraph(f"<b>{sanitize_text(full_name)}</b>", styles['CVName']))
+            sanitized_name = sanitize_text(full_name)
+            story.append(Paragraph(f"<b>{sanitized_name}</b>", styles['CVName']))
             if job_title:
                 story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
             if contact_parts:
-                # Use bullet separator for ATS compatibility (more parseable than |)
-                contact_line = " • ".join(contact_parts)
-                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+                # Use pipe separator for ATS compatibility (latin-1 safe)
+                # Note: contact_parts already contains sanitized text and safe HTML
+                contact_line = " | ".join(contact_parts)
+                story.append(Paragraph(contact_line, styles['CVContact']))
             # Simple horizontal line separator
             story.append(HRFlowable(
                 width="100%",
@@ -497,8 +515,9 @@ class CVPDFGenerator:
             if job_title:
                 story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
             if contact_parts:
-                contact_line = " • ".join(contact_parts)
-                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+                # contact_parts already contains sanitized text and safe HTML
+                contact_line = " | ".join(contact_parts)
+                story.append(Paragraph(contact_line, styles['CVContact']))
             story.append(HRFlowable(
                 width="100%",
                 thickness=config["line_thickness"],
@@ -513,8 +532,9 @@ class CVPDFGenerator:
             if job_title:
                 story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
             if contact_parts:
+                # contact_parts already contains sanitized text and safe HTML
                 contact_line = " | ".join(contact_parts)
-                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+                story.append(Paragraph(contact_line, styles['CVContact']))
             story.append(HRFlowable(
                 width="60%",
                 thickness=config["line_thickness"],
@@ -529,8 +549,9 @@ class CVPDFGenerator:
             if job_title:
                 story.append(Paragraph(sanitize_text(job_title), styles['CVJobTitle']))
             if contact_parts:
+                # contact_parts already contains sanitized text and safe HTML
                 contact_line = " | ".join(contact_parts)
-                story.append(Paragraph(sanitize_text(contact_line), styles['CVContact']))
+                story.append(Paragraph(contact_line, styles['CVContact']))
             story.append(HRFlowable(
                 width="100%",
                 thickness=config["line_thickness"],
@@ -721,8 +742,9 @@ class CVPDFGenerator:
                 if sub_title:
                     # Add some space before sub-entry
                     story.append(Spacer(1, 0.08*inch))
-                    # Sub-entry title in italic/bold
-                    story.append(Paragraph(sanitize_text(f"<i><b>{sub_title}</b></i>"), styles['CVEntrySubtitle']))
+                    # Sub-entry title in italic/bold - sanitize first, then wrap in HTML
+                    sanitized_sub_title = sanitize_text(sub_title)
+                    story.append(Paragraph(f"<i><b>{sanitized_sub_title}</b></i>", styles['CVEntrySubtitle']))
 
                 # Sub-entry items
                 sub_items = sub_entry.get('items', [])

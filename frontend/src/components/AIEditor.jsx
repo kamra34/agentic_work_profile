@@ -162,7 +162,7 @@ function AIEditor({ entry, onClose, onApply }) {
                 disabled={loading}
               >
                 <span className="model-icon">🤖</span>
-                <span className="model-name">OpenAI GPT-4</span>
+                <span className="model-name">OpenAI GPT-5</span>
                 <span className="model-desc">Latest GPT-5 model</span>
               </button>
               <button
@@ -179,7 +179,7 @@ function AIEditor({ entry, onClose, onApply }) {
         ) : (
           <div className="ai-editor-content">
             <div className="model-badge">
-              {modelType === 'openai' ? '🤖 GPT-4' : '🧠 Claude'} | {entry.title}
+              {modelType === 'openai' ? '🤖 GPT-5' : '🧠 Claude'} | {entry.title}
             </div>
 
             {loading && !critique && (

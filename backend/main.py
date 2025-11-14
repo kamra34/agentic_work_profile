@@ -2015,11 +2015,18 @@ async def download_application_pdf(
         )
         pdf_buffer = generator.generate_pdf(cv_data, hidden_items=[])
 
+        # Sanitize filename to remove Unicode characters
+        safe_job_title = job_app.job_title.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if job_app.job_title else "CV"
+        safe_company = job_app.company_name.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if job_app.company_name else "Application"
+        # Remove any remaining non-ASCII characters from filename
+        safe_job_title = ''.join(c for c in safe_job_title if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
+        safe_company = ''.join(c for c in safe_company if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
+
         return StreamingResponse(
             pdf_buffer,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f'attachment; filename="CV_{job_app.job_title}_{job_app.company_name or "Application"}.pdf"'
+                "Content-Disposition": f'attachment; filename="CV_{safe_job_title}_{safe_company}.pdf"'
             }
         )
 

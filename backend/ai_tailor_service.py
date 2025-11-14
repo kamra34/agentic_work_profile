@@ -10,6 +10,42 @@ from openai import OpenAI
 from anthropic import Anthropic
 from typing import Dict, Any, List
 
+
+def sanitize_unicode_for_pdf(text: str) -> str:
+    """
+    Sanitize Unicode characters from AI-generated text to prevent PDF encoding errors.
+    Replaces smart quotes, en-dashes, and other Unicode with ASCII equivalents.
+    """
+    if not text:
+        return text
+
+    replacements = {
+        '\u2013': '-',      # EN DASH
+        '\u2014': '--',     # EM DASH
+        '\u2018': "'",      # LEFT SINGLE QUOTATION MARK
+        '\u2019': "'",      # RIGHT SINGLE QUOTATION MARK
+        '\u201c': '"',      # LEFT DOUBLE QUOTATION MARK
+        '\u201d': '"',      # RIGHT DOUBLE QUOTATION MARK
+        '\u2022': '*',      # BULLET
+        '\u2026': '...',    # HORIZONTAL ELLIPSIS
+        '\u00a0': ' ',      # NON-BREAKING SPACE
+        '\u2212': '-',      # MINUS SIGN
+    }
+
+    for unicode_char, replacement in replacements.items():
+        text = text.replace(unicode_char, replacement)
+
+    # Remove any remaining characters outside latin-1 range
+    cleaned_chars = []
+    for char in text:
+        if ord(char) <= 255:
+            cleaned_chars.append(char)
+        else:
+            # Skip or replace with safe character
+            pass
+
+    return ''.join(cleaned_chars)
+
 # Initialize AI clients
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")

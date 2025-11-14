@@ -105,7 +105,7 @@ function ProfileUpload({ onUploadSuccess }) {
             >
               <option value="gpt-4o">GPT-5 (Recommended)</option>
               <option value="gpt-4o-mini">GPT-5 Mini</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
+              <option value="gpt-4-turbo">GPT-5 Turbo</option>
             </select>
             <small className="helper-text">
               GPT-5 provides the best accuracy for CV parsing

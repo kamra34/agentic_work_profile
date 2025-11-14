@@ -1222,7 +1222,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   {aiRecs.openai?.include && (
                     <div
                       className="confidence-bar openai-bar"
-                      title={`GPT-4: ${(aiRecs.openai.confidence * 100).toFixed(0)}% - ${aiRecs.openai.reason}`}
+                      title={`GPT-5: ${(aiRecs.openai.confidence * 100).toFixed(0)}% - ${aiRecs.openai.reason}`}
                     >
                       <div
                         className="confidence-fill"
@@ -1322,7 +1322,7 @@ function SavedCVDetail({ cvId, onBack }) {
         {/* Model Badge */}
         <div className="analysis-model-badge">
           <span className={`model-badge ${modelName}`}>
-            {modelName === 'openai' ? '🤖 GPT-4' : '🧠 Claude Sonnet'}
+            {modelName === 'openai' ? '🤖 GPT-5' : '🧠 Claude Sonnet'}
           </span>
         </div>
 
@@ -1783,7 +1783,7 @@ function SavedCVDetail({ cvId, onBack }) {
               <div className="ai-scores-grid">
                 {cvData.fit_scores?.openai?.scores?.fit_score !== null && cvData.fit_scores?.openai?.scores?.fit_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label openai">🤖 GPT-4</div>
+                    <div className="ai-model-label openai">🤖 GPT-5</div>
                     <div className="ai-score-value">{cvData.fit_scores.openai.scores.fit_score}</div>
                   </div>
                 )}
@@ -1801,7 +1801,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 <div className="ai-scores-grid">
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores?.openai?.scores?.fit_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label openai">🤖 GPT-4</div>
+                      <div className="ai-model-label openai">🤖 GPT-5</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores.openai.scores.fit_score}</div>
                     </div>
                   )}
@@ -1828,7 +1828,7 @@ function SavedCVDetail({ cvId, onBack }) {
               <div className="ai-scores-grid">
                 {cvData.ats_scores?.openai?.scores?.ats_score !== null && cvData.ats_scores?.openai?.scores?.ats_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label openai">🤖 GPT-4</div>
+                    <div className="ai-model-label openai">🤖 GPT-5</div>
                     <div className="ai-score-value">{cvData.ats_scores.openai.scores.ats_score}</div>
                   </div>
                 )}
@@ -1846,7 +1846,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 <div className="ai-scores-grid">
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores?.openai?.scores?.ats_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label openai">🤖 GPT-4</div>
+                      <div className="ai-model-label openai">🤖 GPT-5</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores.openai.scores.ats_score}</div>
                     </div>
                   )}
@@ -1912,7 +1912,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   {showPromptSection && (
                     <div className="prompts-compact">
                       <div className="prompt-compact-item">
-                        <strong>🤖 GPT-4 Prompt:</strong>
+                        <strong>🤖 GPT-5 Prompt:</strong>
                         <pre className="prompt-code-compact">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].prompts.openai.user_prompt}</pre>
                       </div>
                       <div className="prompt-compact-item">
@@ -1924,7 +1924,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 </>
               )}
             </div>
-            <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses GPT-4 & Claude</div>
+            <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses GPT-5 & Claude</div>
           </div>
         </div>
       </div>
