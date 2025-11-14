@@ -4,7 +4,7 @@ import { AIAnalysisProvider } from './context/AIAnalysisContext';
 import { setLogoutCallback, initializeActivityTracking, cleanupActivityTracking } from './utils/api';
 import './App.css';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function App() {
   const [isLogin, setIsLogin] = useState(true);

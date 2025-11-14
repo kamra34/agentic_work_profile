@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './ManualEntry.css';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const SECTION_TYPES = [
   { value: 'summary', label: 'Summary' },

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './AIEditor.css';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function AIEditor({ entry, onClose, onApply }) {
   const [modelType, setModelType] = useState(null); // 'openai' or 'claude'

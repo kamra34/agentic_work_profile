@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import './ProfileManagement.css';
 import CVPreview from './CVPreview';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const SECTION_TYPES = [
   { value: 'summary', label: 'Summary', icon: '📝', maxNesting: 0 },
