@@ -1,8 +1,7 @@
 {
-  "buildCommand": "cd frontend && rm -rf node_modules package-lock.json && npm install && npm run build",
-  "outputDirectory": "frontend/dist",
-  "installCommand": "echo 'Skipping root install'",
-  "framework": null,
+  "buildCommand": "rm -rf node_modules package-lock.json && npm install && npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
   "rewrites": [
     {
       "source": "/(.*)",
