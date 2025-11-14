@@ -88,7 +88,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
 - Realistic probability of getting past screening"""
 
 
-NODE_SELECTION_PROMPT = """Given this job description and the candidate's profile nodes, recommend which nodes should be INCLUDED in the tailored CV.
+NODE_SELECTION_PROMPT = """You are an expert CV tailoring specialist and ATS optimization consultant. Your task is to recommend which profile nodes should be INCLUDED or EXCLUDED in a tailored CV for a specific job.
 
 Job Requirements:
 {job_requirements}
@@ -96,12 +96,100 @@ Job Requirements:
 Profile Nodes:
 {profile_nodes}
 
-For each node, decide if it should be INCLUDED (visible) or EXCLUDED (hidden) in the tailored CV.
-Consider:
-- Relevance to the job requirements
-- Impact on ATS score
-- Demonstrates key skills/experience for this role
-- Strengthens the candidate's story for this position
+## DECISION CRITERIA
+
+For each node, evaluate these factors:
+
+1. **Direct Relevance** (40% weight)
+   - Does this node demonstrate skills/experience explicitly mentioned in the job requirements?
+   - Does it use keywords that will improve ATS matching?
+   - Does it address must-have requirements vs nice-to-haves?
+
+2. **Impact & Achievement** (30% weight)
+   - Does it show measurable results, leadership, or significant contributions?
+   - Does it demonstrate progression or mastery in relevant areas?
+   - Will it differentiate the candidate from other applicants?
+
+3. **Recency & Context** (20% weight)
+   - Is this recent experience (more valuable) or outdated (less valuable)?
+   - Does it fit the seniority level of the target role?
+   - Does it support the narrative for this specific career direction?
+
+4. **Space Efficiency** (10% weight)
+   - Does this node add unique value or is it redundant?
+   - Is it concise or verbose relative to its importance?
+
+## CONFIDENCE SCALE DEFINITION
+
+Use this scale to rate your confidence in each inclusion/exclusion decision:
+
+**0.0 - 0.3: WEAK** - Marginal relevance or uncertain value
+- Example: A 10-year-old technology that's tangentially related
+- Example: A soft skill mentioned once in the job description
+- Decision: Usually EXCLUDE unless filling space
+
+**0.3 - 0.5: LOW-MODERATE** - Some relevance but not core to the role
+- Example: Adjacent technical skills that show adaptability
+- Example: Leadership experience when job emphasizes technical depth
+- Decision: INCLUDE if space allows and supports narrative
+
+**0.5 - 0.7: MODERATE-HIGH** - Clear relevance to job requirements
+- Example: Required skill demonstrated in older role
+- Example: Similar industry/domain experience
+- Decision: Usually INCLUDE, forms the supporting content
+
+**0.7 - 0.9: HIGH** - Strong alignment with key requirements
+- Example: Direct experience with primary technologies listed
+- Example: Exact role type or responsibility mentioned in job
+- Decision: Definitely INCLUDE, core CV content
+
+**0.9 - 1.0: CRITICAL** - Perfect match, must-have for this application
+- Example: Exact same job title with matching responsibilities
+- Example: Rare/specialized skill that's explicitly required
+- Decision: MUST INCLUDE, highlights of the CV
+
+## DECISION THRESHOLDS
+
+- **confidence >= 0.85**: MUST INCLUDE - Critical match, forms the core narrative
+- **confidence >= 0.60**: SHOULD INCLUDE - Strong relevance, keep unless CV is too long
+- **confidence >= 0.40**: MAYBE INCLUDE - Moderate relevance, include if space allows
+- **confidence < 0.40**: SHOULD EXCLUDE - Weak relevance, dilutes the focused message
+
+## TAILORING STRATEGY GUIDELINES
+
+- **Aim for focused, not exhaustive**: A tailored CV should be 70-85% of the full profile
+- **Quality over quantity**: Better to have 15 highly relevant points than 30 mixed ones
+- **Target 1-2 pages**: Recommend INCLUDE count that fits this constraint
+- **Prioritize recent**: Weight recent experience higher unless older experience is uniquely relevant
+- **Maintain narrative coherence**: Include nodes that tell a consistent story for THIS role
+
+## CALIBRATION EXAMPLES
+
+**Example 1: Software Engineer Role**
+- Node: "Led migration of legacy Java monolith to microservices architecture, reducing latency by 60%"
+- Job requires: "Experience with microservices, Java, performance optimization"
+- Confidence: 0.95 (HIGH-CRITICAL) - Direct match with quantified achievement
+- Decision: INCLUDE
+
+**Example 2: Software Engineer Role**
+- Node: "Volunteered as coding instructor for high school students"
+- Job requires: "Strong technical skills, team collaboration"
+- Confidence: 0.35 (LOW-MODERATE) - Shows soft skills but not core technical requirement
+- Decision: EXCLUDE (unless applying to education-tech or culture-focused company)
+
+**Example 3: Senior Data Scientist Role**
+- Node: "Built Python scripts for data cleaning and preprocessing"
+- Job requires: "Expert in ML model development, Python, statistical analysis"
+- Confidence: 0.55 (MODERATE-HIGH) - Relevant skill but doesn't show seniority/depth
+- Decision: INCLUDE if no stronger Python/data examples exist, otherwise EXCLUDE
+
+**Example 4: Product Manager Role**
+- Node: "Shipped 3 major features with 95% on-time delivery, coordinating 12 engineers"
+- Job requires: "Technical product management, cross-functional leadership"
+- Confidence: 0.88 (HIGH) - Strong match on leadership and delivery metrics
+- Decision: INCLUDE
+
+## OUTPUT FORMAT
 
 Return JSON with node IDs and selection status:
 {{
@@ -110,23 +198,37 @@ Return JSON with node IDs and selection status:
       "id": 123,
       "include": true,
       "confidence": 0.95,
-      "reason": "Why this should be included/excluded",
-      "relevance_tags": ["tag1", "tag2"]
+      "reason": "Critical match - demonstrates exact required skill X with quantified impact. Direct keyword match for ATS. Recent experience at target seniority level.",
+      "relevance_tags": ["primary_requirement", "ats_keyword", "quantified_achievement"]
+    }},
+    {{
+      "id": 124,
+      "include": false,
+      "confidence": 0.25,
+      "reason": "Outdated technology (10 years old) not mentioned in job requirements. No transferable skills to current role focus. Would dilute focused narrative.",
+      "relevance_tags": ["outdated", "low_relevance"]
     }},
     ...
   ],
   "selection_summary": {{
     "total_nodes": 50,
     "recommended_include": 35,
-    "recommended_exclude": 15
+    "recommended_exclude": 15,
+    "expected_cv_length": "1.5 pages",
+    "tailoring_percentage": "70%"
   }},
-  "tailoring_strategy": "Brief explanation of the overall tailoring approach"
+  "tailoring_strategy": "Focus on recent microservices and cloud architecture experience (last 5 years) which directly matches 8 of 10 key requirements. Exclude early-career frontend work and non-technical roles to maintain senior backend engineer positioning. Emphasize leadership and scale achievements to match senior-level expectations."
 }}
 
-IMPORTANT:
-- Use the "id" field from each node (not node_id or global_id)
-- Return recommendations for ALL nodes provided
-- The "id" is the database primary key - use it exactly as provided"""
+## IMPORTANT REMINDERS
+
+- Use the "id" field from each node (this is the database primary key) - use it EXACTLY as provided
+- Return recommendations for ALL nodes provided (every single one)
+- Be decisive: Don't give everything 0.5 confidence - use the full scale
+- Provide specific, actionable reasons (not generic statements)
+- Consider ATS optimization: keyword matching is critical for getting past automated screening
+- Think holistically: Does the set of included nodes tell a compelling, focused story?
+"""
 
 
 def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:

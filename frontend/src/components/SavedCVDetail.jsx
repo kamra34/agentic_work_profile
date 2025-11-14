@@ -278,17 +278,27 @@ function SavedCVDetail({ cvId, onBack }) {
     return null;
   };
 
+  // Store original content for undo functionality
+  const [originalContent, setOriginalContent] = useState({});
+
   // Start editing a node
   const startEditing = (node) => {
     setEditingNode(node.global_id);
-    setEditedContent({
+    const nodeContent = {
       title: node.title || '',
       subtitle: node.subtitle || '',
       content: node.content || '',
       start_date: node.start_date || '',
       end_date: node.end_date || '',
       location: node.location || ''
-    });
+    };
+    setEditedContent(nodeContent);
+    setOriginalContent(nodeContent); // Store original for undo
+  };
+
+  // Revert to original content
+  const revertToOriginal = () => {
+    setEditedContent({ ...originalContent });
   };
 
   // Cancel editing
@@ -1080,72 +1090,96 @@ function SavedCVDetail({ cvId, onBack }) {
             {editingNode === node.global_id ? (
               // Edit Mode
               <div className="node-edit-form">
-                {(node.node_type === 'section' || node.node_type === 'experience' || node.node_type === 'education' || node.node_type === 'project') && (
-                  <input
-                    type="text"
-                    className="edit-input edit-title"
-                    placeholder="Title"
-                    value={editedContent.title || ''}
-                    onChange={(e) => setEditedContent({ ...editedContent, title: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                )}
-
-                {(node.node_type === 'experience' || node.node_type === 'education') && (
-                  <input
-                    type="text"
-                    className="edit-input edit-subtitle"
-                    placeholder="Subtitle (e.g., company name)"
-                    value={editedContent.subtitle || ''}
-                    onChange={(e) => setEditedContent({ ...editedContent, subtitle: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                )}
-
-                {node.node_type === 'bullet' && (
+                {/* For bullets and paragraphs - only show content */}
+                {(node.node_type === 'bullet' || node.node_type === 'paragraph') ? (
                   <textarea
                     className="edit-input edit-content"
-                    placeholder="Content"
+                    placeholder={node.node_type === 'bullet' ? 'Bullet point content' : 'Paragraph content'}
                     value={editedContent.content || ''}
                     onChange={(e) => setEditedContent({ ...editedContent, content: e.target.value })}
                     onClick={(e) => e.stopPropagation()}
-                    rows={3}
+                    rows={node.node_type === 'paragraph' ? 5 : 3}
                   />
-                )}
-
-                {(node.node_type === 'experience' || node.node_type === 'education') && (
-                  <div className="edit-dates">
+                ) : (
+                  <>
+                    {/* Title field for sections and entries */}
                     <input
                       type="text"
-                      className="edit-input edit-date"
-                      placeholder="Start date"
-                      value={editedContent.start_date || ''}
-                      onChange={(e) => setEditedContent({ ...editedContent, start_date: e.target.value })}
+                      className="edit-input edit-title"
+                      placeholder="Title"
+                      value={editedContent.title || ''}
+                      onChange={(e) => setEditedContent({ ...editedContent, title: e.target.value })}
                       onClick={(e) => e.stopPropagation()}
                     />
-                    <input
-                      type="text"
-                      className="edit-input edit-date"
-                      placeholder="End date"
-                      value={editedContent.end_date || ''}
-                      onChange={(e) => setEditedContent({ ...editedContent, end_date: e.target.value })}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-                )}
 
-                {(node.node_type === 'experience' || node.node_type === 'education') && (
-                  <input
-                    type="text"
-                    className="edit-input edit-location"
-                    placeholder="Location"
-                    value={editedContent.location || ''}
-                    onChange={(e) => setEditedContent({ ...editedContent, location: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                    {/* Subtitle for entries */}
+                    {node.node_type === 'entry' && (
+                      <input
+                        type="text"
+                        className="edit-input edit-subtitle"
+                        placeholder="Subtitle (e.g., company name)"
+                        value={editedContent.subtitle || ''}
+                        onChange={(e) => setEditedContent({ ...editedContent, subtitle: e.target.value })}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+
+                    {/* Content/description */}
+                    <textarea
+                      className="edit-input edit-content"
+                      placeholder="Description"
+                      value={editedContent.content || ''}
+                      onChange={(e) => setEditedContent({ ...editedContent, content: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
+                      rows={3}
+                    />
+
+                    {/* Dates and location for entries */}
+                    {node.node_type === 'entry' && (
+                      <>
+                        <div className="edit-dates">
+                          <input
+                            type="text"
+                            className="edit-input edit-date"
+                            placeholder="Start date"
+                            value={editedContent.start_date || ''}
+                            onChange={(e) => setEditedContent({ ...editedContent, start_date: e.target.value })}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <input
+                            type="text"
+                            className="edit-input edit-date"
+                            placeholder="End date"
+                            value={editedContent.end_date || ''}
+                            onChange={(e) => setEditedContent({ ...editedContent, end_date: e.target.value })}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          className="edit-input edit-location"
+                          placeholder="Location"
+                          value={editedContent.location || ''}
+                          onChange={(e) => setEditedContent({ ...editedContent, location: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </>
+                    )}
+                  </>
                 )}
 
                 <div className="edit-actions">
+                  <button
+                    className="edit-undo-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      revertToOriginal();
+                    }}
+                    title="Revert to original content"
+                  >
+                    <span className="undo-icon">↺</span>
+                    Undo
+                  </button>
                   <button
                     className="edit-save-btn"
                     onClick={(e) => {
@@ -1153,6 +1187,7 @@ function SavedCVDetail({ cvId, onBack }) {
                       saveNodeEdit(node);
                     }}
                   >
+                    <span className="save-icon">✓</span>
                     Save
                   </button>
                   <button
@@ -1162,6 +1197,7 @@ function SavedCVDetail({ cvId, onBack }) {
                       cancelEditing();
                     }}
                   >
+                    <span className="cancel-icon">✕</span>
                     Cancel
                   </button>
                 </div>
