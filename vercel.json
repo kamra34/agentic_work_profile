@@ -1,7 +1,8 @@
 {
-  "buildCommand": "rm -rf frontend/node_modules frontend/package-lock.json && cd frontend && npm install && npm run build",
+  "buildCommand": "cd frontend && rm -rf node_modules package-lock.json && npm install && npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "npm install --prefix frontend",
+  "installCommand": "echo 'Skipping root install'",
+  "framework": null,
   "rewrites": [
     {
       "source": "/(.*)",
