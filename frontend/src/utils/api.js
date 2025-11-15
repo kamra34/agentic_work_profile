@@ -57,7 +57,6 @@ const refreshTokenIfNeeded = async () => {
       if (response.ok) {
         const data = await response.json();
         localStorage.setItem('token', data.access_token);
-        console.log('Token refreshed successfully');
 
         // Schedule next refresh
         refreshTimer = setTimeout(refreshTokenIfNeeded, 30 * 60 * 1000);
@@ -72,7 +71,6 @@ const refreshTokenIfNeeded = async () => {
  * Handle 401 Unauthorized response
  */
 const handle401 = () => {
-  console.warn('Unauthorized access detected - logging out user');
   localStorage.removeItem('token');
 
   if (logoutCallback) {

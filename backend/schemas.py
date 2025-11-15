@@ -293,6 +293,7 @@ class JobApplicationResponse(BaseModel):
     location: Optional[str]
     final_content_snapshot: Dict[str, Any]
     cv_format: str
+    pdf_customizations: Optional[Dict[str, Any]] = None  # PDF generation settings
     initial_fit_scores: Optional[Dict[str, Any]]  # Full response with nested structures
     initial_ats_scores: Optional[Dict[str, Any]]  # Full response with nested structures
     final_fit_scores: Optional[Dict[str, Any]]  # Full response with nested structures
@@ -323,6 +324,9 @@ class JobApplicationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     finalized_at: Optional[datetime]
+
+    # AI Analysis from related TailoredCV
+    job_analysis: Optional[Dict[str, Any]] = None  # Job analysis from both OpenAI and Claude
 
     class Config:
         from_attributes = True

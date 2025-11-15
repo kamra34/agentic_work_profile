@@ -5,7 +5,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function ProfileUpload({ onUploadSuccess }) {
   const [file, setFile] = useState(null);
-  const [model, setModel] = useState('gpt-4o');
+  const [model, setModel] = useState('gpt-5.1');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -103,12 +103,12 @@ function ProfileUpload({ onUploadSuccess }) {
               onChange={(e) => setModel(e.target.value)}
               className="select-input"
             >
-              <option value="gpt-4o">GPT-5 (Recommended)</option>
-              <option value="gpt-4o-mini">GPT-5 Mini</option>
-              <option value="gpt-4-turbo">GPT-5 Turbo</option>
+              <option value="gpt-5.1">GPT-5.1 (Recommended)</option>
+              <option value="gpt-5.1-mini">GPT-5.1 Mini</option>
+              <option value="gpt-5.1-turbo">GPT-5.1 Turbo</option>
             </select>
             <small className="helper-text">
-              GPT-5 provides the best accuracy for CV parsing
+              GPT-5.1 provides the best accuracy for CV parsing
             </small>
           </div>
 

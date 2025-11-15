@@ -485,9 +485,8 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       }
     }
 
-    // If multiple matches found, log warning and return the one with most items
+    // If multiple matches found, return the one with most items
     if (matches.length > 1) {
-      console.warn(`[ID Collision] Found ${matches.length} entries with ID ${id}:`, matches.map(m => ({ section: m.section, title: m.data.title, itemCount: m.data.items?.length || 0 })));
       // Return the entry with the most items (most likely the correct one)
       return matches.reduce((best, current) => {
         const bestItemCount = best.data.items?.length || 0;
@@ -508,9 +507,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
 
       // If toggling an entry, cascade to all its sub-entries and items
       if (found && found.type === 'entry') {
-        console.log(`[DEBUG Entry Data]`, found.data);
         const childIds = getAllChildIds(found.data);
-        console.log(`[Cascading Entry] ID: ${id}, Entry ID: ${found.data.id}, Title: ${found.data.title}, Children: ${childIds.length}`, childIds);
         childIds.forEach(childId => {
           updated[childId] = newHiddenState;
         });
@@ -518,7 +515,6 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       // If toggling a sub-entry, cascade to all its items
       else if (found && found.type === 'subEntry') {
         const itemIds = getSubEntryItemIds(found.data);
-        console.log(`[Cascading SubEntry] ID: ${id}, Found: ${found.data.title}, Items: ${itemIds.length}`, itemIds);
         itemIds.forEach(itemId => {
           updated[itemId] = newHiddenState;
         });
@@ -526,7 +522,6 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       // If no entry/subEntry found, but it's a namespaced ID, still try to cascade
       // This handles cases where the structure might be different (e.g., Skills section)
       else {
-        console.log(`[Fallback Cascading] ID: ${id}, Found: ${found ? found.type : 'null'}`);
         const { type } = parseId(id);
         if (type === 'entry' || type === 'subentry') {
           // Search in the full data to find this item and its children
@@ -538,7 +533,6 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                   const entryId = makeId('entry', entry.id);
                   if (entryId === id) {
                     const childIds = getAllChildIds(entry);
-                    console.log(`[Fallback Entry Match] Section: ${section.title}, Entry: ${entry.title}, Children: ${childIds.length}`, childIds);
                     childIds.forEach(childId => {
                       updated[childId] = newHiddenState;
                     });
@@ -550,7 +544,6 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                       const subEntryId = makeId('subentry', subEntry.id);
                       if (subEntryId === id) {
                         const itemIds = getSubEntryItemIds(subEntry);
-                        console.log(`[Fallback SubEntry Match] Entry: ${entry.title}, SubEntry: ${subEntry.title}, Items: ${itemIds.length}`, itemIds);
                         itemIds.forEach(itemId => {
                           updated[itemId] = newHiddenState;
                         });
@@ -562,9 +555,6 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 }
               }
               if (cascaded) break;
-            }
-            if (!cascaded) {
-              console.log(`[Fallback No Match] ID: ${id} not found in data structure`);
             }
           }
         }
@@ -759,13 +749,13 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     if (hasOpenAI && hasClaude) {
       return (
         <span className="ai-badge ai-badge-both" title="Recommended by both AI models">
-          🟢 GPT-5 + 🔵 Claude
+          🟢 OpenAI GPT-5.1 + 🔵 Claude
         </span>
       );
     } else if (hasOpenAI) {
       return (
-        <span className="ai-badge ai-badge-openai" title="Recommended by GPT-5">
-          🟢 GPT-5
+        <span className="ai-badge ai-badge-openai" title="Recommended by OpenAI GPT-5.1">
+          🟢 OpenAI GPT-5.1
         </span>
       );
     } else if (hasClaude) {
@@ -924,7 +914,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
               <div className="ai-reasoning-section">
                 {entry.reasoning.openai && (
                   <div className="ai-reasoning-item">
-                    <strong>🟢 GPT-5:</strong> {entry.reasoning.openai}
+                    <strong>🟢 OpenAI GPT-5.1:</strong> {entry.reasoning.openai}
                   </div>
                 )}
                 {entry.reasoning.claude && (
@@ -1139,7 +1129,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
             <h3>Selected Content for This CV</h3>
             <p className="content-subtitle">Only showing AI-recommended items for this job</p>
             <div className="ai-legend">
-              <span className="legend-compact">🟢 GPT-5</span>
+              <span className="legend-compact">🟢 OpenAI GPT-5.1</span>
               <span className="legend-compact">🔵 Claude</span>
               <span className="legend-compact">🟢🔵 Both agree</span>
             </div>
@@ -1200,7 +1190,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 transition: 'all 0.3s ease'
               }}
             >
-              🟢 GPT-5 Analysis
+              🟢 OpenAI GPT-5.1 Analysis
             </button>
             <button
               onClick={() => setPreviewMode('claude')}
@@ -1243,7 +1233,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 return (
                   <div>
                     <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.5rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      🟢 OpenAI GPT-5 Job Requirements Analysis
+                      🟢 OpenAI GPT-5.1 Job Requirements Analysis
                     </h3>
                     {renderAnalysisSection('Job Category & Level',
                       `${openaiAnalysis.analysis.job_category || openaiAnalysis.analysis['Job Category'] || 'N/A'} - ${openaiAnalysis.analysis.job_level || openaiAnalysis.analysis['Job Level'] || 'N/A'}`

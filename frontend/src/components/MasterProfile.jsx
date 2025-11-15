@@ -241,15 +241,7 @@ function MasterProfile() {
       const targetNode = findNode(nodes, targetNodeId);
       const targetParent = findParent(nodes, targetNodeId);
 
-      console.log('🔄 Reordering:', {
-        draggedNode: { id: draggedNode?.id, title: draggedNode?.title, order: draggedNode?.order },
-        targetNode: { id: targetNode?.id, title: targetNode?.title, order: targetNode?.order },
-        position,
-        targetParent: targetParent?.id || 'null (root level)'
-      });
-
       if (!draggedNode || !targetNode) {
-        console.log('❌ Missing node(s)');
         return;
       }
 
@@ -263,8 +255,6 @@ function MasterProfile() {
       } else {
         newOrder = targetNode.order + 0.5; // Place between target and next
       }
-
-      console.log('📤 Sending to API:', { new_parent_id: newParentId, new_order: newOrder });
 
       // Move the node
       const response = await fetch(`${API_URL}/nodes/${draggedNodeId}/move`, {
@@ -284,16 +274,13 @@ function MasterProfile() {
       }
 
       const result = await response.json();
-      console.log('✅ API response:', result);
 
       // Save current scroll position
       const editorPanel = document.querySelector('.editor-panel');
       const currentScroll = editorPanel?.scrollTop || 0;
 
       // Refresh the profile to get updated order
-      console.log('🔄 Refreshing profile...');
       await fetchProfile(true); // Preserve state
-      console.log('✅ Profile refreshed, nodes updated');
 
       // Restore scroll position after DOM updates
       setTimeout(() => {

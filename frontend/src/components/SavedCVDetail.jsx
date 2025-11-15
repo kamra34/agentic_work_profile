@@ -93,22 +93,6 @@ function SavedCVDetail({ cvId, onBack }) {
 
     snapshot.nodes.forEach(processNode);
 
-    // DEBUG: Log how many nodes are selected
-    const selectedCount = Object.values(selections).filter(Boolean).length;
-    console.log('[InitializeSelections] Total nodes:', Object.keys(selections).length);
-    console.log('[InitializeSelections] Selected nodes:', selectedCount);
-
-    // Log node types to understand structure
-    const nodeTypes = {};
-    const countNodeTypes = (node) => {
-      nodeTypes[node.node_type] = (nodeTypes[node.node_type] || 0) + 1;
-      if (node.children) {
-        node.children.forEach(countNodeTypes);
-      }
-    };
-    snapshot.nodes.forEach(countNodeTypes);
-    console.log('[InitializeSelections] Node types in snapshot:', nodeTypes);
-
     setNodeSelections(selections);
   };
 
@@ -195,12 +179,6 @@ function SavedCVDetail({ cvId, onBack }) {
       };
       const selectedCount = countSelected(updatedSnapshot.nodes);
 
-      console.log('[AutoSave] Saving to backend:');
-      console.log('  - Total nodes:', JSON.stringify(updatedSnapshot.nodes).length);
-      console.log('  - Selected nodes count:', selectedCount);
-      console.log('  - Snapshot preview:', JSON.stringify(updatedSnapshot).substring(0, 200));
-      console.log('  - Contact info:', updatedSnapshot.contact_info ? 'Present' : 'Missing');
-
       const selectedNodeIds = [];
       const collectSelectedIds = (nodes) => {
         nodes.forEach(node => {
@@ -235,8 +213,6 @@ function SavedCVDetail({ cvId, onBack }) {
       }
 
       const responseData = await response.json();
-      console.log('[AutoSave] Backend response:', responseData);
-      console.log('[AutoSave] Successfully saved at', new Date().toISOString());
 
       // Update local state with the saved snapshot
       setCvData(prev => ({
@@ -696,14 +672,11 @@ function SavedCVDetail({ cvId, onBack }) {
   };
 
   const recalculateScores = async () => {
-    console.log('[RecalculateScores] Starting with current content_snapshot');
-
     setRecalculating(true);
 
     try {
       // Ensure latest autosave is complete before recalculating
       if (autoSaveStatus === 'saving') {
-        console.log('[RecalculateScores] Waiting for autosave to complete...');
         // Wait for autosave to finish
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
@@ -712,11 +685,6 @@ function SavedCVDetail({ cvId, onBack }) {
         ...cvData.content_snapshot,
         nodes: updateNodesWithSelections(cvData.content_snapshot.nodes, nodeSelections)
       };
-
-      console.log('[RecalculateScores] Sending snapshot to AI:', {
-        snapshotHash: JSON.stringify(updatedSnapshot).substring(0, 100),
-        timestamp: new Date().toISOString()
-      });
 
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/tailor/${cvId}/recalculate-scores`, {
@@ -736,11 +704,6 @@ function SavedCVDetail({ cvId, onBack }) {
 
       const result = await response.json();
 
-      console.log('[RecalculateScores] Received AI result:', {
-        hasRecalculation: !!result.recalculation,
-        timestamp: new Date().toISOString()
-      });
-
       // Update CV data with recalculated scores (keep original scores intact)
       setCvData(prev => ({
         ...prev,
@@ -749,8 +712,6 @@ function SavedCVDetail({ cvId, onBack }) {
           result.recalculation
         ]
       }));
-
-      console.log('[RecalculateScores] Updated cvData with new recalculated_scores');
 
       // Keep prompt section collapsed by default
       // User can expand it manually if needed
@@ -800,8 +761,6 @@ function SavedCVDetail({ cvId, onBack }) {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-
-      console.log(`[PreviewPDF] PDF downloaded successfully with template: ${templateName}`);
     } catch (err) {
       console.error('Error generating PDF preview:', err);
       alert('Failed to generate PDF preview: ' + err.message);
@@ -811,14 +770,9 @@ function SavedCVDetail({ cvId, onBack }) {
   };
 
   const saveToApplicationTracker = async () => {
-    console.log('[SaveToTracker] Starting');
-    console.log('[SaveToTracker] Current cvData.recalculated_scores:', cvData.recalculated_scores);
-
     // Force one final save before creating job application to ensure DB has latest data
-    console.log('[SaveToTracker] Forcing final save before creating job application...');
     try {
       await autoSave();
-      console.log('[SaveToTracker] Final save completed');
       // Wait a bit more to ensure DB transaction is fully committed
       await new Promise(resolve => setTimeout(resolve, 500));
     } catch (err) {
@@ -840,22 +794,14 @@ function SavedCVDetail({ cvId, onBack }) {
       const lastRecalcTimestamp = cvData.recalculated_scores[cvData.recalculated_scores.length - 1].timestamp;
       const lastUpdateTimestamp = cvData.updated_at;
 
-      console.log('[SaveToTracker] Comparing timestamps:');
-      console.log('  - Last recalculation:', lastRecalcTimestamp);
-      console.log('  - Last CV update:', lastUpdateTimestamp);
-
       // Parse timestamps and compare
       const recalcDate = new Date(lastRecalcTimestamp);
       const updateDate = new Date(lastUpdateTimestamp);
 
       if (updateDate > recalcDate) {
         needsRecalculation = true;
-        console.log('[SaveToTracker] CV was updated AFTER last recalculation - need to recalc');
       }
     }
-
-    console.log('[SaveToTracker] Has recent scores:', hasRecentScores);
-    console.log('[SaveToTracker] Needs recalculation:', needsRecalculation);
 
     if (needsRecalculation) {
       // Ask user if they want to recalculate first
@@ -907,8 +853,6 @@ function SavedCVDetail({ cvId, onBack }) {
         }
       }
 
-      console.log('[SaveToTracker] Creating job application with tailored_cv_id:', cvId);
-
       // If no duplicate, proceed with creation
       const response = await fetch(`${API_URL}/api/applications/create`, {
         method: 'POST',
@@ -933,12 +877,6 @@ function SavedCVDetail({ cvId, onBack }) {
       }
 
       const application = await response.json();
-
-      console.log('[SaveToTracker] Successfully created application:', application.id);
-      console.log('[SaveToTracker] Application final_content_snapshot hash:',
-        application.final_content_snapshot
-          ? JSON.stringify(application.final_content_snapshot).substring(0, 100)
-          : 'No snapshot');
 
       setShowTrackerModal(false);
 
@@ -1222,7 +1160,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   {aiRecs.openai?.include && (
                     <div
                       className="confidence-bar openai-bar"
-                      title={`GPT-5: ${(aiRecs.openai.confidence * 100).toFixed(0)}% - ${aiRecs.openai.reason}`}
+                      title={`OpenAI GPT-5.1: ${(aiRecs.openai.confidence * 100).toFixed(0)}% - ${aiRecs.openai.reason}`}
                     >
                       <div
                         className="confidence-fill"
@@ -1307,7 +1245,7 @@ function SavedCVDetail({ cvId, onBack }) {
     if (!modelData || !modelData.success || !modelData.analysis) {
       return (
         <div className="analysis-empty">
-          <p>No job analysis available from {modelName === 'openai' ? 'OpenAI' : 'Claude'}</p>
+          <p>No job analysis available from {modelName === 'openai' ? 'GPT-5.1' : 'Claude'}</p>
         </div>
       );
     }
@@ -1322,7 +1260,7 @@ function SavedCVDetail({ cvId, onBack }) {
         {/* Model Badge */}
         <div className="analysis-model-badge">
           <span className={`model-badge ${modelName}`}>
-            {modelName === 'openai' ? '🤖 GPT-5' : '🧠 Claude Sonnet'}
+            {modelName === 'openai' ? '🤖 GPT-5.1' : '🧠 Claude Sonnet'}
           </span>
         </div>
 
@@ -1783,7 +1721,7 @@ function SavedCVDetail({ cvId, onBack }) {
               <div className="ai-scores-grid">
                 {cvData.fit_scores?.openai?.scores?.fit_score !== null && cvData.fit_scores?.openai?.scores?.fit_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label openai">🤖 GPT-5</div>
+                    <div className="ai-model-label openai">🤖 GPT-5.1</div>
                     <div className="ai-score-value">{cvData.fit_scores.openai.scores.fit_score}</div>
                   </div>
                 )}
@@ -1801,7 +1739,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 <div className="ai-scores-grid">
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores?.openai?.scores?.fit_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label openai">🤖 GPT-5</div>
+                      <div className="ai-model-label openai">🤖 GPT-5.1</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores.openai.scores.fit_score}</div>
                     </div>
                   )}
@@ -1828,7 +1766,7 @@ function SavedCVDetail({ cvId, onBack }) {
               <div className="ai-scores-grid">
                 {cvData.ats_scores?.openai?.scores?.ats_score !== null && cvData.ats_scores?.openai?.scores?.ats_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label openai">🤖 GPT-5</div>
+                    <div className="ai-model-label openai">🤖 GPT-5.1</div>
                     <div className="ai-score-value">{cvData.ats_scores.openai.scores.ats_score}</div>
                   </div>
                 )}
@@ -1846,7 +1784,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 <div className="ai-scores-grid">
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores?.openai?.scores?.ats_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label openai">🤖 GPT-5</div>
+                      <div className="ai-model-label openai">🤖 GPT-5.1</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores.openai.scores.ats_score}</div>
                     </div>
                   )}
@@ -1912,7 +1850,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   {showPromptSection && (
                     <div className="prompts-compact">
                       <div className="prompt-compact-item">
-                        <strong>🤖 GPT-5 Prompt:</strong>
+                        <strong>🤖 OpenAI GPT-5.1 Prompt:</strong>
                         <pre className="prompt-code-compact">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].prompts.openai.user_prompt}</pre>
                       </div>
                       <div className="prompt-compact-item">
@@ -1924,7 +1862,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 </>
               )}
             </div>
-            <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses GPT-5 & Claude</div>
+            <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses OpenAI GPT-5.1 & Claude</div>
           </div>
         </div>
       </div>
@@ -1940,7 +1878,7 @@ function SavedCVDetail({ cvId, onBack }) {
               {cvData.recommendations?.openai?.recommendations?.selected_nodes && (
                 <div className="ai-model-chip openai">
                   <span className="model-icon">🤖</span>
-                  <span className="model-name">OpenAI</span>
+                  <span className="model-name">GPT-5.1</span>
                   <span className="model-color-indicator"></span>
                 </div>
               )}
@@ -1998,7 +1936,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 onClick={() => setPreviewTab('openai')}
               >
                 <span className="tab-icon">🤖</span>
-                OpenAI Analysis
+                GPT-5.1 Analysis
               </button>
               <button
                 className={`preview-tab ${previewTab === 'claude' ? 'active' : ''}`}
@@ -2075,7 +2013,6 @@ function SavedCVDetail({ cvId, onBack }) {
               }
 
               const application = await createResponse.json();
-              console.log('[Unified Workflow] Successfully created application:', application.id);
 
               // Set saved state
               setApplicationId(application.id);

@@ -18,7 +18,7 @@ const STEPS = [
 const MOCK_ANALYSIS_DATA = {
   openai: {
     success: true,
-    model: "openai-gpt-4o",
+    model: "openai-gpt-5.1",
     analysis: {
       job_metadata: {
         title: null,
@@ -73,7 +73,7 @@ const MOCK_ANALYSIS_DATA = {
 const MOCK_SCORES_DATA = {
   openai: {
     success: true,
-    model: "openai-gpt-4o",
+    model: "openai-gpt-5.1",
     scores: {
       fit_score: 85,
       fit_reasoning: "The candidate has a strong alignment with the job requirements, particularly in technical skills and leadership experience. They have extensive experience with Python, AWS, and MLOps, which are critical for the role. Their background in leading AI and ML projects, as well as their academic credentials, align well with the seniority and educational requirements. However, there is a slight gap in direct mention of experience with some specific AWS services like Step Functions and Lambda, although their experience with AWS in general is robust.",
@@ -479,7 +479,7 @@ function TailorCV() {
         const mockRecommendations = {
           openai: {
             success: true,
-            model: "openai-gpt-4o",
+            model: "openai-gpt-5.1",
             recommendations: {
               selected_nodes: generateNodeRecommendations(),
               selection_summary: {
@@ -1501,7 +1501,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             <div className="model-card-header">
               <div className="model-indicator openai-indicator"></div>
               <div className="model-name">
-                <strong>GPT-5</strong>
+                <strong>OpenAI GPT-5.1</strong>
                 <span className="model-provider">OpenAI</span>
               </div>
             </div>
@@ -1536,7 +1536,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             <div className="spinner-container">
               <div className="spinner" />
               <div className="spinner-text">Analyzing job requirements and scoring your profile...</div>
-              <div className="spinner-subtext">Using {selectedTab === 'openai' ? 'GPT-5' : 'Claude Sonnet 4.5'}</div>
+              <div className="spinner-subtext">Using {selectedTab === 'openai' ? 'OpenAI GPT-5.1' : 'Claude Sonnet 4.5'}</div>
             </div>
           </div>
         ) : !scores ? (
@@ -2092,7 +2092,7 @@ function Step4SavePreview({ jobTitle, setJobTitle, companyName, setCompanyName, 
   const selectedCount = selectedNodes.size;
 
   // AI Summary for display
-  const aiSummary = `Analysis Results:\n- OpenAI GPT-5: Fit ${scores?.openai?.scores?.fit_score || 'N/A'}, ATS ${scores?.openai?.scores?.ats_score || 'N/A'}\n- Claude Sonnet 4.5: Fit ${scores?.claude?.scores?.fit_score || 'N/A'}, ATS ${scores?.claude?.scores?.ats_score || 'N/A'}\n\nSelected ${selectedCount} profile items optimized for this role.`;
+  const aiSummary = `Analysis Results:\n- OpenAI GPT-5.1: Fit ${scores?.openai?.scores?.fit_score || 'N/A'}, ATS ${scores?.openai?.scores?.ats_score || 'N/A'}\n- Claude Sonnet 4.5: Fit ${scores?.claude?.scores?.fit_score || 'N/A'}, ATS ${scores?.claude?.scores?.ats_score || 'N/A'}\n\nSelected ${selectedCount} profile items optimized for this role.`;
 
   return (
     <div className="wizard-step step-4">

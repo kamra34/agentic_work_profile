@@ -165,7 +165,7 @@ function HomeView({ onNavigate }) {
       <div className="welcome-section">
         <h1 className="welcome-title">Welcome to Your Agentic CV Builder</h1>
         <p className="welcome-subtitle">
-          An intelligent AI-powered platform that transforms how you create CVs. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (GPT-5 + Claude Sonnet 4.5) analyze jobs and intelligently select the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
+          An intelligent AI-powered platform that transforms how you create CVs. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (OpenAI GPT-5.1 + Claude Sonnet 4.5) analyze jobs and intelligently select the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
         </p>
       </div>
 
@@ -201,7 +201,7 @@ function HomeView({ onNavigate }) {
             <div className="step-icon">✨</div>
             <div className="step-content">
               <h3>Tailor CV</h3>
-              <p>Paste a job description and watch dual-AI magic: GPT-5 and Claude analyze requirements, calculate your Profile Fit score and ATS compatibility, provide expert recruiter verdict on whether to apply, and intelligently SELECT (never generate) the best items from your Profile Pool optimized for this specific role. AI works in the background so you can continue and return when ready.</p>
+              <p>Paste a job description and watch dual-AI magic: OpenAI GPT-5.1 and Claude analyze requirements, calculate your Profile Fit score and ATS compatibility, provide expert recruiter verdict on whether to apply, and intelligently SELECT (never generate) the best items from your Profile Pool optimized for this specific role. AI works in the background so you can continue and return when ready.</p>
               <button className="step-btn" onClick={() => onNavigate('tailor')}>
                 Tailor with AI →
               </button>
@@ -240,7 +240,7 @@ function HomeView({ onNavigate }) {
           <div className="feature-card">
             <div className="feature-icon">🎯</div>
             <h4>Dual-AI Intelligence</h4>
-            <p>Get unbiased recommendations from both OpenAI GPT-5 and Claude Sonnet 4.5. Items selected by both models = strongest matches.</p>
+            <p>Get unbiased recommendations from both OpenAI GPT-5.1 and Claude Sonnet 4.5. Items selected by both models = strongest matches.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">⚡</div>
@@ -264,7 +264,7 @@ function HomeView({ onNavigate }) {
         <div className="stat-card">
           <div className="stat-number">2</div>
           <div className="stat-label">AI Models</div>
-          <div className="stat-description">OpenAI + Claude</div>
+          <div className="stat-description">OpenAI GPT-5.1 + Claude</div>
         </div>
         <div className="stat-card">
           <div className="stat-number">∞</div>
@@ -353,7 +353,7 @@ function TailorCVView() {
 
       // Step 1: Analyze job description with OpenAI
       setProgressStep('job-analysis');
-      setProgressDetails('Step 1/3: Analyzing job requirements with OpenAI GPT-5 and Claude Sonnet 4.5...');
+      setProgressDetails('Step 1/3: Analyzing job requirements with OpenAI GPT-5.1 and Claude Sonnet 4.5...');
       const jobStartTime = Date.now();
 
       const jobResponse = await fetch(`${API_URL}/api/job/analyze`, {
@@ -398,14 +398,6 @@ function TailorCVView() {
 
         if (fitResponse.ok) {
           const fitData = await fitResponse.json();
-
-          // DEBUG: Log the response structure
-          console.log('[DEBUG] Fit Analysis Response Keys:', Object.keys(fitData));
-          console.log('[DEBUG] Full fitData structure:', JSON.stringify(fitData, null, 2));
-          console.log('[DEBUG] Has analyses?', 'analyses' in fitData);
-          if (fitData.analyses) {
-            console.log('[DEBUG] Analyses:', fitData.analyses);
-          }
 
           const fitEndTime = Date.now();
           const fitTime = ((fitEndTime - fitStartTime) / 1000).toFixed(2);
@@ -497,9 +489,6 @@ function TailorCVView() {
 
       const data = await response.json();
       setTailoringRecs(data);
-
-      // TODO: Open review UI modal/section
-      console.log('Tailoring recommendations:', data);
     } catch (err) {
       setError(err.message || 'Failed to get CV tailoring recommendations');
     } finally {
@@ -542,20 +531,6 @@ function TailorCVView() {
       const openai_ats_score = openai_fit_result?.ats_compatibility?.overall_ats_score;
       const claude_ats_score = claude_fit_result?.ats_compatibility?.overall_ats_score;
 
-      // Debug logging
-      console.log('[DEBUG] Saving CV with scores:', {
-        openai_fit_score,
-        claude_fit_score,
-        openai_ats_score,
-        claude_ats_score,
-        fitAnalysis: fitAnalysis
-      });
-
-      // Warn if scores are missing
-      if (!openai_fit_score && !claude_fit_score && !openai_ats_score && !claude_ats_score) {
-        console.warn('[WARNING] No AI scores found. Did you run "Analyze with AI" first?');
-      }
-
       const response = await fetch(`${API_URL}/api/cv/tailored-versions`, {
         method: 'POST',
         headers: {
@@ -584,7 +559,6 @@ function TailorCVView() {
 
       const data = await response.json();
       alert(`✅ Tailored CV saved successfully!\n\nJob: ${jobTitle}\nCompany: ${companyName || 'N/A'}\nVersion ID: ${data.id}`);
-      console.log('Saved tailored CV:', data);
     } catch (err) {
       setError(err.message || 'Failed to save tailored CV');
       alert(`❌ Failed to save: ${err.message}`);
@@ -601,7 +575,7 @@ function TailorCVView() {
         analyses: [
           {
             provider: "openai",
-            model: "gpt-4o",
+            model: "gpt-5.1",
             analysis: {
               job_category: "Leadership / Data & AI",
               job_level: "Senior/Executive",
@@ -639,7 +613,7 @@ function TailorCVView() {
         fit_analyses: [
           {
             provider: "openai",
-            model: "gpt-4o",
+            model: "gpt-5.1",
             fit_analysis: {
               fit_percentage: 85,
               fit_summary: "The candidate is a strong match for the leadership role, possessing extensive experience in AI and data science leadership, as well as a relevant educational background. However, there are some gaps in specific technical skills and industry experience that could be critical.",
@@ -726,7 +700,7 @@ function TailorCVView() {
       <div className="tailor-header">
         <h1>✨ Tailor CV</h1>
         <p className="tailor-subtitle">
-          Paste any job description below. Our dual-AI system (OpenAI GPT-5 + Claude Sonnet 4.5) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role. Then save your tailored CV to review and finalize later.
+          Paste any job description below. Our dual-AI system (GPT-5.1 + Claude Sonnet 4.5) will analyze requirements, evaluate your profile fit, calculate ATS scores, and intelligently select the best content from your master profile for this specific role. Then save your tailored CV to review and finalize later.
         </p>
       </div>
 
@@ -869,7 +843,7 @@ Requirements:
                 {jobAnalysisTime && <span className="timing-badge">⏱️ {jobAnalysisTime}s</span>}
               </h2>
               <p className="results-subtitle">
-                Powered by OpenAI GPT-5 and Anthropic Claude Sonnet 4.5
+                Powered by GPT-5.1 and Anthropic Claude Sonnet 4.5
               </p>
             </div>
 
@@ -879,7 +853,7 @@ Requirements:
                   <div key={idx} className="analysis-column">
                     <div className="analysis-header">
                       <h3 className="provider-name">
-                        {result.provider === 'openai' ? '🟢 OpenAI GPT-5' : '🔵 Anthropic Claude Sonnet 4.5'}
+                        {result.provider === 'openai' ? '🟢 GPT-5.1' : '🔵 Anthropic Claude Sonnet 4.5'}
                       </h3>
                       {result.model && <span className="model-badge">{result.model}</span>}
                     </div>
@@ -927,7 +901,7 @@ Requirements:
                   <div key={idx} className="fit-card">
                     <div className="fit-card-header">
                       <h3 className="fit-provider">
-                        {isOpenAI ? '🟢 OpenAI' : '🔵 Claude'}
+                        {isOpenAI ? '🟢 GPT-5.1' : '🔵 Claude'}
                       </h3>
                     </div>
 
@@ -1008,7 +982,7 @@ Requirements:
                                   {fitAnalysis.input_data ? (
                                     <>
                                       <div className="data-viewer-warning">
-                                        ⚠️ This is the exact data that was sent to {isOpenAI ? 'OpenAI' : 'Claude'} for Profile Fit Analysis
+                                        ⚠️ This is the exact data that was sent to {isOpenAI ? 'GPT-5.1' : 'Claude'} for Profile Fit Analysis
                                       </div>
                                       <div className="data-viewer-sections">
                                         <div className="data-viewer-block">
@@ -1062,7 +1036,7 @@ Requirements:
                     <div key={idx} className="ats-card">
                       <div className="ats-card-header">
                         <h3 className="ats-provider">
-                          {isOpenAI ? '🟢 OpenAI Analysis' : '🔵 Claude Analysis'}
+                          {isOpenAI ? '🟢 GPT-5.1 Analysis' : '🔵 Claude Analysis'}
                         </h3>
                       </div>
                       <div className="provider-error">
@@ -1146,7 +1120,7 @@ Requirements:
                               {fitAnalysis.input_data ? (
                                 <>
                                   <div className="data-viewer-warning">
-                                    ⚠️ This is the exact data that was sent to {isOpenAI ? 'OpenAI' : 'Claude'} for ATS Compatibility Analysis
+                                    ⚠️ This is the exact data that was sent to {isOpenAI ? 'GPT-5.1' : 'Claude'} for ATS Compatibility Analysis
                                   </div>
                                   <div className="data-viewer-sections">
                                     <div className="data-viewer-block">
@@ -1209,7 +1183,7 @@ Requirements:
               <div className="tailoring-header-content">
                 <div>
                   <h2>📝 AI-Recommended Content for This Role</h2>
-                  <p>Review the specific content recommended by OpenAI and Claude. Items recommended by both models are highlighted.</p>
+                  <p>Review the specific content recommended by GPT-5.1 and Claude. Items recommended by both models are highlighted.</p>
                 </div>
                 <button
                   className="save-tailored-cv-btn"
@@ -1234,7 +1208,7 @@ Requirements:
                 {tailorDataExpanded && (
                   <div className="data-viewer-content">
                     <div className="data-viewer-warning">
-                      ⚠️ This is the exact data that was sent to OpenAI and Claude for CV Tailoring Recommendations
+                      ⚠️ This is the exact data that was sent to GPT-5.1 and Claude for CV Tailoring Recommendations
                     </div>
                     <div className="data-viewer-sections">
                       <div className="data-viewer-block">
@@ -1256,7 +1230,7 @@ Requirements:
               <div className="strategy-comparison">
                 {tailoringRecs.enriched_recommendations.overall_strategy.openai && (
                   <div className="strategy-card">
-                    <h4>🟢 OpenAI Strategy</h4>
+                    <h4>🟢 GPT-5.1 Strategy</h4>
                     <p>{tailoringRecs.enriched_recommendations.overall_strategy.openai}</p>
                   </div>
                 )}
@@ -1377,7 +1351,7 @@ Requirements:
                       <div className="work-reasoning">
                         <p className="reasoning-title"><strong>Why This Experience Matters:</strong></p>
                         {exp.reasoning.openai && (
-                          <p className="reasoning-openai">🟢 <strong>OpenAI:</strong> {exp.reasoning.openai}</p>
+                          <p className="reasoning-openai">🟢 <strong>GPT-5.1:</strong> {exp.reasoning.openai}</p>
                         )}
                         {exp.reasoning.claude && (
                           <p className="reasoning-claude">🔵 <strong>Claude:</strong> {exp.reasoning.claude}</p>
@@ -1600,7 +1574,7 @@ Requirements:
                 <div key={idx} className="recommendation-card">
                   <div className="recommendation-header">
                     <h3>
-                      {rec.provider === 'openai' ? '🟢 OpenAI Recommendations' : '🔵 Claude Recommendations'}
+                      {rec.provider === 'openai' ? '🟢 GPT-5.1 Recommendations' : '🔵 Claude Recommendations'}
                     </h3>
                     {rec.model && <span className="model-badge">{rec.model}</span>}
                   </div>

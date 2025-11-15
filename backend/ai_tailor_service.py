@@ -311,14 +311,31 @@ Job Requirements:
 Profile Nodes:
 {profile_nodes}
 
+## CRITICAL: KEYWORD MATCHING STRATEGY
+
+Before evaluating nodes, carefully extract ALL technical skills, tools, technologies, and keywords from the job requirements. For EACH keyword:
+
+1. **Look for EXACT matches** - Same word/phrase (e.g., "Spark" matches "Spark")
+2. **Look for VARIANTS** - Related forms (e.g., "Spark" matches "Apache Spark", "PySpark", "Spark SQL")
+3. **Look for SEMANTIC matches** - Related concepts (e.g., "Spark" relates to "distributed computing", "big data processing", "Hadoop ecosystem")
+4. **Look for CONTEXTUAL evidence** - Implied usage (e.g., "processed 10TB datasets" implies big data tools like Spark)
+
+**IMPORTANT**: Even if a node doesn't use the EXACT keyword, if it demonstrates the same capability or uses related technologies, it should be considered highly relevant.
+
+Examples of keyword matching:
+- Job requires "Spark" → MATCH nodes with: "Spark", "PySpark", "Apache Spark", "Spark SQL", "Spark Streaming", "distributed data processing", "big data frameworks"
+- Job requires "machine learning" → MATCH nodes with: "ML", "machine learning", "predictive modeling", "scikit-learn", "TensorFlow", "model training"
+- Job requires "cloud" → MATCH nodes with: "AWS", "Azure", "GCP", "cloud infrastructure", "cloud-native", "containerization"
+
 ## DECISION CRITERIA
 
 For each node, evaluate these factors:
 
 1. **Direct Relevance** (40% weight)
-   - Does this node demonstrate skills/experience explicitly mentioned in the job requirements?
-   - Does it use keywords that will improve ATS matching?
+   - Does this node demonstrate skills/experience explicitly OR implicitly mentioned in the job requirements?
+   - Does it use exact keywords, variants, or semantically related terms that will improve ATS matching?
    - Does it address must-have requirements vs nice-to-haves?
+   - CHECK THOROUGHLY: Read the entire node content, not just the title - relevant keywords may be buried in descriptions
 
 2. **Impact & Achievement** (30% weight)
    - Does it show measurable results, leadership, or significant contributions?
@@ -380,25 +397,47 @@ Use this scale to rate your confidence in each inclusion/exclusion decision:
 
 ## CALIBRATION EXAMPLES
 
-**Example 1: Software Engineer Role**
+**Example 1: Software Engineer Role (Exact Match)**
 - Node: "Led migration of legacy Java monolith to microservices architecture, reducing latency by 60%"
 - Job requires: "Experience with microservices, Java, performance optimization"
-- Confidence: 0.95 (HIGH-CRITICAL) - Direct match with quantified achievement
+- Confidence: 0.95 (HIGH-CRITICAL) - Direct exact match with quantified achievement
 - Decision: INCLUDE
+- Reasoning: Contains exact keywords "microservices", "Java", and demonstrates "performance optimization" with metrics
 
-**Example 2: Software Engineer Role**
+**Example 2: Data Engineer Role (Semantic Match - IMPORTANT)**
+- Node: "Built distributed data pipelines processing 10TB daily using PySpark and Hadoop"
+- Job requires: "Spark, big data processing, ETL pipelines"
+- Confidence: 0.92 (HIGH-CRITICAL) - Strong semantic match even though "Spark" isn't exact
+- Decision: INCLUDE
+- Reasoning: "PySpark" is a variant of "Spark", "10TB daily" demonstrates "big data", "pipelines" matches "ETL pipelines"
+
+**Example 3: Data Scientist Role (Variant Match)**
+- Node: "Developed ML models using scikit-learn and TensorFlow for customer churn prediction"
+- Job requires: "machine learning, predictive modeling, Python"
+- Confidence: 0.90 (HIGH) - Excellent match with variants and related terms
+- Decision: INCLUDE
+- Reasoning: "ML" is variant of "machine learning", "churn prediction" is example of "predictive modeling", libraries imply Python
+
+**Example 4: Software Engineer Role (Contextual Evidence)**
+- Node: "Processed large-scale datasets with distributed computing frameworks, optimizing query performance by 3x"
+- Job requires: "Spark, data processing, performance tuning"
+- Confidence: 0.75 (HIGH) - Strong contextual match
+- Decision: INCLUDE
+- Reasoning: "distributed computing frameworks" likely includes Spark, "large-scale datasets" = data processing, "3x performance" = tuning
+
+**Example 5: Software Engineer Role (Weak Relevance)**
 - Node: "Volunteered as coding instructor for high school students"
 - Job requires: "Strong technical skills, team collaboration"
 - Confidence: 0.35 (LOW-MODERATE) - Shows soft skills but not core technical requirement
 - Decision: EXCLUDE (unless applying to education-tech or culture-focused company)
 
-**Example 3: Senior Data Scientist Role**
+**Example 6: Senior Data Scientist Role (Insufficient Depth)**
 - Node: "Built Python scripts for data cleaning and preprocessing"
 - Job requires: "Expert in ML model development, Python, statistical analysis"
 - Confidence: 0.55 (MODERATE-HIGH) - Relevant skill but doesn't show seniority/depth
 - Decision: INCLUDE if no stronger Python/data examples exist, otherwise EXCLUDE
 
-**Example 4: Product Manager Role**
+**Example 7: Product Manager Role (Exact Match)**
 - Node: "Shipped 3 major features with 95% on-time delivery, coordinating 12 engineers"
 - Job requires: "Technical product management, cross-functional leadership"
 - Confidence: 0.88 (HIGH) - Strong match on leadership and delivery metrics
@@ -437,17 +476,30 @@ Return JSON with node IDs and selection status:
 
 ## IMPORTANT REMINDERS
 
+- **CRITICAL**: Use semantic and variant matching! If job requires "Spark", INCLUDE nodes with "PySpark", "Apache Spark", "distributed computing", etc.
+- **READ THOROUGHLY**: Don't just scan titles - read the full content of each node for hidden keywords and relevant experience
 - Use the "id" field from each node (this is the database primary key) - use it EXACTLY as provided
 - Return recommendations for ALL nodes provided (every single one)
-- Be decisive: Don't give everything 0.5 confidence - use the full scale
+- Be decisive: Don't give everything 0.5 confidence - use the full scale (0.0-1.0)
+- For technical skills, be GENEROUS with semantic matching - variants and related technologies should score high
 - Provide specific, actionable reasons (not generic statements)
-- Consider ATS optimization: keyword matching is critical for getting past automated screening
+- Consider ATS optimization: exact keywords are best, but variants and semantic matches are also valuable
 - Think holistically: Does the set of included nodes tell a compelling, focused story?
+- When in doubt about relevance, INCLUDE rather than EXCLUDE - better to have related experience than gaps
+
+## WORKFLOW
+
+1. First, extract ALL keywords and requirements from the job description
+2. For each keyword, identify exact matches, variants, and semantic equivalents
+3. Read EVERY node completely (title, subtitle, content, dates, location)
+4. Mark matches based on exact/variant/semantic/contextual criteria
+5. Assign confidence scores based on match quality and other factors
+6. Write specific reasoning explaining the match type and relevance
 """
 
 
 def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
-    """Analyze job description using OpenAI GPT-4o"""
+    """Analyze job description using OpenAI GPT-5.1"""
     if not openai_client:
         return {
             "success": False,
@@ -547,7 +599,7 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
 
 
 def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> Dict[str, Any]:
-    """Score profile fit using OpenAI"""
+    """Score profile fit using OpenAI GPT-5.1"""
     if not openai_client:
         return {
             "success": False,
@@ -636,7 +688,7 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
 
 
 def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict]) -> Dict[str, Any]:
-    """Recommend which nodes to include using OpenAI"""
+    """Recommend which nodes to include using OpenAI GPT-5.1"""
     print(f"🤖 [OpenAI-Recommend] Starting with {len(profile_nodes)} nodes")
 
     if not openai_client:
@@ -653,7 +705,7 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
             profile_nodes=json.dumps(profile_nodes, indent=2)
         )
         prompt_length = len(prompt_content)
-        print(f"📤 [OpenAI-Recommend] Sending request to GPT-4o...")
+        print(f"📤 [OpenAI-Recommend] Sending request to GPT-5.1...")
         print(f"📏 [OpenAI-Recommend] Prompt length: {prompt_length} characters ({prompt_length/1000:.1f}K)")
 
         import time
@@ -718,6 +770,7 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=8192,
+            system="You are an expert CV tailoring specialist. You must respond with ONLY valid JSON, no additional text or explanation before or after the JSON.",
             messages=[
                 {"role": "user", "content": prompt_content}
             ],
@@ -740,18 +793,31 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
         if not text:
             raise ValueError("Claude returned empty text response")
 
-        if text.startswith('```'):
-            # Remove markdown code blocks
-            lines = text.split('\n')
-            # Remove first line (```json or ```) and last line (```)
-            if len(lines) > 2:
-                text = '\n'.join(lines[1:-1])
-            else:
-                # If only 2 lines, there's no content - something is wrong
-                raise ValueError(f"Invalid markdown format: only {len(lines)} lines")
-            print(f"📝 [Claude-Recommend] After removing markdown: {len(text)} chars")
+        # Try to extract JSON from the response
+        json_text = text
 
-        result = json.loads(text)
+        # Remove markdown code blocks if present
+        if text.startswith('```'):
+            lines = text.split('\n')
+            if len(lines) > 2:
+                json_text = '\n'.join(lines[1:-1])
+            else:
+                raise ValueError(f"Invalid markdown format: only {len(lines)} lines")
+            print(f"📝 [Claude-Recommend] After removing markdown: {len(json_text)} chars")
+
+        # If text doesn't start with '{', try to find the JSON object
+        if not json_text.lstrip().startswith('{'):
+            print(f"⚠️ [Claude-Recommend] Response doesn't start with JSON, attempting to extract...")
+            # Look for the first '{' and last '}'
+            start_idx = json_text.find('{')
+            end_idx = json_text.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_text = json_text[start_idx:end_idx+1]
+                print(f"📝 [Claude-Recommend] Extracted JSON portion: {len(json_text)} chars")
+            else:
+                raise ValueError("Could not find JSON object in response")
+
+        result = json.loads(json_text)
         print(f"✅ [Claude-Recommend] Success! Parsed {len(result.get('selected_nodes', []))} node recommendations")
         return {
             "success": True,

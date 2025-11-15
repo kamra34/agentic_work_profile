@@ -2045,6 +2045,7 @@ async def list_job_applications(
     """
     List all job applications for the current user.
     Can filter by status and priority.
+    Includes job_analysis from related TailoredCV.
     """
     query = db.query(JobApplication).filter(JobApplication.user_id == current_user.id)
 
@@ -2054,7 +2055,17 @@ async def list_job_applications(
         query = query.filter(JobApplication.priority == priority)
 
     applications = query.order_by(JobApplication.created_at.desc()).all()
-    return applications
+
+    # Enrich with job_analysis from related TailoredCV
+    result = []
+    for app in applications:
+        app_dict = {
+            **{c.name: getattr(app, c.name) for c in app.__table__.columns},
+            'job_analysis': app.tailored_cv.job_analysis if app.tailored_cv else None
+        }
+        result.append(app_dict)
+
+    return result
 
 
 @app.get("/api/applications/{application_id}", response_model=JobApplicationResponse)
@@ -2272,10 +2283,13 @@ async def preview_tailored_cv_pdf(
             customizations=customizations
         )
 
-        # Create filename with job title and company name
-        job_title = tailored_cv.job_title.replace(" ", "_") if tailored_cv.job_title else "CV"
-        company_name = tailored_cv.company_name.replace(" ", "_") if tailored_cv.company_name else "Preview"
-        filename = f"CV_Preview_{job_title}_{company_name}.pdf"
+        # Create filename with job title and company name - sanitize Unicode characters
+        safe_job_title = tailored_cv.job_title.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if tailored_cv.job_title else "CV"
+        safe_company = tailored_cv.company_name.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if tailored_cv.company_name else "Preview"
+        # Remove all non-ASCII characters except alphanumeric and common separators
+        safe_job_title = ''.join(c for c in safe_job_title if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
+        safe_company = ''.join(c for c in safe_company if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
+        filename = f"CV_Preview_{safe_job_title}_{safe_company}.pdf"
 
         # Return PDF as downloadable file
         return StreamingResponse(

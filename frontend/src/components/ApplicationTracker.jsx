@@ -41,6 +41,7 @@ function ApplicationTracker() {
   const [stats, setStats] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [dateRange, setDateRange] = useState({ start: null, end: null });
+  const [aiAnalysisModal, setAIAnalysisModal] = useState(null); // {app, provider: 'openai'|'claude'}
 
   useEffect(() => {
     fetchApplications();
@@ -639,6 +640,7 @@ function ApplicationTracker() {
               onDownloadPDF={downloadPDF}
               onDeleteApp={deleteApplication}
               getAverageScore={getAverageScore}
+              onShowAIAnalysis={setAIAnalysisModal}
             />
           )}
 
@@ -659,6 +661,15 @@ function ApplicationTracker() {
           onUpdateStatus={updateApplicationStatus}
           onDeleteApp={deleteApplication}
           onRefresh={fetchApplications}
+        />
+      )}
+
+      {/* AI Analysis Modal */}
+      {aiAnalysisModal && (
+        <AIAnalysisModal
+          app={aiAnalysisModal.app}
+          provider={aiAnalysisModal.provider}
+          onClose={() => setAIAnalysisModal(null)}
         />
       )}
     </div>
@@ -1000,7 +1011,7 @@ function KanbanCard({ app, onSelect, onUpdateStatus, onDeleteApp, getAverageScor
 }
 
 // Table View Component
-function TableView({ applications, onSelectApp, onDownloadPDF, onDeleteApp, getAverageScore }) {
+function TableView({ applications, onSelectApp, onDownloadPDF, onDeleteApp, getAverageScore, onShowAIAnalysis }) {
   const formatLabels = {
     professional: 'Professional',
     modern: 'Modern',
@@ -1020,6 +1031,7 @@ function TableView({ applications, onSelectApp, onDownloadPDF, onDeleteApp, getA
             <th>Status</th>
             <th>Fit Score</th>
             <th>ATS Score</th>
+            <th>AI Analysis</th>
             <th>Date</th>
             <th>Actions</th>
           </tr>
@@ -1079,6 +1091,41 @@ function TableView({ applications, onSelectApp, onDownloadPDF, onDeleteApp, getA
                     </div>
                     <span className="score-value-modern">{atsScore}%</span>
                   </div>
+                </td>
+                <td>
+                  {/* AI Analysis Icons - only show for non-preparing stages */}
+                  {app.status !== 'preparing' && (app.initial_fit_scores || app.final_fit_scores) ? (
+                    <div className="ai-analysis-icons">
+                      {/* Check if GPT-5.1 analysis exists in either initial or final scores */}
+                      {((app.initial_fit_scores?.openai) || (app.final_fit_scores?.openai)) && (
+                        <button
+                          className="btn-ai-analysis"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onShowAIAnalysis({ app, provider: 'openai' });
+                          }}
+                          title="View GPT-5.1 Analysis"
+                        >
+                          🟢
+                        </button>
+                      )}
+                      {/* Check if Claude analysis exists in either initial or final scores */}
+                      {((app.initial_fit_scores?.claude) || (app.final_fit_scores?.claude)) && (
+                        <button
+                          className="btn-ai-analysis"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onShowAIAnalysis({ app, provider: 'claude' });
+                          }}
+                          title="View Claude Analysis"
+                        >
+                          🔵
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="no-analysis">—</span>
+                  )}
                 </td>
                 <td>
                   {app.application_date
@@ -1242,6 +1289,7 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
   const [newStatus, setNewStatus] = useState(app.status);
   const [statusNotes, setStatusNotes] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [expandedAnalysis, setExpandedAnalysis] = useState(null); // 'openai', 'claude', or null
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -1401,7 +1449,7 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
             )}
           </div>
 
-          {/* AI Scores */}
+          {/* AI Scores with Expandable Analysis */}
           <div className="detail-section-modern">
             <h3>🎯 AI Analysis Scores</h3>
             <div className="scores-grid-modern">
@@ -1410,7 +1458,7 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                 <div className="score-card-detail-body">
                   <div className="score-comparison-modern">
                     <div className="score-item-modern">
-                      <span>🟢 OpenAI:</span>
+                      <span>🟢 GPT-5.1:</span>
                       <strong>{fitScoreOpenAI}%</strong>
                     </div>
                     <div className="score-item-modern">
@@ -1426,7 +1474,7 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                 <div className="score-card-detail-body">
                   <div className="score-comparison-modern">
                     <div className="score-item-modern">
-                      <span>🟢 OpenAI:</span>
+                      <span>🟢 GPT-5.1:</span>
                       <strong>{atsScoreOpenAI}%</strong>
                     </div>
                     <div className="score-item-modern">
@@ -1438,6 +1486,36 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                 </div>
               </div>
             </div>
+
+            {/* Detailed AI Analysis - Expandable */}
+            {app.status !== 'preparing' && (app.initial_fit_scores || app.final_fit_scores) && (
+              <div className="ai-analysis-expandable">
+                <h4 style={{ marginTop: '1.5rem', marginBottom: '1rem', fontSize: '1rem', fontWeight: 600 }}>
+                  📊 Detailed Analysis
+                </h4>
+                <div className="ai-analysis-providers">
+                  {/* GPT-5.1 Analysis */}
+                  {((app.initial_fit_scores?.openai) || (app.final_fit_scores?.openai)) && (
+                    <AIAnalysisExpandable
+                      app={app}
+                      provider="openai"
+                      isExpanded={expandedAnalysis === 'openai'}
+                      onToggle={() => setExpandedAnalysis(expandedAnalysis === 'openai' ? null : 'openai')}
+                    />
+                  )}
+
+                  {/* Claude Analysis */}
+                  {((app.initial_fit_scores?.claude) || (app.final_fit_scores?.claude)) && (
+                    <AIAnalysisExpandable
+                      app={app}
+                      provider="claude"
+                      isExpanded={expandedAnalysis === 'claude'}
+                      onToggle={() => setExpandedAnalysis(expandedAnalysis === 'claude' ? null : 'claude')}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Important Dates */}
@@ -1579,6 +1657,294 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// AI Analysis Modal Component
+function AIAnalysisModal({ app, provider, onClose }) {
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  // Get analysis data from initial_fit_scores and initial_ats_scores
+  // Structure: {openai: {scores: {fit_score, ats_score, verdict, ...}}, claude: {...}}
+  const fitScoreData = app.initial_fit_scores?.[provider] || app.final_fit_scores?.[provider] || {};
+  const atsScoreData = app.initial_ats_scores?.[provider] || app.final_ats_scores?.[provider] || {};
+
+  // The analysis is inside the 'scores' object
+  const analysis = fitScoreData.scores || atsScoreData.scores || {};
+
+  const modelName = provider === 'openai' ? 'OpenAI (GPT-5.1)' : 'Claude (Sonnet)';
+  const modelIcon = provider === 'openai' ? '🟢' : '🔵';
+
+  // Extract analysis fields
+  const fitScore = analysis.fit_score || 0;
+  const atsScore = analysis.ats_score || 0;
+  const verdict = analysis.verdict || 'N/A';
+  const verdictReasoning = analysis.verdict_reasoning || 'No reasoning provided';
+  const strengths = analysis.strengths || [];
+  const missingSkills = analysis.missing_skills || [];
+  const criticalGaps = analysis.critical_gaps || [];
+  const matchingSkills = analysis.matching_skills || [];
+  const recommendations = analysis.recommendations || [];
+  const fitReasoning = analysis.fit_reasoning || 'No details provided';
+  const atsReasoning = analysis.ats_reasoning || 'No details provided';
+
+  // Get verdict color
+  const getVerdictColor = () => {
+    if (verdict.includes('SHOULD_APPLY')) return '#10b981'; // green
+    if (verdict.includes('CONSIDER')) return '#f59e0b'; // orange
+    if (verdict.includes('NOT')) return '#ef4444'; // red
+    return '#6b7280'; // gray
+  };
+
+  return (
+    <div className="modal-overlay-modern" onClick={onClose}>
+      <div className="modal-content-modern ai-analysis-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header-modern">
+          <div>
+            <h2 className="modal-title">{modelIcon} {modelName} Analysis</h2>
+            <p className="modal-company">{app.job_title} at {app.company_name}</p>
+          </div>
+          <button className="btn-close-modern" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="modal-body-modern ai-analysis-body">
+          {/* Verdict Section */}
+          <div className="detail-section-modern">
+            <h3>🎯 Recommendation</h3>
+            <div className="verdict-card" style={{ borderLeft: `4px solid ${getVerdictColor()}` }}>
+              <div className="verdict-badge" style={{ backgroundColor: getVerdictColor() }}>
+                {verdict}
+              </div>
+              <p className="verdict-reasoning">{verdictReasoning}</p>
+            </div>
+          </div>
+
+          {/* Scores Section */}
+          <div className="detail-section-modern">
+            <h3>📊 Scores</h3>
+            <div className="scores-grid-analysis">
+              <div className="score-card-analysis">
+                <div className="score-header">
+                  <span className="score-label">Profile Fit Score</span>
+                  <span className="score-value-large" style={{
+                    color: fitScore >= 75 ? '#10b981' : fitScore >= 50 ? '#f59e0b' : '#ef4444'
+                  }}>
+                    {fitScore}%
+                  </span>
+                </div>
+                <p className="score-reasoning">{fitReasoning}</p>
+              </div>
+              <div className="score-card-analysis">
+                <div className="score-header">
+                  <span className="score-label">ATS Compatibility Score</span>
+                  <span className="score-value-large" style={{
+                    color: atsScore >= 75 ? '#10b981' : atsScore >= 50 ? '#f59e0b' : '#ef4444'
+                  }}>
+                    {atsScore}%
+                  </span>
+                </div>
+                <p className="score-reasoning">{atsReasoning}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Strengths */}
+          {strengths.length > 0 && (
+            <div className="detail-section-modern">
+              <h3>💪 Key Strengths</h3>
+              <ul className="analysis-list strengths-list">
+                {strengths.map((strength, idx) => (
+                  <li key={idx}>{strength}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Matching Skills */}
+          {matchingSkills.length > 0 && (
+            <div className="detail-section-modern">
+              <h3>✅ Matching Skills</h3>
+              <ul className="analysis-list matching-skills-list">
+                {matchingSkills.map((skill, idx) => (
+                  <li key={idx}>{skill}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Missing Skills */}
+          {missingSkills.length > 0 && (
+            <div className="detail-section-modern">
+              <h3>⚠️ Missing Skills</h3>
+              <ul className="analysis-list missing-skills-list">
+                {missingSkills.map((skill, idx) => (
+                  <li key={idx}>{skill}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Critical Gaps */}
+          {criticalGaps.length > 0 && (
+            <div className="detail-section-modern">
+              <h3>🚨 Critical Gaps</h3>
+              <ul className="analysis-list critical-gaps-list">
+                {criticalGaps.map((gap, idx) => (
+                  <li key={idx}>{gap}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Recommendations */}
+          {recommendations.length > 0 && (
+            <div className="detail-section-modern">
+              <h3>💡 Recommendations</h3>
+              <ul className="analysis-list recommendations-list">
+                {recommendations.map((rec, idx) => (
+                  <li key={idx}>{rec}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer-modern">
+          <button className="btn-secondary-modern" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// AIAnalysisExpandable Component - Embedded expandable analysis for ApplicationDetailModal
+function AIAnalysisExpandable({ app, provider, isExpanded, onToggle }) {
+  // Extract analysis data from the correct path
+  const fitScoreData = app.initial_fit_scores?.[provider] || app.final_fit_scores?.[provider] || {};
+  const atsScoreData = app.initial_ats_scores?.[provider] || app.final_ats_scores?.[provider] || {};
+  const analysis = fitScoreData.scores || atsScoreData.scores || {};
+
+  // Extract all analysis fields
+  const fitScore = analysis.fit_score || 0;
+  const atsScore = analysis.ats_score || 0;
+  const verdict = analysis.verdict || 'N/A';
+  const verdictReasoning = analysis.verdict_reasoning || 'No reasoning provided.';
+  const strengths = analysis.strengths || [];
+  const missingSkills = analysis.missing_skills || [];
+  const criticalGaps = analysis.critical_gaps || [];
+  const matchingSkills = analysis.matching_skills || [];
+  const recommendations = analysis.recommendations || [];
+
+  const providerIcon = provider === 'openai' ? '🟢' : '🔵';
+  const providerName = provider === 'openai' ? 'GPT-5.1' : 'Claude';
+
+  return (
+    <div className="ai-analysis-expandable-item">
+      <button
+        className="ai-analysis-expandable-header"
+        onClick={onToggle}
+      >
+        <div className="expandable-header-left">
+          <span className="provider-icon">{providerIcon}</span>
+          <span className="provider-name">{providerName} Analysis</span>
+        </div>
+        <span className="expand-icon">{isExpanded ? '▼' : '▶'}</span>
+      </button>
+
+      {isExpanded && (
+        <div className="ai-analysis-expandable-content">
+          {/* Verdict Section */}
+          <div className="expandable-section">
+            <div className={`verdict-badge verdict-${verdict.toLowerCase()}`}>
+              {verdict.replace(/_/g, ' ')}
+            </div>
+            <p className="verdict-reasoning-text">{verdictReasoning}</p>
+          </div>
+
+          {/* Scores */}
+          <div className="expandable-section">
+            <div className="scores-grid-compact">
+              <div className="score-item-compact">
+                <span className="score-label-compact">Fit Score:</span>
+                <span className="score-value-compact">{fitScore}%</span>
+              </div>
+              <div className="score-item-compact">
+                <span className="score-label-compact">ATS Score:</span>
+                <span className="score-value-compact">{atsScore}%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Strengths */}
+          {strengths.length > 0 && (
+            <div className="expandable-section">
+              <h5>💪 Key Strengths</h5>
+              <ul className="analysis-list strengths-list">
+                {strengths.map((strength, idx) => (
+                  <li key={idx}>{strength}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Matching Skills */}
+          {matchingSkills.length > 0 && (
+            <div className="expandable-section">
+              <h5>✅ Matching Skills</h5>
+              <ul className="analysis-list matching-skills-list">
+                {matchingSkills.map((skill, idx) => (
+                  <li key={idx}>{skill}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Missing Skills */}
+          {missingSkills.length > 0 && (
+            <div className="expandable-section">
+              <h5>⚠️ Missing Skills</h5>
+              <ul className="analysis-list missing-skills-list">
+                {missingSkills.map((skill, idx) => (
+                  <li key={idx}>{skill}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Critical Gaps */}
+          {criticalGaps.length > 0 && (
+            <div className="expandable-section">
+              <h5>🚨 Critical Gaps</h5>
+              <ul className="analysis-list critical-gaps-list">
+                {criticalGaps.map((gap, idx) => (
+                  <li key={idx}>{gap}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Recommendations */}
+          {recommendations.length > 0 && (
+            <div className="expandable-section">
+              <h5>💡 Recommendations</h5>
+              <ul className="analysis-list recommendations-list">
+                {recommendations.map((rec, idx) => (
+                  <li key={idx}>{rec}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
