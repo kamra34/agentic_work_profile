@@ -769,8 +769,8 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
 
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=8192,
-            system="You are an expert CV tailoring specialist. You must respond with ONLY valid JSON, no additional text or explanation before or after the JSON.",
+            max_tokens=16384,  # Increased from 8192 to handle larger responses with many nodes
+            system="You are an expert CV tailoring specialist. You must respond with ONLY valid JSON, no additional text or explanation before or after the JSON. Ensure your JSON is properly formatted with no trailing commas, all strings properly quoted, and all braces/brackets balanced.",
             messages=[
                 {"role": "user", "content": prompt_content}
             ],
@@ -781,6 +781,16 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
         request_duration = time.time() - request_start
         print(f"📥 [Claude-Recommend] Response received in {request_duration:.2f}s, parsing...")
         print(f"📊 [Claude-Recommend] Response type: {type(response)}, has content: {hasattr(response, 'content')}")
+
+        # Check if response was cut off due to token limit
+        if hasattr(response, 'stop_reason'):
+            print(f"⚠️ [Claude-Recommend] Stop reason: {response.stop_reason}")
+            if response.stop_reason == "max_tokens":
+                print(f"⚠️ [Claude-Recommend] WARNING: Response hit max_tokens limit and may be incomplete!")
+
+        # Check token usage if available
+        if hasattr(response, 'usage'):
+            print(f"📊 [Claude-Recommend] Token usage: {response.usage}")
 
         # Extract text and remove markdown code blocks if present
         if not response.content or len(response.content) == 0:
@@ -817,7 +827,74 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
             else:
                 raise ValueError("Could not find JSON object in response")
 
-        result = json.loads(json_text)
+        # Try to parse JSON
+        try:
+            result = json.loads(json_text)
+        except json.JSONDecodeError as json_error:
+            # JSON is malformed - try to fix common issues
+            print(f"⚠️ [Claude-Recommend] JSONDecodeError: {str(json_error)}")
+            print(f"📝 [Claude-Recommend] Attempting to repair JSON...")
+
+            # Save the malformed JSON for debugging
+            import os
+            debug_dir = os.path.join(os.path.dirname(__file__), "debug_logs")
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_file = os.path.join(debug_dir, f"claude_malformed_{int(time.time())}.json")
+            with open(debug_file, "w", encoding="utf-8") as f:
+                f.write(json_text)
+            print(f"💾 [Claude-Recommend] Saved malformed JSON to {debug_file}")
+
+            # Try to fix common JSON errors
+            import re
+            fixed_text = json_text
+
+            # Step 1: Remove trailing commas before } or ]
+            fixed_text = re.sub(r',(\s*[}\]])', r'\1', fixed_text)
+
+            # Step 2: Fix single quotes around property names (but not inside string values)
+            # This regex finds patterns like 'property': and replaces with "property":
+            fixed_text = re.sub(r"'([^'\"]+)'(\s*:)", r'"\1"\2', fixed_text)
+
+            # Step 3: Fix missing quotes around property names
+            # Pattern: word followed by colon (not already quoted)
+            fixed_text = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)', r'\1"\2"\3', fixed_text)
+
+            # Step 4: Remove control characters that might break JSON
+            fixed_text = re.sub(r'[\x00-\x1f\x7f]', '', fixed_text)
+
+            # Step 5: Fix incomplete JSON (missing closing braces)
+            # Count opening and closing braces
+            open_braces = fixed_text.count('{')
+            close_braces = fixed_text.count('}')
+            if open_braces > close_braces:
+                print(f"⚠️ [Claude-Recommend] Incomplete JSON detected: {open_braces} {{ but only {close_braces} }}")
+                fixed_text += '}' * (open_braces - close_braces)
+                print(f"📝 [Claude-Recommend] Added {open_braces - close_braces} closing braces")
+
+            # Try parsing the repaired JSON
+            try:
+                result = json.loads(fixed_text)
+                print(f"✅ [Claude-Recommend] Successfully repaired JSON!")
+
+                # Save the repaired version for comparison
+                repair_file = os.path.join(debug_dir, f"claude_repaired_{int(time.time())}.json")
+                with open(repair_file, "w", encoding="utf-8") as f:
+                    f.write(fixed_text)
+                print(f"💾 [Claude-Recommend] Saved repaired JSON to {repair_file}")
+
+            except json.JSONDecodeError as second_error:
+                # Still can't parse - give up and return error
+                print(f"❌ [Claude-Recommend] JSON repair failed: {str(second_error)}")
+                print(f"📝 [Claude-Recommend] Error location: line {second_error.lineno}, col {second_error.colno}")
+
+                # Try to show the problematic section
+                lines = fixed_text.split('\n')
+                if second_error.lineno <= len(lines):
+                    error_line = lines[second_error.lineno - 1]
+                    print(f"❌ [Claude-Recommend] Problematic line: {error_line[:200]}")
+
+                raise ValueError(f"Claude returned invalid JSON that couldn't be repaired. Error: {str(json_error)}. Debug file: {debug_file}")
+
         print(f"✅ [Claude-Recommend] Success! Parsed {len(result.get('selected_nodes', []))} node recommendations")
         return {
             "success": True,

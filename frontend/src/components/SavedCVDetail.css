@@ -1288,6 +1288,34 @@
   text-decoration: line-through;
 }
 
+/* Drag and drop styles */
+.node-item.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+  background: #e0e7ff;
+  border-color: #818cf8;
+}
+
+.node-item.drag-before {
+  border-top: 3px solid #3b82f6;
+  margin-top: -2px;
+  box-shadow: 0 -4px 8px rgba(59, 130, 246, 0.2);
+}
+
+.node-item.drag-after {
+  border-bottom: 3px solid #3b82f6;
+  margin-bottom: -2px;
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.2);
+}
+
+.node-item[draggable="true"] {
+  cursor: grab;
+}
+
+.node-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .expand-btn {
   background: none;
   border: none;

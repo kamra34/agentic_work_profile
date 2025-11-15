@@ -19,6 +19,10 @@ function SavedCVDetail({ cvId, onBack }) {
   const [recalculating, setRecalculating] = useState(false);
   const [showPromptSection, setShowPromptSection] = useState(false);
 
+  // Drag and drop state
+  const [draggedNode, setDraggedNode] = useState(null);
+  const [dragOver, setDragOver] = useState(null); // Track which node is being hovered over
+
   // Application Tracker Modal State
   const [showTrackerModal, setShowTrackerModal] = useState(false);
   const [savingToTracker, setSavingToTracker] = useState(false);
@@ -393,6 +397,98 @@ function SavedCVDetail({ cvId, onBack }) {
     }
 
     return response.json();
+  };
+
+  // Handle node reordering via drag and drop
+  const handleReorderNode = async (draggedNodeId, targetNodeId, position) => {
+    try {
+      setAutoSaveStatus('saving');
+
+      // Find the dragged and target nodes in the tree
+      const findNodeById = (nodes, id) => {
+        for (const node of nodes) {
+          if (node.id === id) return node;
+          if (node.children) {
+            const found = findNodeById(node.children, id);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const draggedNodeObj = findNodeById(cvData.content_snapshot.nodes, draggedNodeId);
+      const targetNodeObj = findNodeById(cvData.content_snapshot.nodes, targetNodeId);
+
+      if (!draggedNodeObj || !targetNodeObj) {
+        console.error('Could not find nodes for reordering');
+        return;
+      }
+
+      // Reorder nodes in local state
+      const reorderNodes = (nodes, parentId = null) => {
+        const siblings = nodes.filter(n => (n.parent_id || null) === parentId);
+        const nonSiblings = nodes.filter(n => (n.parent_id || null) !== parentId);
+
+        // Find dragged and target in siblings
+        const draggedIndex = siblings.findIndex(n => n.id === draggedNodeId);
+        const targetIndex = siblings.findIndex(n => n.id === targetNodeId);
+
+        if (draggedIndex === -1 || targetIndex === -1) {
+          // Recursively process children
+          return nodes.map(node => ({
+            ...node,
+            children: node.children ? reorderNodes(node.children, node.id) : []
+          }));
+        }
+
+        // Remove dragged node
+        const [draggedNode] = siblings.splice(draggedIndex, 1);
+
+        // Calculate new position
+        let newTargetIndex = siblings.findIndex(n => n.id === targetNodeId);
+        if (position === 'after') {
+          newTargetIndex += 1;
+        }
+
+        // Insert at new position
+        siblings.splice(newTargetIndex, 0, draggedNode);
+
+        // Combine back and recursively process children
+        const reordered = [...siblings, ...nonSiblings].map(node => ({
+          ...node,
+          children: node.children ? reorderNodes(node.children, node.id) : []
+        }));
+
+        return reordered;
+      };
+
+      const reorderedNodes = reorderNodes(cvData.content_snapshot.nodes);
+
+      // Update local state
+      const updatedSnapshot = {
+        ...cvData.content_snapshot,
+        nodes: reorderedNodes
+      };
+
+      setCvData(prev => ({
+        ...prev,
+        content_snapshot: updatedSnapshot
+      }));
+
+      // Save to backend
+      const selections = nodeSelections;
+      const snapshotForSave = {
+        ...updatedSnapshot,
+        nodes: updateNodesWithSelectionsRecursive(updatedSnapshot.nodes, selections)
+      };
+
+      await saveSnapshotToBackend(snapshotForSave);
+      setAutoSaveStatus('saved');
+
+    } catch (error) {
+      console.error('Error reordering nodes:', error);
+      setAutoSaveStatus('error');
+    }
   };
 
   // Navigate to a node in the left panel from preview click
@@ -997,13 +1093,87 @@ function SavedCVDetail({ cvId, onBack }) {
     const isIncluded = nodeSelections[node.global_id];
     const hasChildren = node.children && node.children.length > 0;
     const aiRecs = getAIRecommendations(node.id);
+    const isDragging = draggedNode?.id === node.id;
+    const isDragOver = dragOver?.nodeId === node.id;
+
+    // Drag handlers
+    const handleDragStart = (e) => {
+      e.stopPropagation();
+      setDraggedNode(node);
+      e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!draggedNode || draggedNode.id === node.id) return;
+
+      // RULE 1: Only allow dragging nodes of the same type
+      if (draggedNode.node_type !== node.node_type) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+
+      // RULE 2: Only allow dragging within the same parent context
+      if (draggedNode.parent_id !== node.parent_id) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+
+      // Valid drop target
+      e.dataTransfer.dropEffect = 'move';
+
+      // Determine if we're hovering over top or bottom half
+      const rect = e.currentTarget.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      const position = e.clientY < midpoint ? 'before' : 'after';
+
+      setDragOver({ nodeId: node.id, position });
+    };
+
+    const handleDragLeave = (e) => {
+      e.stopPropagation();
+      setDragOver(null);
+    };
+
+    const handleDrop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!draggedNode || draggedNode.id === node.id) {
+        setDragOver(null);
+        return;
+      }
+
+      // Apply same validation rules
+      if (draggedNode.node_type !== node.node_type || draggedNode.parent_id !== node.parent_id) {
+        setDragOver(null);
+        return;
+      }
+
+      handleReorderNode(draggedNode.id, node.id, dragOver.position);
+      setDragOver(null);
+      setDraggedNode(null);
+    };
+
+    const handleDragEnd = () => {
+      setDraggedNode(null);
+      setDragOver(null);
+    };
 
     return (
       <div key={node.id} className="tree-node" style={{ marginLeft: `${level * 20}px` }}>
         <div
-          className={`node-item ${isSelected ? 'selected' : ''} ${!isIncluded ? 'node-excluded' : ''}`}
+          className={`node-item ${isSelected ? 'selected' : ''} ${!isIncluded ? 'node-excluded' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? `drag-${dragOver.position}` : ''}`}
           data-node-id={node.id}
           onClick={() => setSelectedNode(node)}
+          draggable="true"
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onDragEnd={handleDragEnd}
         >
           {/* Expand/Collapse Button */}
           {hasChildren && (

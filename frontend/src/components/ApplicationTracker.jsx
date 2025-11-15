@@ -681,6 +681,13 @@ function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onRefres
   const [draggedApp, setDraggedApp] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
 
+  // New state for smart kanban features
+  const [viewDensity, setViewDensity] = useState('compact'); // 'compact', 'comfortable', 'expanded'
+  const [collapsedColumns, setCollapsedColumns] = useState(new Set());
+  const [cardsPerColumn, setCardsPerColumn] = useState({});
+  const [columnSearches, setColumnSearches] = useState({});
+  const INITIAL_CARDS_LIMIT = 5;
+
   // Include rejected in the kanban board, but exclude withdrawn
   const activeStatuses = Object.keys(STATUS_CONFIG).filter(
     status => status !== 'withdrawn'
@@ -841,49 +848,282 @@ function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onRefres
     setDragOverColumn(null);
   };
 
+  // Helper functions for smart kanban features
+  const toggleColumnCollapse = (status) => {
+    const newCollapsed = new Set(collapsedColumns);
+    if (newCollapsed.has(status)) {
+      newCollapsed.delete(status);
+    } else {
+      newCollapsed.add(status);
+    }
+    setCollapsedColumns(newCollapsed);
+  };
+
+  const loadMoreCards = (status) => {
+    setCardsPerColumn(prev => ({
+      ...prev,
+      [status]: (prev[status] || INITIAL_CARDS_LIMIT) + 10
+    }));
+  };
+
+  const showAllCards = (status) => {
+    setCardsPerColumn(prev => ({
+      ...prev,
+      [status]: Infinity
+    }));
+  };
+
+  const resetCardLimit = (status) => {
+    setCardsPerColumn(prev => ({
+      ...prev,
+      [status]: INITIAL_CARDS_LIMIT
+    }));
+  };
+
+  const updateColumnSearch = (status, searchText) => {
+    setColumnSearches(prev => ({
+      ...prev,
+      [status]: searchText
+    }));
+  };
+
+  const getFilteredAndLimitedCards = (status) => {
+    const cards = groups[status] || [];
+    const searchText = columnSearches[status] || '';
+
+    // Filter by search text
+    let filtered = cards;
+    if (searchText) {
+      const query = searchText.toLowerCase();
+      filtered = cards.filter(app =>
+        app.job_title?.toLowerCase().includes(query) ||
+        app.company_name?.toLowerCase().includes(query) ||
+        app.notes?.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply limit
+    const limit = cardsPerColumn[status] || INITIAL_CARDS_LIMIT;
+    const limited = limit === Infinity ? filtered : filtered.slice(0, limit);
+
+    return {
+      cards: limited,
+      total: cards.length,
+      filtered: filtered.length,
+      hasMore: limited.length < filtered.length,
+      isFiltered: searchText.length > 0
+    };
+  };
+
+  const getColumnStats = (status) => {
+    const cards = groups[status] || [];
+    if (cards.length === 0) return null;
+
+    const avgFit = cards.reduce((sum, app) => sum + (getAverageScore(app, 'fit') || 0), 0) / cards.length;
+    const avgATS = cards.reduce((sum, app) => sum + (getAverageScore(app, 'ats') || 0), 0) / cards.length;
+    const highPriority = cards.filter(app => app.priority === 'high' || app.priority === 'urgent').length;
+
+    return { avgFit, avgATS, highPriority };
+  };
+
   return (
-    <div className="kanban-board">
-      {activeStatuses.map(status => (
-        <div
-          key={status}
-          className={`kanban-column ${dragOverColumn === status ? 'drag-over' : ''}`}
-          onDragOver={(e) => handleDragOver(e, status)}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => handleDrop(e, status)}
-        >
-          <div className="kanban-column-header" style={{ borderTopColor: STATUS_CONFIG[status].color }}>
-            <div className="column-title">
-              <span className="column-icon">{STATUS_CONFIG[status].icon}</span>
-              <span className="column-label">{STATUS_CONFIG[status].label}</span>
-            </div>
-            <span className="column-count">{groups[status]?.length || 0}</span>
-          </div>
-          <div className="kanban-column-content">
-            {groups[status]?.map(app => (
-              <KanbanCard
-                key={app.id}
-                app={app}
-                onSelect={onSelectApp}
-                onUpdateStatus={onUpdateStatus}
-                onDeleteApp={onDeleteApp}
-                getAverageScore={getAverageScore}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                isDragging={draggedApp?.id === app.id}
-              />
-            ))}
-            {(!groups[status] || groups[status].length === 0) && (
-              <div className="kanban-empty">No applications</div>
-            )}
+    <div className="kanban-wrapper">
+      {/* View Controls */}
+      <div className="kanban-controls">
+        <div className="density-controls">
+          <span className="control-label">View Density:</span>
+          <div className="btn-group">
+            <button
+              className={`btn-density ${viewDensity === 'compact' ? 'active' : ''}`}
+              onClick={() => setViewDensity('compact')}
+              title="Compact view - See more cards"
+            >
+              ▦
+            </button>
+            <button
+              className={`btn-density ${viewDensity === 'comfortable' ? 'active' : ''}`}
+              onClick={() => setViewDensity('comfortable')}
+              title="Comfortable view - Balanced"
+            >
+              ▢
+            </button>
+            <button
+              className={`btn-density ${viewDensity === 'expanded' ? 'active' : ''}`}
+              onClick={() => setViewDensity('expanded')}
+              title="Expanded view - Full details"
+            >
+              ▭
+            </button>
           </div>
         </div>
-      ))}
+        <div className="column-controls">
+          <button
+            className="btn-control"
+            onClick={() => setCollapsedColumns(new Set())}
+            title="Expand all columns"
+          >
+            Expand All
+          </button>
+          <button
+            className="btn-control"
+            onClick={() => setCollapsedColumns(new Set(activeStatuses))}
+            title="Collapse all columns"
+          >
+            Collapse All
+          </button>
+        </div>
+      </div>
+
+      {/* Kanban Board */}
+      <div className="kanban-board">
+        {activeStatuses.map(status => {
+          const isCollapsed = collapsedColumns.has(status);
+          const { cards, total, filtered, hasMore, isFiltered } = getFilteredAndLimitedCards(status);
+          const stats = getColumnStats(status);
+
+          return (
+            <div
+              key={status}
+              className={`kanban-column ${dragOverColumn === status ? 'drag-over' : ''} ${isCollapsed ? 'collapsed' : ''} density-${viewDensity}`}
+              onDragOver={(e) => handleDragOver(e, status)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, status)}
+            >
+              {/* Column Header */}
+              <div className="kanban-column-header" style={{ borderTopColor: STATUS_CONFIG[status].color }}>
+                <div className="column-title">
+                  <button
+                    className="btn-collapse"
+                    onClick={() => toggleColumnCollapse(status)}
+                    title={isCollapsed ? 'Expand column' : 'Collapse column'}
+                  >
+                    {isCollapsed ? '▶' : '▼'}
+                  </button>
+                  <span className="column-icon">{STATUS_CONFIG[status].icon}</span>
+                  <span className="column-label">{STATUS_CONFIG[status].label}</span>
+                </div>
+                <span className="column-count">{total}</span>
+              </div>
+
+              {/* Column Stats (when not collapsed) */}
+              {!isCollapsed && stats && (
+                <div className="column-stats">
+                  <div className="stat-item" title="Average Fit Score">
+                    <span className="stat-label">Fit:</span>
+                    <span className={`stat-value ${stats.avgFit >= 75 ? 'good' : stats.avgFit >= 50 ? 'medium' : 'low'}`}>
+                      {stats.avgFit.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="stat-item" title="Average ATS Score">
+                    <span className="stat-label">ATS:</span>
+                    <span className={`stat-value ${stats.avgATS >= 75 ? 'good' : stats.avgATS >= 50 ? 'medium' : 'low'}`}>
+                      {stats.avgATS.toFixed(0)}%
+                    </span>
+                  </div>
+                  {stats.highPriority > 0 && (
+                    <div className="stat-item" title="High Priority Applications">
+                      <span className="stat-label">🔥</span>
+                      <span className="stat-value">{stats.highPriority}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Column Search (when not collapsed and has cards) */}
+              {!isCollapsed && total > 0 && (
+                <div className="column-search">
+                  <input
+                    type="text"
+                    placeholder="Search in column..."
+                    value={columnSearches[status] || ''}
+                    onChange={(e) => updateColumnSearch(status, e.target.value)}
+                    className="search-input-small"
+                  />
+                  {columnSearches[status] && (
+                    <button
+                      className="btn-clear-search"
+                      onClick={() => updateColumnSearch(status, '')}
+                      title="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Column Content */}
+              {!isCollapsed && (
+                <div className="kanban-column-content">
+                  {cards.map(app => (
+                    <KanbanCard
+                      key={app.id}
+                      app={app}
+                      onSelect={onSelectApp}
+                      onDeleteApp={onDeleteApp}
+                      getAverageScore={getAverageScore}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      isDragging={draggedApp?.id === app.id}
+                      viewDensity={viewDensity}
+                    />
+                  ))}
+
+                  {/* Empty State */}
+                  {cards.length === 0 && !isFiltered && (
+                    <div className="kanban-empty">No applications</div>
+                  )}
+
+                  {/* No Search Results */}
+                  {cards.length === 0 && isFiltered && (
+                    <div className="kanban-empty">No matches found</div>
+                  )}
+
+                  {/* Load More / Show All */}
+                  {hasMore && (
+                    <div className="load-more-section">
+                      <div className="load-more-info">
+                        Showing {cards.length} of {isFiltered ? `${filtered} matches` : `${total} cards`}
+                      </div>
+                      <div className="load-more-buttons">
+                        <button
+                          className="btn-load-more"
+                          onClick={() => loadMoreCards(status)}
+                        >
+                          Load 10 More
+                        </button>
+                        <button
+                          className="btn-show-all"
+                          onClick={() => showAllCards(status)}
+                        >
+                          Show All
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Collapse Cards (when showing all) */}
+                  {!hasMore && cards.length > INITIAL_CARDS_LIMIT && (
+                    <div className="load-more-section">
+                      <button
+                        className="btn-collapse-cards"
+                        onClick={() => resetCardLimit(status)}
+                      >
+                        Show Less
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 // Kanban Card Component
-function KanbanCard({ app, onSelect, onUpdateStatus, onDeleteApp, getAverageScore, onDragStart, onDragEnd, isDragging }) {
+function KanbanCard({ app, onSelect, onDeleteApp, getAverageScore, onDragStart, onDragEnd, isDragging, viewDensity = 'comfortable' }) {
   const fitScore = getAverageScore(app, 'fit');
   const atsScore = getAverageScore(app, 'ats');
   const priorityConfig = PRIORITY_CONFIG[app.priority || 'medium'];
@@ -940,6 +1180,113 @@ function KanbanCard({ app, onSelect, onUpdateStatus, onDeleteApp, getAverageScor
     onDragEnd();
   };
 
+  // Compact view: show minimal info
+  if (viewDensity === 'compact') {
+    return (
+      <div
+        className={`kanban-card kanban-card-compact ${isDragging ? 'dragging' : ''}`}
+        onClick={() => onSelect(app)}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="card-header-compact">
+          <div className="card-title-compact">
+            <span className="priority-indicator" style={{ backgroundColor: priorityConfig.color }} title={priorityConfig.label}></span>
+            <h4 className="card-job-title-compact">{app.job_title}</h4>
+          </div>
+          <div className="card-scores-compact">
+            <span className="score-badge-compact" style={{ backgroundColor: fitScore >= 75 ? 'var(--success-color)' : fitScore >= 50 ? 'var(--warning-color)' : 'var(--danger-color)' }}>
+              {fitScore}
+            </span>
+            <span className="score-badge-compact" style={{ backgroundColor: atsScore >= 75 ? 'var(--success-color)' : atsScore >= 50 ? 'var(--warning-color)' : 'var(--danger-color)' }}>
+              {atsScore}
+            </span>
+          </div>
+        </div>
+        <div className="card-company-compact">{app.company_name || 'N/A'}</div>
+      </div>
+    );
+  }
+
+  // Expanded view: show all details
+  if (viewDensity === 'expanded') {
+    return (
+      <div
+        className={`kanban-card kanban-card-expanded ${isDragging ? 'dragging' : ''}`}
+        onClick={() => onSelect(app)}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="card-header">
+          <h4 className="card-job-title">{app.job_title}</h4>
+          <span className="card-company">{app.company_name || 'N/A'}</span>
+        </div>
+
+        <div className="card-scores">
+          <div className="card-score-item">
+            <span className="score-label-small">Fit Score</span>
+            <div className="score-badge score-badge-large" style={{ backgroundColor: fitScore >= 75 ? 'var(--success-color)' : fitScore >= 50 ? 'var(--warning-color)' : 'var(--danger-color)' }}>
+              {fitScore}%
+            </div>
+          </div>
+          <div className="card-score-item">
+            <span className="score-label-small">ATS Score</span>
+            <div className="score-badge score-badge-large" style={{ backgroundColor: atsScore >= 75 ? 'var(--success-color)' : atsScore >= 50 ? 'var(--warning-color)' : 'var(--danger-color)' }}>
+              {atsScore}%
+            </div>
+          </div>
+        </div>
+
+        <div className="card-metadata-expanded">
+          {app.cv_format && (
+            <div className="card-meta-item-expanded">
+              <span className="meta-label">CV Template:</span>
+              <span className="meta-value">📄 {formatLabels[app.cv_format] || app.cv_format}</span>
+            </div>
+          )}
+          <div className="card-meta-item-expanded">
+            <span className="meta-label">Priority:</span>
+            <span className="meta-value" style={{ color: priorityConfig.color }}>
+              {priorityConfig.icon} {priorityConfig.label}
+            </span>
+          </div>
+          <div className="card-meta-item-expanded">
+            <span className="meta-label">Date:</span>
+            <span className="meta-value">
+              {app.isPreparing ? '📝' : '📅'} {new Date(app.application_date || app.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          </div>
+          {app.notes && (
+            <div className="card-notes-preview">
+              <span className="meta-label">Notes:</span>
+              <span className="meta-value">{app.notes.substring(0, 100)}{app.notes.length > 100 ? '...' : ''}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="card-footer-expanded">
+          <button
+            className="btn-download-cv-expanded"
+            onClick={handleDownloadCV}
+            title="Download CV with applied settings"
+          >
+            📥 Download CV
+          </button>
+          <button
+            className="btn-delete-card-expanded"
+            onClick={handleDelete}
+            title="Delete application"
+          >
+            🗑️ Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Comfortable view (default): balanced view
   return (
     <div
       className={`kanban-card ${isDragging ? 'dragging' : ''}`}
