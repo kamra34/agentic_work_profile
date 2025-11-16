@@ -1772,6 +1772,214 @@ Your analysis must include:
     }
 
 
+def extract_section_content_as_markdown(section_node: dict) -> str:
+    """
+    Extract section content from content_snapshot node as markdown.
+    Only includes selected nodes.
+
+    Args:
+        section_node: A section node from content_snapshot with children
+
+    Returns:
+        Markdown formatted string of the section content
+    """
+    lines = []
+
+    # Add section title
+    if section_node.get('title'):
+        lines.append(f"## {section_node['title']}\n")
+
+    def render_node(node, level=0):
+        """Recursively render a node and its children as markdown"""
+        # Skip unselected nodes
+        if node.get('is_selected') is False:
+            return
+
+        node_type = node.get('node_type', '')
+
+        if node_type == 'entry':
+            # Entry header with title, subtitle, dates, location
+            lines.append(f"\n### {node.get('title', 'Untitled')}")
+
+            if node.get('subtitle'):
+                lines.append(f"*{node['subtitle']}*")
+
+            # Metadata line (location | dates)
+            metadata_parts = []
+            if node.get('location'):
+                metadata_parts.append(node['location'])
+            if node.get('start_date'):
+                date_range = f"{node['start_date']}"
+                if node.get('end_date'):
+                    date_range += f" - {node['end_date']}"
+                else:
+                    date_range += " - Present"
+                metadata_parts.append(date_range)
+            if metadata_parts:
+                lines.append(" | ".join(metadata_parts))
+
+            # Entry content (if any)
+            if node.get('content'):
+                lines.append(f"\n{node['content']}")
+
+            lines.append("")  # Blank line after entry
+
+        elif node_type == 'bullet' or node_type == 'item':
+            indent = "  " * level
+            content = node.get('content', node.get('title', ''))
+            lines.append(f"{indent}- {content}")
+
+        elif node_type == 'paragraph':
+            content = node.get('content', '')
+            lines.append(f"\n{content}\n")
+
+        # Recurse through children
+        for child in node.get('children', []):
+            render_node(child, level + 1)
+
+    # Render all children of the section
+    for child in section_node.get('children', []):
+        render_node(child)
+
+    return "\n".join(lines)
+
+
+def extract_full_cv_content_as_markdown(nodes: list) -> str:
+    """
+    Extract all selected content from all sections as markdown.
+    This provides full CV context for AI refinement.
+
+    Args:
+        nodes: List of all nodes from content_snapshot
+
+    Returns:
+        Markdown formatted string of the entire CV content (all selected sections)
+    """
+    full_cv_parts = []
+
+    # Find all section nodes and extract their content
+    def find_sections(node_list):
+        sections = []
+        for node in node_list:
+            if node.get('node_type') == 'section':
+                # Only include if section itself is selected (or is_selected is not explicitly False)
+                if node.get('is_selected') is not False:
+                    sections.append(node)
+            # Also check children for nested sections
+            if node.get('children'):
+                sections.extend(find_sections(node.get('children', [])))
+        return sections
+
+    all_sections = find_sections(nodes)
+
+    # Extract markdown for each section
+    for section in all_sections:
+        section_content = extract_section_content_as_markdown(section)
+        if section_content.strip():  # Only add non-empty sections
+            full_cv_parts.append(section_content)
+
+    return "\n\n---\n\n".join(full_cv_parts)
+
+
+@app.post("/api/tailor/{cv_id}/refine-section")
+async def refine_section(
+    cv_id: int,
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Refine a specific section using AI.
+
+    Request body:
+    {
+        "section_id": int,  # The section node's database ID
+        "user_instructions": str (optional)  # User's custom instructions
+    }
+
+    Returns:
+    {
+        "success": bool,
+        "refined_content": str,  # Markdown content
+        "changes_summary": str,
+        "stats": {...},
+        "prompt_sent": str,
+        "original_content": str
+    }
+    """
+    from ai_tailor_service import refine_section_content_with_openai
+
+    # Get the tailored CV
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    # Validate request
+    section_id = request_data.get('section_id')
+    if section_id is None:
+        raise HTTPException(status_code=400, detail="section_id is required")
+
+    user_instructions = request_data.get('user_instructions', None)
+
+    # Find the section in content_snapshot
+    content_snapshot = tailored_cv.content_snapshot
+    if not content_snapshot or not content_snapshot.get('nodes'):
+        raise HTTPException(status_code=400, detail="No content snapshot found")
+
+    # Find section node by ID
+    section_node = None
+    def find_section_by_id(nodes, target_id):
+        for node in nodes:
+            if node.get('id') == target_id and node.get('node_type') == 'section':
+                return node
+            # Also check children recursively
+            if node.get('children'):
+                found = find_section_by_id(node.get('children', []), target_id)
+                if found:
+                    return found
+        return None
+
+    section_node = find_section_by_id(content_snapshot['nodes'], section_id)
+
+    if not section_node:
+        raise HTTPException(status_code=404, detail=f"Section with ID {section_id} not found")
+
+    # Extract section content as markdown
+    section_content = extract_section_content_as_markdown(section_node)
+
+    if not section_content or section_content.strip() == f"## {section_node.get('title', '')}\n":
+        raise HTTPException(status_code=400, detail="Section has no content to refine")
+
+    # Extract FULL CV content for context (all selected sections)
+    full_cv_content = extract_full_cv_content_as_markdown(content_snapshot['nodes'])
+
+    if not full_cv_content or full_cv_content.strip() == "":
+        raise HTTPException(status_code=400, detail="No CV content found")
+
+    # Get job description
+    job_description = tailored_cv.job_description
+    if not job_description:
+        raise HTTPException(status_code=400, detail="No job description found for this CV")
+
+    # Call AI service with full CV context
+    result = refine_section_content_with_openai(
+        section_content=section_content,
+        full_cv_content=full_cv_content,
+        job_description=job_description,
+        user_instructions=user_instructions
+    )
+
+    # Add original content to response for comparison
+    result['original_content'] = section_content
+    result['section_title'] = section_node.get('title', 'Untitled Section')
+
+    return result
+
+
 @app.delete("/api/tailor/{cv_id}")
 async def delete_tailored_cv(
     cv_id: int,

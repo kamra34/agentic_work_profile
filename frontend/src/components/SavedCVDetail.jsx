@@ -45,6 +45,17 @@ function SavedCVDetail({ cvId, onBack }) {
   const [showPreviewTemplateModal, setShowPreviewTemplateModal] = useState(false); // Show template selection modal
   const [selectedPreviewTemplate, setSelectedPreviewTemplate] = useState('professional'); // Selected template for preview
 
+  // Refinement modal state
+  const [refinementModal, setRefinementModal] = useState({
+    isOpen: false,
+    section: null,
+    sectionId: null
+  });
+  const [userInstructions, setUserInstructions] = useState('');
+  const [refining, setRefining] = useState(false);
+  const [refinementResult, setRefinementResult] = useState(null);
+  const [showPrompt, setShowPrompt] = useState(false);
+
   useEffect(() => {
     fetchCVData();
   }, [cvId]);
@@ -489,6 +500,78 @@ function SavedCVDetail({ cvId, onBack }) {
       console.error('Error reordering nodes:', error);
       setAutoSaveStatus('error');
     }
+  };
+
+  // Refinement handlers
+  const handleRefineSection = (section) => {
+    setRefinementModal({
+      isOpen: true,
+      section: section,
+      sectionId: section.id
+    });
+    setUserInstructions('');
+    setRefinementResult(null);
+    setShowPrompt(false);
+  };
+
+  const closeRefinementModal = () => {
+    setRefinementModal({
+      isOpen: false,
+      section: null,
+      sectionId: null
+    });
+    setUserInstructions('');
+    setRefinementResult(null);
+    setShowPrompt(false);
+  };
+
+  const handleRunRefinement = async () => {
+    try {
+      setRefining(true);
+      const token = localStorage.getItem('token');
+
+      const response = await fetch(`${API_URL}/api/tailor/${cvId}/refine-section`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          section_id: refinementModal.sectionId,
+          user_instructions: userInstructions || null
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to refine section');
+      }
+
+      const data = await response.json();
+      setRefinementResult(data);
+    } catch (error) {
+      console.error('Error refining section:', error);
+      alert(`Failed to refine section: ${error.message}`);
+    } finally {
+      setRefining(false);
+    }
+  };
+
+  const copyToClipboard = (text, event) => {
+    const button = event.currentTarget;
+    navigator.clipboard.writeText(text).then(() => {
+      button.classList.add('copied');
+      const originalHTML = button.innerHTML;
+      button.innerHTML = '✓ Copied!';
+
+      setTimeout(() => {
+        button.classList.remove('copied');
+        button.innerHTML = originalHTML;
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      alert('Failed to copy to clipboard');
+    });
   };
 
   // Navigate to a node in the left panel from preview click
@@ -1383,6 +1466,21 @@ function SavedCVDetail({ cvId, onBack }) {
                 ✏️
               </button>
 
+              {/* Refine Section Button - Only for sections */}
+              {node.node_type === 'section' && (
+                <button
+                  className="refine-section-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRefineSection(node);
+                  }}
+                  title="GPT-5.1 Thinking Mode: Intelligently refine this section by merging redundant items, tightening wording, and optimizing for the job description"
+                  data-refine-label="GPT-5.1"
+                >
+                  ✨
+                </button>
+              )}
+
               {/* Toggle Include/Exclude */}
               <button
                 className={`toggle-visibility-btn ${isIncluded ? 'visible' : 'hidden'}`}
@@ -1838,6 +1936,19 @@ function SavedCVDetail({ cvId, onBack }) {
         </div>
       </div>
 
+      {/* GPT-5.1 AI Refinement Banner */}
+      <div className="ai-refinement-banner">
+        <div className="banner-content">
+          <div className="banner-icon">🧠</div>
+          <div className="banner-text">
+            <strong>GPT-5.1 Thinking Mode</strong> available: Click the ✨ icon on any section to intelligently refine your content
+          </div>
+          <div className="banner-badge">
+            <span className="premium-badge">POWERED BY GPT-5.1</span>
+          </div>
+        </div>
+      </div>
+
       {/* Intelligent Metrics Dashboard */}
       <div className="metrics-dashboard">
         <div className="metrics-grid">
@@ -2202,6 +2313,209 @@ function SavedCVDetail({ cvId, onBack }) {
             }
           }}
         />
+      )}
+
+      {/* Refinement Side Panel */}
+      {refinementModal.isOpen && (
+        <div className="refinement-sidepanel">
+          <div className="sidepanel-header">
+            <div className="sidepanel-title-group">
+              <h2>✨ AI Refinement: {refinementModal.section?.title || 'Section'}</h2>
+              <div className="gpt-badge">
+                <span className="gpt-icon">🧠</span>
+                <span className="gpt-text">GPT-5.1 Thinking</span>
+              </div>
+            </div>
+            <button className="sidepanel-close" onClick={closeRefinementModal}>×</button>
+          </div>
+
+          <div className="sidepanel-body">
+              {/* Instructions Input */}
+              <div className="refinement-instructions">
+                <label htmlFor="user-instructions">
+                  Additional Instructions (Optional)
+                </label>
+
+                {/* Quick Suggestion Chips */}
+                <div className="instruction-chips">
+                  {(() => {
+                    const sectionTitle = refinementModal.section?.title?.toLowerCase() || '';
+                    let suggestions = [];
+
+                    // Context-aware suggestions based on section type
+                    if (sectionTitle.includes('summary') || sectionTitle.includes('profile') || sectionTitle.includes('about')) {
+                      suggestions = [
+                        "Keep it to one concise paragraph with 3-4 impactful bullets",
+                        "Focus on senior-level impact and leadership",
+                        "Emphasize technical depth and business outcomes",
+                        "Make it ATS-friendly with clear keywords"
+                      ];
+                    } else if (sectionTitle.includes('experience') || sectionTitle.includes('work') || sectionTitle.includes('employment')) {
+                      suggestions = [
+                        "Prioritize achievements over responsibilities",
+                        "Quantify impact with metrics where possible",
+                        "Keep 3-5 strongest bullets per role, merge similar ones",
+                        "Emphasize technologies matching the job description"
+                      ];
+                    } else if (sectionTitle.includes('skill') || sectionTitle.includes('technical') || sectionTitle.includes('competenc')) {
+                      suggestions = [
+                        "Group related skills, remove redundancy",
+                        "Keep it brief - one paragraph max",
+                        "Prioritize skills matching job requirements",
+                        "Focus on depth over breadth"
+                      ];
+                    } else if (sectionTitle.includes('project') || sectionTitle.includes('portfolio')) {
+                      suggestions = [
+                        "Focus on business impact and outcomes",
+                        "Highlight technologies relevant to target role",
+                        "Keep 2-3 projects maximum, most relevant ones",
+                        "Emphasize your specific contributions"
+                      ];
+                    } else if (sectionTitle.includes('education') || sectionTitle.includes('certification')) {
+                      suggestions = [
+                        "Keep it concise - institution, degree, year",
+                        "Highlight relevant coursework if applicable",
+                        "Remove GPA unless exceptional (3.8+)",
+                        "Focus on certifications matching job needs"
+                      ];
+                    } else {
+                      // Generic suggestions
+                      suggestions = [
+                        "Keep content concise and impactful",
+                        "Remove redundancy, merge similar items",
+                        "Prioritize relevance to job description",
+                        "Maintain strong ATS keyword presence"
+                      ];
+                    }
+
+                    return suggestions.map((suggestion, idx) => (
+                      <button
+                        key={idx}
+                        className="instruction-chip"
+                        onClick={() => setUserInstructions(prev => prev ? `${prev}\n${suggestion}` : suggestion)}
+                        disabled={refining}
+                        title="Click to add this instruction"
+                      >
+                        + {suggestion}
+                      </button>
+                    ));
+                  })()}
+                </div>
+
+                <textarea
+                  id="user-instructions"
+                  placeholder="E.g., 'Focus on leadership impact', 'Emphasize ML/AI work', 'Keep it under 200 words'"
+                  value={userInstructions}
+                  onChange={(e) => setUserInstructions(e.target.value)}
+                  rows={3}
+                  disabled={refining}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="refinement-actions">
+                <button
+                  onClick={handleRunRefinement}
+                  disabled={refining}
+                  className="btn-primary btn-refine"
+                >
+                  {refining ? '⏳ Refining...' : '✨ Refine with AI'}
+                </button>
+                {refinementResult && (
+                  <button
+                    onClick={() => setShowPrompt(!showPrompt)}
+                    className="btn-secondary btn-toggle-prompt"
+                  >
+                    {showPrompt ? 'Hide Prompt' : 'View Prompt Sent to AI'}
+                  </button>
+                )}
+              </div>
+
+              {/* Show Prompt if toggled */}
+              {showPrompt && refinementResult?.prompt_sent && (
+                <div className="prompt-display">
+                  <h4>Prompt Sent to AI:</h4>
+                  <pre>{refinementResult.prompt_sent}</pre>
+                </div>
+              )}
+
+              {/* Results */}
+              {refinementResult && refinementResult.success && (
+                <>
+                  {/* Stats */}
+                  <div className="refinement-stats">
+                    <div className="stat-card">
+                      <span className="stat-label">Characters</span>
+                      <span className="stat-value">
+                        {refinementResult.stats?.original_character_count_estimate || 0} →{' '}
+                        {refinementResult.stats?.refined_character_count_estimate || 0}
+                      </span>
+                      <span className="stat-reduction">
+                        -{refinementResult.stats?.characters_reduced_estimate || 0}{' '}
+                        {refinementResult.stats?.original_character_count_estimate > 0 && (
+                          <>
+                            (-
+                            {Math.round(
+                              (refinementResult.stats.characters_reduced_estimate /
+                                refinementResult.stats.original_character_count_estimate) *
+                                100
+                            )}
+                            %)
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Bullets</span>
+                      <span className="stat-value">
+                        {refinementResult.stats?.original_bullet_count_estimate || 0} →{' '}
+                        {refinementResult.stats?.refined_bullet_count_estimate || 0}
+                      </span>
+                      <span className="stat-reduction">
+                        -{refinementResult.stats?.bullets_removed_or_merged_estimate || 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="refinement-summary">
+                    <h4>What Changed:</h4>
+                    <p>{refinementResult.changes_summary}</p>
+                  </div>
+
+                  {/* Side-by-Side Comparison */}
+                  <div className="comparison-view">
+                    <div className="original-content">
+                      <h4>📄 Original</h4>
+                      <div className="content-preview">
+                        <pre>{refinementResult.original_content}</pre>
+                      </div>
+                    </div>
+
+                    <div className="refined-content">
+                      <h4>✨ Refined</h4>
+                      <div className="content-preview">
+                        <pre>{refinementResult.refined_content}</pre>
+                      </div>
+                      <button
+                        onClick={(e) => copyToClipboard(refinementResult.refined_content, e)}
+                        className="btn-copy"
+                      >
+                        📋 Copy Refined Content
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Error */}
+              {refinementResult && !refinementResult.success && (
+                <div className="refinement-error">
+                  <strong>Error:</strong> {refinementResult.error || 'Failed to refine section'}
+                </div>
+              )}
+          </div>
+        </div>
       )}
 
     </div>

@@ -989,3 +989,157 @@ def profile_nodes_to_text(nodes: List[Dict]) -> str:
             text_parts.append(profile_nodes_to_text(node["children"]))
 
     return "".join(text_parts)
+
+
+def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None) -> Dict[str, Any]:
+    """
+    Refine a section's content using OpenAI GPT-4o-mini (fast and cheap).
+
+    Args:
+        section_content: Markdown content of the specific section to refine
+        full_cv_content: Markdown content of the entire CV (all selected sections) for context
+        job_description: The job description for context
+        user_instructions: Optional user instructions for refinement
+
+    Returns:
+        Dict with refined_content, changes_summary, stats, and prompt_sent
+    """
+    if not openai_client:
+        return {
+            "success": False,
+            "error": "OpenAI client not initialized",
+            "model": "gpt-5.1"
+        }
+
+    # Build the refinement prompt with full CV context
+    refinement_prompt = f"""I will paste:
+1) The full tailored CV content (all selected sections and their children)
+2) A job description
+3) A specific CV section to refine
+
+You are a senior hiring manager and CV editor.
+
+Your job:
+Apply VERY light-touch editing to the SECTION ONLY to make it as strong a fit as possible for THIS specific role, while strictly respecting the constraints below AND reducing length by merging/removing redundancies.
+
+Important context rules:
+- Treat the FULL CV content as the source of truth about my background.
+- You may assume any information that appears anywhere in the full CV when deciding what is redundant or low-priority in this section.
+- However, you may NOT invent new responsibilities, achievements, technologies, or domains that are not present somewhere in the full CV.
+- You are only allowed to refine, merge, shorten, re-order, and lightly rephrase the SECTION TO REFINE.
+
+Hard constraints (must follow all):
+- Do NOT add or invent any new responsibilities, achievements, technologies, or domains beyond what appears in the full CV.
+- You may only use information that is already there in the full CV, possibly rephrased or reordered.
+- You may MERGE redundant bullets and REMOVE low-impact or less relevant items. Prefer fewer, denser bullets over many similar ones.
+- You may do small wording adjustments to improve clarity, flow, and alignment with the job description.
+- You may introduce job-description keywords ONLY when they accurately describe something already present in the full CV (e.g., rephrasing "vector search on embeddings" as "retrieval system with vector indexes" is acceptable if the CV clearly supports it).
+- Do NOT exaggerate scope, impact, seniority, or team size beyond what the CV clearly implies.
+- Do NOT introduce generic AI-sounding fluff or buzzwords. Keep language human, grounded, and concrete.
+- Keep the tone humble but confident, and professional.
+- Do NOT move content from this section into other sections or vice versa; you are only editing this section's text.
+- Preserve the section heading and general structure (e.g., role title, company, dates); you may reorder bullets inside the section for relevance.
+
+Length & compression rules:
+- Actively shorten this section while preserving all major signals that are relevant to this specific role.
+- Merge bullets wherever two or more bullets express related ideas that can be combined without losing important information.
+- It is encouraged to drop or heavily compress bullets that are clearly low-relevance for this role or duplicative of stronger bullets already in this section or elsewhere in the CV.
+- Aim for a noticeable reduction in total characters and bullet count in this section, but do NOT remove unique, high-value content that clearly matches the job description or is important to my profile.
+
+ATS / job-fit optimization rules:
+- Prioritize and, if needed, slightly rephrase bullets so they align with the MUST-HAVE parts of the job description.
+- Make sure important skills from the full CV that match the job description (e.g., leadership, ML/LLM, MLOps, experimentation, cloud, stakeholder management, product ownership) are easy to spot in this section and use wording that an ATS and a human recruiter will both recognize.
+- Preserve tense consistency and a clean, readable Markdown format.
+
+{f"Additional user instructions: {user_instructions}" if user_instructions else ""}
+
+Output format (important):
+Return ONLY a JSON object with this exact structure:
+
+{{
+  "refined_content": "The improved SECTION ONLY in markdown format with bullets, ready to paste back into my CV",
+  "changes_summary": "2-4 sentences summarizing the main edits you made (e.g., merged redundant bullets, tightened wording, reordered for relevance, removed low-relevance items). Do NOT mention the job description explicitly here.",
+  "stats": {{
+    "original_character_count_estimate": <integer count of characters in the original section>,
+    "refined_character_count_estimate": <integer count of characters in the refined section>,
+    "characters_reduced_estimate": <original minus refined>,
+    "original_bullet_count_estimate": <integer count of bullets in the original section>,
+    "refined_bullet_count_estimate": <integer count of bullets in the refined section>,
+    "bullets_removed_or_merged_estimate": <original minus refined, or your best estimate>
+  }}
+}}
+
+Fill in the numeric stats fields with your best estimates based on the SECTION text.
+
+Now I will provide:
+
+FULL CV Content (for context, do NOT rewrite this as a whole):
+{full_cv_content}
+
+Job Description (for relevance context):
+{job_description}
+
+SECTION TO REFINE (this is the ONLY part you should rewrite):
+{section_content}
+
+Remember: Return ONLY the JSON object, no other text."""
+
+    try:
+        # Use GPT-5.1 with new responses API
+        response = openai_client.responses.create(
+            model="gpt-5.1",
+            input=refinement_prompt
+        )
+
+        # GPT-5.1 response structure: response.output[0].content[0].text contains the JSON string
+        if hasattr(response, 'output') and isinstance(response.output, list) and len(response.output) > 0:
+            # Get the first message from output
+            first_message = response.output[0]
+
+            # Extract text from the message content
+            if hasattr(first_message, 'content') and isinstance(first_message.content, list) and len(first_message.content) > 0:
+                first_content = first_message.content[0]
+
+                # Get the text from the content item
+                if hasattr(first_content, 'text'):
+                    result_text = first_content.text
+                else:
+                    raise ValueError("GPT-5.1 response content has no 'text' attribute")
+            else:
+                raise ValueError("GPT-5.1 response message has no 'content' list")
+        else:
+            raise ValueError("GPT-5.1 response has no 'output' list")
+
+        # Parse the JSON string
+        result = json.loads(result_text)
+
+        # Sanitize Unicode for PDF compatibility
+        if result.get("refined_content"):
+            result["refined_content"] = sanitize_unicode_for_pdf(result["refined_content"])
+        if result.get("changes_summary"):
+            result["changes_summary"] = sanitize_unicode_for_pdf(result["changes_summary"])
+
+        return {
+            "success": True,
+            "model": "gpt-5.1",
+            "refined_content": result.get("refined_content", ""),
+            "changes_summary": result.get("changes_summary", ""),
+            "stats": result.get("stats", {}),
+            "prompt_sent": refinement_prompt
+        }
+
+    except json.JSONDecodeError as e:
+        return {
+            "success": False,
+            "error": f"Failed to parse AI response as JSON: {str(e)}",
+            "model": "gpt-5.1",
+            "raw_response": result_text if 'result_text' in locals() else None,
+            "prompt_sent": refinement_prompt
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "model": "gpt-5.1",
+            "prompt_sent": refinement_prompt
+        }

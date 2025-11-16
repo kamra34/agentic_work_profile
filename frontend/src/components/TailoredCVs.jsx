@@ -369,6 +369,17 @@ function CVDetailView({ cv, onBack, onUpdate }) {
   const [showDebugData, setShowDebugData] = useState(false); // Show formatted data sent to AI
   const [debugFormattedData, setDebugFormattedData] = useState(null); // Formatted data from backend
 
+  // Refinement modal state
+  const [refinementModal, setRefinementModal] = useState({
+    isOpen: false,
+    section: null,
+    sectionId: null
+  });
+  const [userInstructions, setUserInstructions] = useState('');
+  const [refining, setRefining] = useState(false);
+  const [refinementResult, setRefinementResult] = useState(null);
+  const [showPrompt, setShowPrompt] = useState(false);
+
   useEffect(() => {
     fetchFullCVData();
   }, [cv.id]);
@@ -377,7 +388,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/cv/tailored-versions/${cv.id}/full`, {
+      const response = await fetch(`${API_URL}/api/tailor/${cv.id}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -388,7 +399,25 @@ function CVDetailView({ cv, onBack, onUpdate }) {
       }
 
       const data = await response.json();
-      setFullCVData(data);
+
+      // Transform content_snapshot nodes into sections format
+      const sections = (data.content_snapshot?.nodes || [])
+        .filter(node => node.node_type === 'section')
+        .map(sectionNode => ({
+          ...sectionNode,
+          section_type: sectionNode.title?.toLowerCase().replace(/\s+/g, '_') || 'custom',
+          entries: extractEntriesFromNode(sectionNode)
+        }));
+
+      console.log('[DetailCV] Loaded sections:', sections);
+      console.log('[DetailCV] Number of sections:', sections.length);
+
+      setFullCVData({
+        ...data,
+        profile: {
+          sections: sections
+        }
+      });
       setError(null);
 
       // Sections and entries start collapsed by default
@@ -400,6 +429,26 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper to extract entries from a section node's children
+  const extractEntriesFromNode = (sectionNode) => {
+    if (!sectionNode.children || sectionNode.children.length === 0) {
+      return [];
+    }
+
+    return sectionNode.children
+      .filter(child => child.node_type === 'entry')
+      .map(entryNode => ({
+        ...entryNode,
+        items: (entryNode.children || [])
+          .filter(child => child.node_type === 'bullet' || child.node_type === 'item')
+          .map(item => ({
+            id: item.id,
+            description: item.content || item.title
+          })),
+        sub_entries: []  // Not using sub_entries for now
+      }));
   };
 
   const toggleSection = (sectionId) => {
@@ -698,6 +747,70 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     }
   };
 
+  // Refinement handlers
+  const handleRefineSection = (section) => {
+    setRefinementModal({
+      isOpen: true,
+      section: section,
+      sectionId: section.id
+    });
+    setUserInstructions('');
+    setRefinementResult(null);
+    setShowPrompt(false);
+  };
+
+  const closeRefinementModal = () => {
+    setRefinementModal({
+      isOpen: false,
+      section: null,
+      sectionId: null
+    });
+    setUserInstructions('');
+    setRefinementResult(null);
+    setShowPrompt(false);
+  };
+
+  const handleRunRefinement = async () => {
+    try {
+      setRefining(true);
+      const token = localStorage.getItem('token');
+
+      const response = await fetch(`${API_URL}/api/tailor/${cv.id}/refine-section`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          section_id: refinementModal.sectionId,
+          user_instructions: userInstructions || null
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to refine section');
+      }
+
+      const data = await response.json();
+      setRefinementResult(data);
+    } catch (error) {
+      console.error('Error refining section:', error);
+      alert(`Failed to refine section: ${error.message}`);
+    } finally {
+      setRefining(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      alert('Refined content copied to clipboard!');
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      alert('Failed to copy to clipboard');
+    });
+  };
+
   const getSectionIcon = (sectionType) => {
     const icons = {
       'summary': '📝',
@@ -811,18 +924,36 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     const icon = getSectionIcon(section.section_type);
     const itemCount = countSectionItems(section);
 
+    console.log('[renderSection] Rendering section:', section.title, 'ID:', section.id);
+
     return (
       <div key={section.id} className="section-card">
-        <div className="section-header" onClick={() => toggleSection(section.id)}>
-          <div className="section-header-left">
-            <span className="section-icon">{icon}</span>
-            <h3 className="section-title">{section.title}</h3>
-            {itemCount > 0 && (
-              <span className="item-count-badge">{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
-            )}
-          </div>
-          <div className="section-header-right">
-            <span className="expand-arrow">{isExpanded ? '▼' : '▶'}</span>
+        <div className="section-header">
+          <div
+            className="section-header-clickable"
+            onClick={() => toggleSection(section.id)}
+          >
+            <div className="section-header-left">
+              <span className="section-icon">{icon}</span>
+              <h3 className="section-title">{section.title}</h3>
+              {itemCount > 0 && (
+                <span className="item-count-badge">{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
+              )}
+            </div>
+            <div className="section-header-right">
+              <button
+                className="btn-refine-section"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('[RefineButton] Clicked for section:', section.title);
+                  handleRefineSection(section);
+                }}
+                title="AI-powered refinement: merge redundant items, tighten wording"
+              >
+                ✨
+              </button>
+              <span className="expand-arrow">{isExpanded ? '▼' : '▶'}</span>
+            </div>
           </div>
         </div>
 
@@ -1293,6 +1424,138 @@ function CVDetailView({ cv, onBack, onUpdate }) {
           )}
         </div>
       </div>
+
+      {/* Refinement Modal */}
+      {refinementModal.isOpen && (
+        <div className="modal-overlay" onClick={closeRefinementModal}>
+          <div className="modal-content refinement-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>✨ AI Refinement: {refinementModal.section?.title || 'Section'}</h2>
+              <button className="modal-close" onClick={closeRefinementModal}>×</button>
+            </div>
+
+            <div className="modal-body">
+              {/* Instructions Input */}
+              <div className="refinement-instructions">
+                <label htmlFor="user-instructions">
+                  Additional Instructions (Optional)
+                </label>
+                <textarea
+                  id="user-instructions"
+                  placeholder="E.g., 'Focus on leadership impact', 'Emphasize ML/AI work', 'Keep it under 200 words'"
+                  value={userInstructions}
+                  onChange={(e) => setUserInstructions(e.target.value)}
+                  rows={3}
+                  disabled={refining}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="refinement-actions">
+                <button
+                  onClick={handleRunRefinement}
+                  disabled={refining}
+                  className="btn-primary btn-refine"
+                >
+                  {refining ? '⏳ Refining...' : '✨ Refine with AI'}
+                </button>
+                {refinementResult && (
+                  <button
+                    onClick={() => setShowPrompt(!showPrompt)}
+                    className="btn-secondary btn-toggle-prompt"
+                  >
+                    {showPrompt ? 'Hide Prompt' : 'View Prompt Sent to AI'}
+                  </button>
+                )}
+              </div>
+
+              {/* Show Prompt if toggled */}
+              {showPrompt && refinementResult?.prompt_sent && (
+                <div className="prompt-display">
+                  <h4>Prompt Sent to AI:</h4>
+                  <pre>{refinementResult.prompt_sent}</pre>
+                </div>
+              )}
+
+              {/* Results */}
+              {refinementResult && refinementResult.success && (
+                <>
+                  {/* Stats */}
+                  <div className="refinement-stats">
+                    <div className="stat-card">
+                      <span className="stat-label">Characters</span>
+                      <span className="stat-value">
+                        {refinementResult.stats?.original_character_count_estimate || 0} →{' '}
+                        {refinementResult.stats?.refined_character_count_estimate || 0}
+                      </span>
+                      <span className="stat-reduction">
+                        -{refinementResult.stats?.characters_reduced_estimate || 0}{' '}
+                        {refinementResult.stats?.original_character_count_estimate > 0 && (
+                          <>
+                            (-
+                            {Math.round(
+                              (refinementResult.stats.characters_reduced_estimate /
+                                refinementResult.stats.original_character_count_estimate) *
+                                100
+                            )}
+                            %)
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Bullets</span>
+                      <span className="stat-value">
+                        {refinementResult.stats?.original_bullet_count_estimate || 0} →{' '}
+                        {refinementResult.stats?.refined_bullet_count_estimate || 0}
+                      </span>
+                      <span className="stat-reduction">
+                        -{refinementResult.stats?.bullets_removed_or_merged_estimate || 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="refinement-summary">
+                    <h4>What Changed:</h4>
+                    <p>{refinementResult.changes_summary}</p>
+                  </div>
+
+                  {/* Side-by-Side Comparison */}
+                  <div className="comparison-view">
+                    <div className="original-content">
+                      <h4>📄 Original</h4>
+                      <div className="content-preview">
+                        <pre>{refinementResult.original_content}</pre>
+                      </div>
+                    </div>
+
+                    <div className="refined-content">
+                      <h4>✨ Refined</h4>
+                      <div className="content-preview">
+                        <pre>{refinementResult.refined_content}</pre>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(refinementResult.refined_content)}
+                        className="btn-copy"
+                      >
+                        📋 Copy Refined Content
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Error */}
+              {refinementResult && !refinementResult.success && (
+                <div className="refinement-error">
+                  <strong>Error:</strong> {refinementResult.error || 'Failed to refine section'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
