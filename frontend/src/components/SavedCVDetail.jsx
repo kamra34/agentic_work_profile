@@ -2336,70 +2336,36 @@ function SavedCVDetail({ cvId, onBack }) {
                   Additional Instructions (Optional)
                 </label>
 
-                {/* Quick Suggestion Chips */}
+                {/* Quick Suggestion Chips - Targeted Instructions */}
                 <div className="instruction-chips">
-                  {(() => {
-                    const sectionTitle = refinementModal.section?.title?.toLowerCase() || '';
-                    let suggestions = [];
-
-                    // Context-aware suggestions based on section type
-                    if (sectionTitle.includes('summary') || sectionTitle.includes('profile') || sectionTitle.includes('about')) {
-                      suggestions = [
-                        "Keep it to one concise paragraph with 3-4 impactful bullets",
-                        "Focus on senior-level impact and leadership",
-                        "Emphasize technical depth and business outcomes",
-                        "Make it ATS-friendly with clear keywords"
-                      ];
-                    } else if (sectionTitle.includes('experience') || sectionTitle.includes('work') || sectionTitle.includes('employment')) {
-                      suggestions = [
-                        "Prioritize achievements over responsibilities",
-                        "Quantify impact with metrics where possible",
-                        "Keep 3-5 strongest bullets per role, merge similar ones",
-                        "Emphasize technologies matching the job description"
-                      ];
-                    } else if (sectionTitle.includes('skill') || sectionTitle.includes('technical') || sectionTitle.includes('competenc')) {
-                      suggestions = [
-                        "Group related skills, remove redundancy",
-                        "Keep it brief - one paragraph max",
-                        "Prioritize skills matching job requirements",
-                        "Focus on depth over breadth"
-                      ];
-                    } else if (sectionTitle.includes('project') || sectionTitle.includes('portfolio')) {
-                      suggestions = [
-                        "Focus on business impact and outcomes",
-                        "Highlight technologies relevant to target role",
-                        "Keep 2-3 projects maximum, most relevant ones",
-                        "Emphasize your specific contributions"
-                      ];
-                    } else if (sectionTitle.includes('education') || sectionTitle.includes('certification')) {
-                      suggestions = [
-                        "Keep it concise - institution, degree, year",
-                        "Highlight relevant coursework if applicable",
-                        "Remove GPA unless exceptional (3.8+)",
-                        "Focus on certifications matching job needs"
-                      ];
-                    } else {
-                      // Generic suggestions
-                      suggestions = [
-                        "Keep content concise and impactful",
-                        "Remove redundancy, merge similar items",
-                        "Prioritize relevance to job description",
-                        "Maintain strong ATS keyword presence"
-                      ];
+                  {[
+                    {
+                      label: "SUMMARY INTRO",
+                      instruction: "Given the job requirements, consider the selected paragraphs and make them compact into a single paragraph without redundancy and crisp and tailored to the role. Create a 4 to 5 line intro for the very beginning of summary (we will add bullets separately later)."
+                    },
+                    {
+                      label: "SUMMARY BULLETS",
+                      instruction: "Given the summary intro and the job requirements, provide maximum 3 bullets to complement the intro paragraph. Make them crisp, avoid redundancy, and tailor for the role. Don't change the paragraph, just create/refine the bullets."
+                    },
+                    {
+                      label: "WORK EXPERIENCE",
+                      instruction: "Given the summary and the job description, create up to 5 or 6 bullet points per each entry of my current work experience. Current entry can have multiple sub-entries - keep them if required but feel free to change naming or anything to be more aligned with the job description. Make crisp and tailored bullets."
+                    },
+                    {
+                      label: "CORE SKILLS",
+                      instruction: "Given the job requirements, summary, and work experience, now try to optimize and avoid redundancy or non-relevant points in core skills. Keep it focused and aligned with the target role."
                     }
-
-                    return suggestions.map((suggestion, idx) => (
-                      <button
-                        key={idx}
-                        className="instruction-chip"
-                        onClick={() => setUserInstructions(prev => prev ? `${prev}\n${suggestion}` : suggestion)}
-                        disabled={refining}
-                        title="Click to add this instruction"
-                      >
-                        + {suggestion}
-                      </button>
-                    ));
-                  })()}
+                  ].map((chip, idx) => (
+                    <button
+                      key={idx}
+                      className="instruction-chip"
+                      onClick={() => setUserInstructions(prev => prev ? `${prev}\n\n${chip.instruction}` : chip.instruction)}
+                      disabled={refining}
+                      title={chip.instruction}
+                    >
+                      + {chip.label}
+                    </button>
+                  ))}
                 </div>
 
                 <textarea
@@ -2483,27 +2449,150 @@ function SavedCVDetail({ cvId, onBack }) {
                     <p>{refinementResult.changes_summary}</p>
                   </div>
 
-                  {/* Side-by-Side Comparison */}
-                  <div className="comparison-view">
-                    <div className="original-content">
-                      <h4>📄 Original</h4>
-                      <div className="content-preview">
-                        <pre>{refinementResult.original_content}</pre>
-                      </div>
-                    </div>
-
-                    <div className="refined-content">
-                      <h4>✨ Refined</h4>
-                      <div className="content-preview">
-                        <pre>{refinementResult.refined_content}</pre>
-                      </div>
+                  {/* Refined Content Display with Individual Copy Buttons */}
+                  <div className="refined-content-display">
+                    <div className="refined-header">
+                      <h4>✨ Refined Content</h4>
                       <button
                         onClick={(e) => copyToClipboard(refinementResult.refined_content, e)}
-                        className="btn-copy"
+                        className="btn-copy-all"
                       >
-                        📋 Copy Refined Content
+                        📋 Copy All
                       </button>
                     </div>
+
+                    <div className="refined-items">
+                      {(() => {
+                        // Parse markdown into hierarchical structure
+                        const parseMarkdownToTree = (markdownText) => {
+                          const lines = markdownText.split('\n');
+                          const root = { type: 'root', children: [], level: -1 };
+                          const stack = [root];
+
+                          lines.forEach((line) => {
+                            const trimmed = line.trim();
+                            if (!trimmed) return;
+
+                            let itemType = null;
+                            let content = trimmed;
+                            let level = 0;
+
+                            // Detect type and level
+                            if (trimmed.startsWith('## ')) {
+                              itemType = 'section';
+                              content = trimmed.substring(3);
+                              level = 0;
+                            } else if (trimmed.startsWith('### ')) {
+                              itemType = 'entry';
+                              content = trimmed.substring(4);
+                              level = 1;
+                            } else if (trimmed.match(/^\*[^*]+\*$/)) {
+                              // Italic text (subtitle)
+                              itemType = 'subtitle';
+                              content = trimmed.replace(/\*/g, '');
+                              level = 2;
+                            } else if (trimmed.match(/^- /)) {
+                              // Bullet - detect indentation level
+                              const match = line.match(/^(\s*)-\s/);
+                              const indent = match ? match[1].length : 0;
+                              level = 2 + Math.floor(indent / 2); // Base level 2, +1 for every 2 spaces
+                              itemType = 'bullet';
+                              content = trimmed.substring(2);
+                            } else if (trimmed.includes(' | ')) {
+                              // Metadata line (location | dates)
+                              itemType = 'metadata';
+                              content = trimmed;
+                              level = 2;
+                            } else {
+                              // Regular text/paragraph
+                              itemType = 'text';
+                              content = trimmed;
+                              level = 2;
+                            }
+
+                            const item = { type: itemType, content, level, children: [] };
+
+                            // Find the correct parent in the stack
+                            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+                              stack.pop();
+                            }
+
+                            // Add to parent's children
+                            const parent = stack[stack.length - 1];
+                            parent.children.push(item);
+
+                            // Add to stack if it can have children
+                            if (['section', 'entry', 'bullet'].includes(itemType)) {
+                              stack.push(item);
+                            }
+                          });
+
+                          return root.children;
+                        };
+
+                        // Render tree with proper indentation
+                        const renderItem = (item, depth = 0) => {
+                          const indentLevel = depth;
+
+                          return (
+                            <div key={`${item.type}-${depth}-${item.content.substring(0, 20)}`}>
+                              <div
+                                className={`refined-item refined-item-${item.type}`}
+                                style={{ marginLeft: `${indentLevel * 1.5}rem` }}
+                              >
+                                <div className="item-content">
+                                  {item.type === 'section' && (
+                                    <strong className="section-text">{item.content}</strong>
+                                  )}
+                                  {item.type === 'entry' && (
+                                    <strong className="entry-text">{item.content}</strong>
+                                  )}
+                                  {item.type === 'subtitle' && (
+                                    <em className="subtitle-text">{item.content}</em>
+                                  )}
+                                  {item.type === 'metadata' && (
+                                    <span className="metadata-text">{item.content}</span>
+                                  )}
+                                  {item.type === 'bullet' && (
+                                    <span className="bullet-text">
+                                      <span className="bullet-icon">•</span> {item.content}
+                                    </span>
+                                  )}
+                                  {item.type === 'text' && (
+                                    <span className="text-content">{item.content}</span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={(e) => copyToClipboard(item.content, e)}
+                                  className="btn-copy-item"
+                                  title="Copy this item"
+                                >
+                                  📋
+                                </button>
+                              </div>
+
+                              {/* Render children recursively */}
+                              {item.children && item.children.length > 0 && (
+                                <div className="item-children">
+                                  {item.children.map((child, idx) => renderItem(child, depth + 1))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        };
+
+                        const tree = parseMarkdownToTree(refinementResult.refined_content);
+                        return tree.map((item, idx) => renderItem(item, 0));
+                      })()}
+                    </div>
+
+                    {/* Original Content - Collapsible */}
+                    <details className="original-content-details">
+                      <summary>📄 View Original Content</summary>
+                      <div className="original-content-preview">
+                        <pre>{refinementResult.original_content}</pre>
+                      </div>
+                    </details>
                   </div>
                 </>
               )}
