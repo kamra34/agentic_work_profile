@@ -204,6 +204,7 @@ class JobApplication(Base):
     # Job Information (denormalized for easy access)
     job_title = Column(String, nullable=False)
     company_name = Column(String, nullable=True)
+    job_description = Column(Text, nullable=True)
     job_url = Column(String, nullable=True)
     location = Column(String, nullable=True)
 

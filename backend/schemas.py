@@ -290,6 +290,7 @@ class JobApplicationResponse(BaseModel):
     tailored_cv_id: int
     job_title: str
     company_name: Optional[str]
+    job_description: Optional[str]
     job_url: Optional[str]
     location: Optional[str]
     final_content_snapshot: Dict[str, Any]

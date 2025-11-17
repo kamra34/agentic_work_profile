@@ -2111,19 +2111,27 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
+              <div style={{ display: 'flex', gap: '1rem', width: '100%', flexWrap: 'wrap' }}>
                 <button
                   className="btn-secondary-modern"
                   onClick={() => onViewCV(app)}
-                  style={{ flex: 1 }}
+                  style={{ flex: '1 1 calc(50% - 0.5rem)' }}
                 >
                   👁️ View CV
+                </button>
+                <button
+                  className="btn-secondary-modern"
+                  onClick={() => window.open(`/job-analysis/${app.id}`, '_blank')}
+                  style={{ flex: '1 1 calc(50% - 0.5rem)' }}
+                  title="View job description and AI analysis in new tab"
+                >
+                  📊 View Job Analysis
                 </button>
                 <button
                   className="btn-primary-modern"
                   onClick={handleExportCV}
                   disabled={isExporting}
-                  style={{ flex: 1 }}
+                  style={{ flex: '1 1 100%' }}
                 >
                   {isExporting ? '⏳ Exporting...' : '📥 Export CV'}
                 </button>

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import ContactInfoSection from './ContactInfoSection';
 import PDFTemplateSelector from './PDFTemplateSelector';
 import './SavedCVDetail.css';
+import './SavedCVDetail_AutoRefine.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -57,6 +58,11 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refining, setRefining] = useState(false);
   const [refinementResult, setRefinementResult] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
+
+  // Auto-refine all sections state
+  const [autoRefining, setAutoRefining] = useState(false);
+  const [autoRefineProgress, setAutoRefineProgress] = useState({ current: 0, total: 0, currentSection: '' });
+  const [autoRefineLog, setAutoRefineLog] = useState([]);
 
   useEffect(() => {
     fetchCVData();
@@ -369,7 +375,10 @@ function SavedCVDetail({ cvId, onBack }) {
   const updateNodesWithSelectionsRecursive = (nodes, selections) => {
     return nodes.map(node => ({
       ...node,
-      is_selected: selections[node.global_id] || false,
+      // If node is in selections, use that value; otherwise preserve existing is_selected
+      is_selected: node.global_id && selections.hasOwnProperty(node.global_id)
+        ? selections[node.global_id]
+        : (node.is_selected !== false), // Preserve existing is_selected if not in selections
       children: node.children ? updateNodesWithSelectionsRecursive(node.children, selections) : []
     }));
   };
@@ -918,6 +927,346 @@ function SavedCVDetail({ cvId, onBack }) {
     }
   };
 
+  // AUTO-REFINE ALL SECTIONS - Automated workflow
+  const handleAutoRefineAllSections = async () => {
+    if (!cvData?.content_snapshot?.nodes) return;
+
+    // Find all SELECTED section nodes (respect user's selection state)
+    const findSelectedSections = (nodes) => {
+      const sections = [];
+      nodes.forEach(node => {
+        if (node.node_type === 'section') {
+          // Check if section is selected (not explicitly unselected)
+          const isSelected = node.is_selected !== false &&
+                           (!node.global_id || nodeSelections[node.global_id] !== false);
+
+          if (isSelected) {
+            sections.push(node);
+          }
+        }
+        // Check children for nested sections
+        if (node.children) {
+          sections.push(...findSelectedSections(node.children));
+        }
+      });
+      return sections;
+    };
+
+    const selectedSections = findSelectedSections(cvData.content_snapshot.nodes);
+
+    if (selectedSections.length === 0) {
+      alert('No selected sections found to refine.\n\nPlease select at least one section to refine.');
+      return;
+    }
+
+    setAutoRefining(true);
+    setAutoRefineProgress({ current: 0, total: selectedSections.length, currentSection: '' });
+    setAutoRefineLog([]);
+
+    const log = [];
+    let successCount = 0;
+    let errorCount = 0;
+
+    // CRITICAL: Maintain accumulated selections across all sections
+    // React state updates are async, so we need to track selections manually
+    let accumulatedSelections = { ...nodeSelections };
+
+    try {
+      // IMPORTANT: Ensure any pending autosave from manual selections completes FIRST
+      // Wait for any ongoing autosave to finish
+      if (autoSaveStatus === 'saving') {
+        log.push({ status: 'processing', message: 'Waiting for pending save to complete...' });
+        setAutoRefineLog([...log]);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Sync current selections to backend BEFORE starting refinement loop
+      log.push({ status: 'processing', message: 'Syncing current selections to backend...' });
+      setAutoRefineLog([...log]);
+      await autoSave(accumulatedSelections);
+
+
+      for (let i = 0; i < selectedSections.length; i++) {
+        const section = selectedSections[i];
+        const sectionTitle = section.title || `Section ${i + 1}`;
+
+        setAutoRefineProgress({
+          current: i + 1,
+          total: selectedSections.length,
+          currentSection: sectionTitle
+        });
+
+        log.push({ status: 'processing', message: `Refining: ${sectionTitle}...` });
+        setAutoRefineLog([...log]);
+
+        try {
+          // Step 0: Ensure selections are synced to backend before refining
+          // This is critical so the backend knows which children are selected/unselected
+          await autoSave(accumulatedSelections);
+
+          // Step 1: Call refinement API (reuse existing endpoint)
+          const token = localStorage.getItem('token');
+          const response = await fetch(`${API_URL}/api/tailor/${cvId}/refine-section`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              node_id: section.id,
+              node_type: 'section',
+              user_instructions: null
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to refine section: ${sectionTitle}`);
+          }
+
+          const refinementData = await response.json();
+
+          // Step 2: Auto-include refined content (mimic handleIncludeRefinedContent)
+          if (refinementData?.refined_content) {
+            // Pass accumulated selections and get updated selections back
+            accumulatedSelections = await autoIncludeRefinedContent(
+              section,
+              refinementData.refined_content,
+              accumulatedSelections
+            );
+
+            log.push({ status: 'success', message: `✓ ${sectionTitle} refined successfully` });
+            successCount++;
+
+            // Step 3: CRITICAL - Save state and reload from backend
+            // This ensures the next section starts with actual persisted state
+            log.push({ status: 'processing', message: `Saving state for ${sectionTitle}...` });
+            setAutoRefineLog([...log]);
+
+            // Save to backend
+            await autoSave(accumulatedSelections);
+
+            // Reload fresh data from backend
+            log.push({ status: 'processing', message: `Reloading fresh state...` });
+            setAutoRefineLog([...log]);
+
+            await fetchCVData();
+
+            // Re-sync accumulatedSelections from the freshly loaded cvData
+            // This is critical - we need to use the PERSISTED state, not in-memory state
+            const freshData = await fetch(`${API_URL}/api/tailor/${cvId}`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
+            const freshCvData = await freshData.json();
+
+            // Extract selections from fresh data
+            const extractSelections = (nodes) => {
+              const selections = {};
+              const traverse = (nodeList) => {
+                nodeList.forEach(node => {
+                  if (node.global_id) {
+                    selections[node.global_id] = node.is_selected !== false;
+                  }
+                  if (node.children) {
+                    traverse(node.children);
+                  }
+                });
+              };
+              traverse(nodes);
+              return selections;
+            };
+
+            accumulatedSelections = extractSelections(freshCvData.content_snapshot?.nodes || []);
+
+            log.push({ status: 'success', message: `State synchronized for ${sectionTitle}` });
+          } else {
+            throw new Error('No refined content returned');
+          }
+
+        } catch (error) {
+          console.error(`Error refining section ${sectionTitle}:`, error);
+          log.push({ status: 'error', message: `✗ ${sectionTitle}: ${error.message}` });
+          errorCount++;
+        }
+
+        setAutoRefineLog([...log]);
+
+        // Small delay between sections to avoid overwhelming the API
+        if (i < selectedSections.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      // After all sections, apply the final accumulated selections
+      setNodeSelections(accumulatedSelections);
+      triggerAutoSave(accumulatedSelections, true);
+
+      // Final summary
+      log.push({
+        status: 'complete',
+        message: `\n✓ Completed: ${successCount} succeeded, ${errorCount} failed out of ${selectedSections.length} sections`
+      });
+      setAutoRefineLog([...log]);
+
+    } catch (error) {
+      console.error('Auto-refine error:', error);
+      alert(`Auto-refine stopped: ${error.message}`);
+    } finally {
+      setAutoRefining(false);
+      setAutoRefineProgress({ current: 0, total: 0, currentSection: '' });
+
+      // Note: We don't need to fetchCVData() here because:
+      // 1. Each autoIncludeRefinedContent() already updates cvData state
+      // 2. Each autoIncludeRefinedContent() persists to backend
+      // 3. Each autoIncludeRefinedContent() updates nodeSelections
+      // 4. Calling fetchCVData() would reset selections from backend snapshot
+    }
+  };
+
+  // Helper function to auto-include refined content (reuses logic from handleIncludeRefinedContent)
+  // NOW ACCEPTS accumulated selections and RETURNS updated selections
+  const autoIncludeRefinedContent = async (section, refinedContentMarkdown, currentSelections) => {
+    // Convert markdown to nodes
+    const refinedNodes = convertMarkdownToNodes(refinedContentMarkdown, 'section');
+
+    if (refinedNodes.length === 0) return currentSelections;
+
+    // Update cvData state
+    const updatedCvData = { ...cvData };
+    const content_snapshot = { ...updatedCvData.content_snapshot };
+
+    // Reuse the same merge logic
+    const mergeRefinedNodes = (refinedNodes, existingSelectedChildren) => {
+      return refinedNodes.map(refinedNode => {
+        if (refinedNode.node_type === 'entry') {
+          const matchingExisting = existingSelectedChildren.find(
+            child => child.node_type === 'entry' && child.title === refinedNode.title
+          );
+
+          if (matchingExisting) {
+            const existingChildrenOfEntry = matchingExisting.children || [];
+            const unselectedEntryChildren = [];
+            const selectedEntryChildren = [];
+
+            existingChildrenOfEntry.forEach(child => {
+              // CRITICAL: Use currentSelections (accumulated/persisted state), not nodeSelections (in-memory state)
+              const isUnselected = child.is_selected === false ||
+                                 (child.global_id && currentSelections[child.global_id] === false);
+              if (isUnselected) {
+                unselectedEntryChildren.push(child);
+              } else {
+                selectedEntryChildren.push(child);
+              }
+            });
+
+            const mergedChildren = mergeRefinedNodes(
+              refinedNode.children || [],
+              selectedEntryChildren
+            );
+
+            return {
+              ...matchingExisting,
+              children: [...unselectedEntryChildren, ...mergedChildren],
+              ai_refined: true,
+              title: refinedNode.title || matchingExisting.title,
+              subtitle: refinedNode.subtitle !== undefined ? refinedNode.subtitle : matchingExisting.subtitle,
+              location: refinedNode.location !== undefined ? refinedNode.location : matchingExisting.location,
+              start_date: refinedNode.start_date !== undefined ? refinedNode.start_date : matchingExisting.start_date,
+              end_date: refinedNode.end_date !== undefined ? refinedNode.end_date : matchingExisting.end_date,
+              content: refinedNode.content !== undefined ? refinedNode.content : matchingExisting.content
+            };
+          }
+        }
+        return refinedNode;
+      });
+    };
+
+    const updateNodeChildren = (nodes, targetId) => {
+      for (let node of nodes) {
+        if (node.id === targetId) {
+          const existingChildren = node.children || [];
+          const unselectedChildren = [];
+          const selectedChildren = [];
+
+          existingChildren.forEach(child => {
+            // CRITICAL: Use currentSelections (accumulated/persisted state), not nodeSelections (in-memory state)
+            const isUnselected = child.is_selected === false ||
+                               (child.global_id && currentSelections[child.global_id] === false);
+            if (isUnselected) {
+              unselectedChildren.push(child);
+            } else {
+              selectedChildren.push(child);
+            }
+          });
+
+          const mergedRefinedNodes = mergeRefinedNodes(refinedNodes, selectedChildren);
+          node.children = [...unselectedChildren, ...mergedRefinedNodes];
+          return true;
+        }
+        if (node.children && node.children.length > 0) {
+          if (updateNodeChildren(node.children, targetId)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    updateNodeChildren(content_snapshot.nodes, section.id);
+    updatedCvData.content_snapshot = content_snapshot;
+    setCvData(updatedCvData);
+
+    // Auto-select ALL nodes in the updated section (including refined ones)
+    // Use currentSelections passed from parent to accumulate across sections
+    const newSelections = { ...currentSelections };
+
+    // Find the updated section in the tree and mark all its descendants as selected
+    const findAndMarkSection = (nodes) => {
+      for (const node of nodes) {
+        if (node.id === section.id) {
+          // Found the section - now mark all children as selected recursively
+          const markAllDescendantsSelected = (n) => {
+            if (n.global_id) {
+              newSelections[n.global_id] = true;
+            }
+            if (n.children && n.children.length > 0) {
+              n.children.forEach(child => markAllDescendantsSelected(child));
+            }
+          };
+
+          // Mark the section itself and all its children
+          if (node.global_id) {
+            newSelections[node.global_id] = true;
+          }
+          if (node.children && node.children.length > 0) {
+            node.children.forEach(child => markAllDescendantsSelected(child));
+          }
+          return true;
+        }
+
+        // Recursively search children
+        if (node.children && node.children.length > 0) {
+          if (findAndMarkSection(node.children)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    findAndMarkSection(content_snapshot.nodes);
+
+    // Update React state for UI (but this is async, so we also return the selections)
+    setNodeSelections(newSelections);
+
+    // Trigger autosave with the updated selections
+    triggerAutoSave(newSelections, true);
+
+    // CRITICAL: Return the updated selections so the next section can build on them
+    return newSelections;
+  };
+
   // Navigate to a node in the left panel from preview click
   const navigateToNode = (globalId) => {
     if (!cvData?.content_snapshot?.nodes) return;
@@ -1189,7 +1538,10 @@ function SavedCVDetail({ cvId, onBack }) {
   const updateNodesWithSelections = (nodes, selections) => {
     return nodes.map(node => ({
       ...node,
-      is_selected: selections[node.global_id] || false,
+      // If node is in selections, use that value; otherwise default to true (selected)
+      is_selected: node.global_id && selections.hasOwnProperty(node.global_id)
+        ? selections[node.global_id]
+        : (node.is_selected !== false), // Preserve existing is_selected if not in selections
       children: node.children ? updateNodesWithSelections(node.children, selections) : []
     }));
   };
@@ -2340,6 +2692,29 @@ function SavedCVDetail({ cvId, onBack }) {
             )}
           </div>
 
+          {/* Auto-Refine All Sections Button */}
+          <button
+            onClick={handleAutoRefineAllSections}
+            className="btn-auto-refine-modern"
+            disabled={autoRefining || autoSaveStatus === 'saving'}
+            title="Automatically refine all sections with AI"
+          >
+            {autoRefining ? (
+              <>
+                <div className="btn-spinner"></div>
+                <span>Auto-Refining...</span>
+              </>
+            ) : (
+              <>
+                <svg className="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
+                  <circle cx="12" cy="12" r="3" fill="white" opacity="0.9"/>
+                </svg>
+                <span>Auto-Refine All</span>
+              </>
+            )}
+          </button>
+
           {/* Unified Finalize Application Button */}
           <button
             onClick={openPreviewTemplateModal}
@@ -3085,6 +3460,57 @@ function SavedCVDetail({ cvId, onBack }) {
                   <strong>Error:</strong> {refinementResult.error || 'Failed to refine section'}
                 </div>
               )}
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Refine Progress Modal - Modern Visual */}
+      {autoRefining && (
+        <div className="modal-overlay auto-refine-overlay">
+          <div className="modal auto-refine-modal">
+            <div className="auto-refine-header">
+              <h2>🤖 Auto-Refining All Sections</h2>
+              <p className="auto-refine-subtitle">AI is intelligently refining each section of your CV</p>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="auto-refine-progress-container">
+              <div className="progress-bar-wrapper">
+                <div
+                  className="progress-bar-fill"
+                  style={{ width: `${(autoRefineProgress.current / autoRefineProgress.total) * 100}%` }}
+                ></div>
+              </div>
+              <div className="progress-text">
+                <span className="progress-count">{autoRefineProgress.current} / {autoRefineProgress.total}</span>
+                <span className="progress-percent">{Math.round((autoRefineProgress.current / autoRefineProgress.total) * 100)}%</span>
+              </div>
+            </div>
+
+            {/* Current Section */}
+            {autoRefineProgress.currentSection && (
+              <div className="current-section-indicator">
+                <div className="spinner-animation"></div>
+                <span>Currently refining: <strong>{autoRefineProgress.currentSection}</strong></span>
+              </div>
+            )}
+
+            {/* Activity Log */}
+            <div className="auto-refine-log">
+              <h3>Activity Log</h3>
+              <div className="log-entries">
+                {autoRefineLog.map((entry, idx) => (
+                  <div key={idx} className={`log-entry log-${entry.status}`}>
+                    <span className="log-message">{entry.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Note */}
+            <div className="auto-refine-note">
+              💡 This may take a few minutes depending on the number of sections. Please don't close this window.
+            </div>
           </div>
         </div>
       )}

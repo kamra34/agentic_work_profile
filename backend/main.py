@@ -2319,6 +2319,7 @@ async def create_job_application(
         tailored_cv_id=tailored_cv.id,
         job_title=tailored_cv.job_title,
         company_name=tailored_cv.company_name,
+        job_description=tailored_cv.job_description,
         job_url=application_data.job_url,
         location=application_data.location,
         final_content_snapshot=tailored_cv.content_snapshot,  # Current state with active contact fields

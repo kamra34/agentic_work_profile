@@ -8,6 +8,7 @@ import HowItWorksPage from './pages/HowItWorksPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Dashboard from './components/Dashboard';
+import JobAnalysisView from './components/JobAnalysisView';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AIAnalysisProvider } from './context/AIAnalysisContext';
 import { setLogoutCallback, initializeActivityTracking, cleanupActivityTracking } from './utils/api';
@@ -124,6 +125,13 @@ function App() {
             <AIAnalysisProvider>
               <Dashboard user={user} onLogout={handleLogout} />
             </AIAnalysisProvider>
+          </ProtectedRoute>
+        } />
+
+        {/* Job Analysis View - Standalone page */}
+        <Route path="/job-analysis/:applicationId" element={
+          <ProtectedRoute isAuthenticated={!!user}>
+            <JobAnalysisView />
           </ProtectedRoute>
         } />
 
