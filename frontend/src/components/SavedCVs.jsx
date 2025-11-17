@@ -11,7 +11,7 @@ function SavedCVs({ onSelectCV }) {
 
   // Advanced Filter & Search States
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('draft');
+  const statusFilter = 'draft'; // Always filter to draft only
   const [versionFilter, setVersionFilter] = useState('all');
   const [scoreFilter, setScoreFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
@@ -323,16 +323,6 @@ function SavedCVs({ onSelectCV }) {
 
           <select
             className="filter-select"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">All Status</option>
-            <option value="draft">Draft</option>
-            <option value="ready_to_apply">Ready to Apply</option>
-          </select>
-
-          <select
-            className="filter-select"
             value={versionFilter}
             onChange={(e) => setVersionFilter(e.target.value)}
           >
@@ -387,17 +377,16 @@ function SavedCVs({ onSelectCV }) {
       </div>
 
       {/* Results Summary */}
-      {(searchQuery || statusFilter !== 'draft' || versionFilter !== 'all' || scoreFilter !== 'all') && (
+      {(searchQuery || versionFilter !== 'all' || scoreFilter !== 'all') && (
         <div className="results-summary">
           <span className="results-count">
             {filteredAndSortedCVs.length} of {cvs.length} CVs
           </span>
-          {(searchQuery || statusFilter !== 'draft' || versionFilter !== 'all' || scoreFilter !== 'all') && (
+          {(searchQuery || versionFilter !== 'all' || scoreFilter !== 'all') && (
             <button
               className="clear-filters"
               onClick={() => {
                 setSearchQuery('');
-                setStatusFilter('draft');
                 setVersionFilter('all');
                 setScoreFilter('all');
               }}
@@ -438,7 +427,6 @@ function SavedCVs({ onSelectCV }) {
             className="btn-clear-filters"
             onClick={() => {
               setSearchQuery('');
-              setStatusFilter('draft');
               setVersionFilter('all');
               setScoreFilter('all');
             }}
