@@ -1980,13 +1980,17 @@ async def refine_section(
     if not job_description:
         raise HTTPException(status_code=400, detail="No job description found for this CV")
 
-    # Call AI service with full CV context and node type
+    # Get node title for summary detection
+    node_title = target_node.get('title', '')
+
+    # Call AI service with full CV context, node type, and title
     result = refine_section_content_with_openai(
         section_content=node_content,
         full_cv_content=full_cv_content,
         job_description=job_description,
         user_instructions=user_instructions,
-        node_type=node_type
+        node_type=node_type,
+        node_title=node_title
     )
 
     # Add metadata to response for comparison and tracking

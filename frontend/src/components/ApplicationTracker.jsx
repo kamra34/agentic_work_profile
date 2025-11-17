@@ -42,6 +42,7 @@ function ApplicationTracker() {
   const [showFilters, setShowFilters] = useState(false);
   const [dateRange, setDateRange] = useState({ start: null, end: null });
   const [aiAnalysisModal, setAIAnalysisModal] = useState(null); // {app, provider: 'openai'|'claude'}
+  const [cvViewerModal, setCvViewerModal] = useState(null); // {app, pdfUrl}
 
   useEffect(() => {
     fetchApplications();
@@ -260,6 +261,36 @@ function ApplicationTracker() {
       console.error('Error deleting application:', error);
       alert('An error occurred while deleting the application. Please try again.');
     }
+  };
+
+  const handleViewCV = async (app) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/applications/${app.id}/download-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load CV');
+      }
+
+      const blob = await response.blob();
+      const pdfUrl = window.URL.createObjectURL(blob);
+      setCvViewerModal({ app, pdfUrl });
+    } catch (error) {
+      console.error('Error loading CV:', error);
+      alert('Failed to load CV. Please try again.');
+    }
+  };
+
+  const closeCvViewer = () => {
+    if (cvViewerModal?.pdfUrl) {
+      window.URL.revokeObjectURL(cvViewerModal.pdfUrl);
+    }
+    setCvViewerModal(null);
   };
 
   const getFilteredAndSortedApplications = () => {
@@ -628,6 +659,7 @@ function ApplicationTracker() {
               onSelectApp={setSelectedApp}
               onUpdateStatus={updateApplicationStatus}
               onDeleteApp={deleteApplication}
+              onViewCV={handleViewCV}
               onRefresh={fetchApplications}
               getAverageScore={getAverageScore}
             />
@@ -661,6 +693,7 @@ function ApplicationTracker() {
           onUpdateStatus={updateApplicationStatus}
           onDeleteApp={deleteApplication}
           onRefresh={fetchApplications}
+          onViewCV={handleViewCV}
         />
       )}
 
@@ -672,12 +705,64 @@ function ApplicationTracker() {
           onClose={() => setAIAnalysisModal(null)}
         />
       )}
+
+      {/* CV Viewer Modal */}
+      {cvViewerModal && (
+        <div className="cv-viewer-modal-overlay" onClick={closeCvViewer}>
+          <div className="cv-viewer-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="cv-viewer-modal-header">
+              <div className="cv-viewer-modal-title">
+                <h3>CV Preview</h3>
+                <p className="cv-viewer-modal-subtitle">
+                  {cvViewerModal.app.job_title} - {cvViewerModal.app.company_name}
+                </p>
+              </div>
+              <button className="cv-viewer-close-btn" onClick={closeCvViewer} title="Close">
+                ✕
+              </button>
+            </div>
+            <div className="cv-viewer-modal-body">
+              <iframe
+                src={cvViewerModal.pdfUrl}
+                className="cv-viewer-iframe"
+                title="CV Preview"
+              />
+            </div>
+            <div className="cv-viewer-modal-footer">
+              <button
+                className="cv-viewer-download-btn"
+                onClick={async () => {
+                  try {
+                    const response = await fetch(cvViewerModal.pdfUrl);
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `CV_${cvViewerModal.app.job_title}_${cvViewerModal.app.company_name || 'Application'}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                  } catch (error) {
+                    console.error('Error downloading CV:', error);
+                  }
+                }}
+              >
+                📥 Download CV
+              </button>
+              <button className="cv-viewer-close-btn-secondary" onClick={closeCvViewer}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // Kanban View Component
-function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onRefresh, getAverageScore }) {
+function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onViewCV, onRefresh, getAverageScore }) {
   const [draggedApp, setDraggedApp] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
 
@@ -1058,6 +1143,7 @@ function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onRefres
                       app={app}
                       onSelect={onSelectApp}
                       onDeleteApp={onDeleteApp}
+                      onViewCV={onViewCV}
                       getAverageScore={getAverageScore}
                       onDragStart={handleDragStart}
                       onDragEnd={handleDragEnd}
@@ -1121,7 +1207,7 @@ function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onRefres
 }
 
 // Kanban Card Component
-function KanbanCard({ app, onSelect, onDeleteApp, getAverageScore, onDragStart, onDragEnd, isDragging, viewDensity = 'comfortable' }) {
+function KanbanCard({ app, onSelect, onDeleteApp, onViewCV, getAverageScore, onDragStart, onDragEnd, isDragging, viewDensity = 'comfortable' }) {
   const fitScore = getAverageScore(app, 'fit');
   const atsScore = getAverageScore(app, 'ats');
   const priorityConfig = PRIORITY_CONFIG[app.priority || 'medium'];
@@ -1137,6 +1223,11 @@ function KanbanCard({ app, onSelect, onDeleteApp, getAverageScore, onDragStart, 
   const handleDelete = (e) => {
     e.stopPropagation(); // Prevent card click event
     onDeleteApp(app.id, app.isPreparing);
+  };
+
+  const handleViewCV = (e) => {
+    e.stopPropagation(); // Prevent card click event
+    onViewCV(app);
   };
 
   const handleDownloadCV = async (e) => {
@@ -1266,6 +1357,13 @@ function KanbanCard({ app, onSelect, onDeleteApp, getAverageScore, onDragStart, 
 
         <div className="card-footer-expanded">
           <button
+            className="btn-view-cv-expanded"
+            onClick={handleViewCV}
+            title="View CV in modal"
+          >
+            👁️ View CV
+          </button>
+          <button
             className="btn-download-cv-expanded"
             onClick={handleDownloadCV}
             title="Download CV with applied settings"
@@ -1335,6 +1433,13 @@ function KanbanCard({ app, onSelect, onDeleteApp, getAverageScore, onDragStart, 
           {app.notes && (
             <span className="card-has-notes" title="Has notes">📝</span>
           )}
+          <button
+            className="btn-view-cv"
+            onClick={handleViewCV}
+            title="View CV in modal"
+          >
+            👁️
+          </button>
           <button
             className="btn-download-cv"
             onClick={handleDownloadCV}
@@ -1629,7 +1734,7 @@ function AnalyticsView({ applications, stats }) {
 }
 
 // Application Detail Modal Component
-function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onRefresh }) {
+function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onRefresh, onViewCV }) {
   const [isEditingStatus, setIsEditingStatus] = useState(false);
   const [newStatus, setNewStatus] = useState(app.status);
   const [statusNotes, setStatusNotes] = useState('');
@@ -1978,13 +2083,23 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                   )}
                 </div>
               </div>
-              <button
-                className="btn-primary-modern"
-                onClick={handleExportCV}
-                disabled={isExporting}
-              >
-                {isExporting ? '⏳ Exporting...' : '📥 Export CV'}
-              </button>
+              <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
+                <button
+                  className="btn-secondary-modern"
+                  onClick={() => onViewCV(app)}
+                  style={{ flex: 1 }}
+                >
+                  👁️ View CV
+                </button>
+                <button
+                  className="btn-primary-modern"
+                  onClick={handleExportCV}
+                  disabled={isExporting}
+                  style={{ flex: 1 }}
+                >
+                  {isExporting ? '⏳ Exporting...' : '📥 Export CV'}
+                </button>
+              </div>
             </div>
 
             <button

@@ -468,19 +468,23 @@ class CVPDFGenerator:
         linkedin_url = contact_info.get('linkedin_url') or contact_info.get('linkedin')
         if linkedin_url:
             linkedin_url = sanitize_text(linkedin_url)
+            # Extract username from LinkedIn URL
+            linkedin_username = self._extract_linkedin_username(linkedin_url)
             if header_style == "simple" or header_style == "left_aligned":
-                contact_parts.append(f'LinkedIn: {linkedin_url}')
+                contact_parts.append(f'LinkedIn: {linkedin_username}')
             else:
-                contact_parts.append(f'<a href="{linkedin_url}" color="#2d3748">[in] LinkedIn</a>')
+                contact_parts.append(f'<a href="{linkedin_url}" color="#0077B5">LinkedIn: {linkedin_username}</a>')
 
         # GitHub - support both field names
         github_url = contact_info.get('github_url') or contact_info.get('github')
         if github_url:
             github_url = sanitize_text(github_url)
+            # Extract username from GitHub URL
+            github_username = self._extract_github_username(github_url)
             if header_style == "simple" or header_style == "left_aligned":
-                contact_parts.append(f'GitHub: {github_url}')
+                contact_parts.append(f'GitHub: {github_username}')
             else:
-                contact_parts.append(f'<a href="{github_url}" color="#2d3748">[gh] GitHub</a>')
+                contact_parts.append(f'<a href="{github_url}" color="#171515">GitHub: {github_username}</a>')
 
         # Portfolio/Website - support both field names
         website_url = contact_info.get('portfolio_url') or contact_info.get('website')

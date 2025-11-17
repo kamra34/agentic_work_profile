@@ -991,7 +991,7 @@ def profile_nodes_to_text(nodes: List[Dict]) -> str:
     return "".join(text_parts)
 
 
-def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None, node_type: str = "section") -> Dict[str, Any]:
+def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None, node_type: str = "section", node_title: str = "") -> Dict[str, Any]:
     """
     Refine a section or entry's content using OpenAI GPT-5.1.
 
@@ -1001,6 +1001,7 @@ def refine_section_content_with_openai(section_content: str, full_cv_content: st
         job_description: The job description for context
         user_instructions: Optional user instructions for refinement
         node_type: Type of node being refined ("section" or "entry")
+        node_title: Title of the section/entry being refined (for summary detection)
 
     Returns:
         Dict with refined_content, changes_summary, stats, and prompt_sent
@@ -1015,6 +1016,25 @@ def refine_section_content_with_openai(section_content: str, full_cv_content: st
     # Build the refinement prompt with full CV context
     refinement_target = "SECTION" if node_type == "section" else "ENTRY"
     refinement_target_lower = refinement_target.lower()
+
+    # Detect if this is a summary-type section
+    summary_keywords = ['summary', 'profile', 'overview', 'objective', 'about', 'introduction', 'executive summary', 'professional summary', 'professional profile', 'career summary']
+    is_summary = any(keyword in node_title.lower() for keyword in summary_keywords)
+
+    # Build summary-specific instructions
+    summary_instructions = ""
+    if is_summary:
+        summary_instructions = """
+SPECIAL INSTRUCTIONS FOR SUMMARY/PROFILE SECTIONS:
+This appears to be a summary/profile section. Apply these additional constraints:
+- Output format: EITHER one concise paragraph (3-5 sentences) OR maximum 5 crisp bullets OR a mix of one short paragraph (2-3 sentences) + 2-3 very short bullets
+- Keep it extremely concise and high-impact
+- Focus ONLY on the most relevant qualifications for this specific role
+- Each bullet should be 1-2 lines maximum
+- If using a paragraph, make it compelling and scannable (3-5 lines total)
+- Avoid generic phrases - be specific and quantifiable where possible
+- This is the first thing recruiters see - make every word count
+"""
 
     refinement_prompt = f"""I will paste:
 1) The full tailored CV content (all selected sections and their children)
@@ -1054,6 +1074,8 @@ ATS / job-fit optimization rules:
 - Prioritize and, if needed, slightly rephrase bullets so they align with the MUST-HAVE parts of the job description.
 - Make sure important skills from the full CV that match the job description (e.g., leadership, ML/LLM, MLOps, experimentation, cloud, stakeholder management, product ownership) are easy to spot in this {refinement_target_lower} and use wording that an ATS and a human recruiter will both recognize.
 - Preserve tense consistency and a clean, readable Markdown format.
+
+{summary_instructions}
 
 {f"Additional user instructions: {user_instructions}" if user_instructions else ""}
 

@@ -790,6 +790,9 @@ function SavedCVDetail({ cvId, onBack }) {
       markNodesAsSelected(refinedNodes);
       setNodeSelections(newSelections);
 
+      // Trigger autosave with the new selections to persist them
+      triggerAutoSave(newSelections, true);
+
       // Expand the parent node to show refined children
       setExpandedNodes(prev => {
         const newExpanded = new Set(prev);
@@ -797,13 +800,13 @@ function SavedCVDetail({ cvId, onBack }) {
         return newExpanded;
       });
 
-      // Send to backend to persist
+      // Send to backend to persist the node structure
       const updatePayload = {
         node_id: refinementModal.sectionId,
         node_type: refinementModal.nodeType,
         refined_nodes: refinedNodes,
         operation: 'merge_children',  // Changed from 'replace_children' to preserve unselected
-        node_selections: nodeSelections  // Send selections so backend knows what to keep
+        node_selections: newSelections  // Send NEW selections so backend knows what to keep
       };
 
       const token = localStorage.getItem('token');
