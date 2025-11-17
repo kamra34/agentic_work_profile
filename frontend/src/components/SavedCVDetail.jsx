@@ -738,35 +738,42 @@ function SavedCVDetail({ cvId, onBack }) {
       const content_snapshot = { ...updatedCvData.content_snapshot };
 
       // Recursively merge refined nodes with existing nodes, preserving unselected children at ALL levels
-      const mergeRefinedNodes = (refinedNodes, existingChildren) => {
+      const mergeRefinedNodes = (refinedNodes, existingSelectedChildren) => {
         return refinedNodes.map(refinedNode => {
           if (refinedNode.node_type === 'entry') {
-            // Find matching existing entry by title
-            const matchingExisting = existingChildren.find(
+            // Find matching existing entry by title (only among selected children)
+            const matchingExisting = existingSelectedChildren.find(
               child => child.node_type === 'entry' &&
-                       child.title === refinedNode.title &&
-                       nodeSelections[child.global_id] !== false // Was selected for refinement
+                       child.title === refinedNode.title
             );
 
             if (matchingExisting) {
               const existingChildrenOfEntry = matchingExisting.children || [];
 
-              // Keep ALL unselected children from the existing entry (bullets, paragraphs, AND entries)
-              const unselectedChildren = existingChildrenOfEntry.filter(child => {
-                return child.global_id && nodeSelections[child.global_id] === false;
+              // Separate entry's children into unselected (keep) vs selected (replace with refined)
+              const unselectedEntryChildren = [];
+              const selectedEntryChildren = [];
+
+              existingChildrenOfEntry.forEach(child => {
+                const isUnselected = child.is_selected === false ||
+                                   (child.global_id && nodeSelections[child.global_id] === false);
+                if (isUnselected) {
+                  unselectedEntryChildren.push(child);
+                } else {
+                  selectedEntryChildren.push(child);
+                }
               });
 
-              // Recursively merge refined children with existing children
-              // This will match nested entries and preserve THEIR unselected children too
+              // Recursively merge refined children with selected children of this entry
               const mergedChildren = mergeRefinedNodes(
                 refinedNode.children || [],
-                existingChildrenOfEntry
+                selectedEntryChildren
               );
 
-              // Combine: unselected children + merged refined children
+              // Combine: unselected children (untouched) + refined children (replacing selected)
               return {
                 ...refinedNode,
-                children: [...unselectedChildren, ...mergedChildren]
+                children: [...unselectedEntryChildren, ...mergedChildren]
               };
             }
           }
@@ -781,16 +788,27 @@ function SavedCVDetail({ cvId, onBack }) {
           if (node.id === targetId) {
             const existingChildren = node.children || [];
 
-            // Keep unselected children at the top level
-            const unselectedTopLevel = existingChildren.filter(child => {
-              return child.global_id && nodeSelections[child.global_id] === false;
+            // Separate children into: unselected (keep as-is) vs selected (will be replaced by refined)
+            const unselectedChildren = [];
+            const selectedChildren = [];
+
+            existingChildren.forEach(child => {
+              // Check if this child was unselected (is_selected === false OR nodeSelections === false)
+              const isUnselected = child.is_selected === false ||
+                                 (child.global_id && nodeSelections[child.global_id] === false);
+
+              if (isUnselected) {
+                unselectedChildren.push(child);
+              } else {
+                selectedChildren.push(child);
+              }
             });
 
-            // Merge refined nodes with existing entries (preserving unselected nested children)
-            const mergedRefinedNodes = mergeRefinedNodes(refinedNodes, existingChildren);
+            // Merge refined nodes with the SELECTED children only (preserving unselected nested children within entries)
+            const mergedRefinedNodes = mergeRefinedNodes(refinedNodes, selectedChildren);
 
-            // Combine: unselected top-level children + merged refined nodes
-            node.children = [...unselectedTopLevel, ...mergedRefinedNodes];
+            // Final children = unselected (untouched) + refined (replacing selected)
+            node.children = [...unselectedChildren, ...mergedRefinedNodes];
             return true;
           }
           if (node.children && node.children.length > 0) {
