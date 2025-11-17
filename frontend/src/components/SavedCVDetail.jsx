@@ -1821,18 +1821,39 @@ function SavedCVDetail({ cvId, onBack }) {
                 ✏️
               </button>
 
-              {/* Refine Button - For sections and entries */}
-              {(node.node_type === 'section' || node.node_type === 'entry') && (
+              {/* Refine Button - Distinctive icons for sections vs entries */}
+              {node.node_type === 'section' && (
                 <button
-                  className="refine-section-btn"
+                  className="refine-section-btn refine-section-level"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleRefineSection(node);
                   }}
-                  title={`GPT-5.1 Thinking Mode: Intelligently refine this ${node.node_type} by merging redundant items, tightening wording, and optimizing for the job description`}
-                  data-refine-label="GPT-5.1"
+                  title="GPT-5.1 Thinking Mode: Comprehensively refine this entire section by merging redundant items, tightening wording, and optimizing for the job description"
+                  data-refine-label="GPT-5.1 SECTION"
                 >
-                  ✨
+                  <svg className="ai-icon-section" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
+                    <circle cx="12" cy="12" r="3" fill="white" opacity="0.9"/>
+                    <path d="M12 7V9M12 15V17M7 12H9M15 12H17" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              )}
+              {node.node_type === 'entry' && (
+                <button
+                  className="refine-section-btn refine-entry-level"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRefineSection(node);
+                  }}
+                  title="GPT-5.1 Thinking Mode: Precisely refine this entry by tightening wording and optimizing for the job description"
+                  data-refine-label="GPT-5.1 ENTRY"
+                >
+                  <svg className="ai-icon-entry" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L13.5 7.5L19 9L13.5 10.5L12 16L10.5 10.5L5 9L10.5 7.5L12 2Z" fill="currentColor"/>
+                    <path d="M18 14L19 17L22 18L19 19L18 22L17 19L14 18L17 17L18 14Z" fill="currentColor" opacity="0.7"/>
+                    <path d="M6 14L7 17L10 18L7 19L6 22L5 19L2 18L5 17L6 14Z" fill="currentColor" opacity="0.7"/>
+                  </svg>
                 </button>
               )}
 

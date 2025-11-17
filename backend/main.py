@@ -1372,6 +1372,7 @@ async def get_tailored_cv(
         "recalculated_scores": tailored_cv.recalculated_scores or [],
         "selected_node_ids": tailored_cv.selected_node_ids,
         "content_snapshot": tailored_cv.content_snapshot,
+        "original_snapshot": tailored_cv.original_snapshot,
         "recommendations": tailored_cv.recommendations,
         "version": version_number,
         "total_versions": total_versions,

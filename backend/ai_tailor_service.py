@@ -1025,15 +1025,81 @@ def refine_section_content_with_openai(section_content: str, full_cv_content: st
     summary_instructions = ""
     if is_summary:
         summary_instructions = """
-SPECIAL INSTRUCTIONS FOR SUMMARY/PROFILE SECTIONS:
-This appears to be a summary/profile section. Apply these additional constraints:
-- Output format: EITHER one concise paragraph (3-5 sentences) OR maximum 5 crisp bullets OR a mix of one short paragraph (2-3 sentences) + 2-3 very short bullets
-- Keep it extremely concise and high-impact
-- Focus ONLY on the most relevant qualifications for this specific role
-- Each bullet should be 1-2 lines maximum
-- If using a paragraph, make it compelling and scannable (3-5 lines total)
-- Avoid generic phrases - be specific and quantifiable where possible
-- This is the first thing recruiters see - make every word count
+═══════════════════════════════════════════════════════════════════════════
+⚠️  CRITICAL CONSTRAINT FOR SUMMARY/PROFILE SECTIONS - READ THIS FIRST  ⚠️
+═══════════════════════════════════════════════════════════════════════════
+
+This is a summary/profile section. You MUST choose ONE format and STRICTLY follow its rules.
+
+STEP 1: CHOOSE EXACTLY ONE FORMAT (pick the best fit for the content and role):
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ FORMAT A: PARAGRAPH ONLY                                                │
+│ Rules if you choose this:                                               │
+│ ✓ Output EXACTLY ONE paragraph, maximum 7 lines                         │
+│ ✗ ZERO bullets - not a single bullet point allowed                      │
+│ ✗ ZERO additional paragraphs - just ONE paragraph total                 │
+│                                                                          │
+│ ❌ FAILURE CONDITIONS:                                                   │
+│    - If you output ANY bullets → FAILED                                 │
+│    - If you output 2+ paragraphs → FAILED                               │
+│    - If paragraph exceeds 7 lines → FAILED                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ FORMAT B: BULLETS ONLY                                                  │
+│ Rules if you choose this:                                               │
+│ ✓ Output ONLY bullet points - maximum 5 bullets                         │
+│ ✓ Each bullet maximum 3 lines                                           │
+│ ✗ ZERO paragraph text - no prose before, after, or between bullets      │
+│                                                                          │
+│ ❌ FAILURE CONDITIONS:                                                   │
+│    - If you output ANY paragraph text → FAILED                          │
+│    - If you output 6+ bullets → FAILED                                  │
+│    - If any bullet exceeds 3 lines → FAILED                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ FORMAT C: HYBRID (PARAGRAPH + BULLETS)                                  │
+│ Rules if you choose this:                                               │
+│ ✓ Start with EXACTLY ONE paragraph (4-5 sentences, max 5 lines)         │
+│ ✓ Follow with maximum 4 bullets (each 1-2 lines max)                    │
+│                                                                          │
+│ ❌ FAILURE CONDITIONS:                                                   │
+│    - If paragraph is missing → FAILED                                   │
+│    - If bullets are missing → FAILED                                    │
+│    - If you output 2+ paragraphs → FAILED                               │
+│    - If you output 5+ bullets → FAILED                                  │
+│    - If paragraph exceeds 5 lines → FAILED                              │
+│    - If any bullet exceeds 2 lines → FAILED                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+STEP 2: BEFORE YOU OUTPUT - MANDATORY VERIFICATION CHECKLIST:
+
+Ask yourself these questions BEFORE generating output:
+1. Which format did I choose? (A, B, or C)
+2. How many paragraphs am I outputting? (Count them)
+3. How many bullets am I outputting? (Count them)
+4. How many lines is each element? (Count lines)
+5. Do ALL these counts match my chosen format's rules?
+
+If the answer to #5 is NO → STOP and reduce content to meet limits
+
+QUALITY RULES (apply to all formats):
+• Be specific and quantifiable - avoid generic phrases like "seasoned professional"
+• Focus ONLY on qualifications most relevant to THIS specific role
+• This is the first thing recruiters see - every word must add value
+• Use concrete numbers, technologies, and achievements where possible
+• Avoid AI-sounding fluff - write like a confident human professional
+
+═══════════════════════════════════════════════════════════════════════════
+🚫 YOUR OUTPUT WILL BE REJECTED AND DISCARDED IF:
+   - You mix formats (e.g., output bullets when you chose paragraph-only)
+   - You exceed maximum counts for your chosen format
+   - You output multiple paragraphs in non-hybrid format
+   - You output generic AI fluff instead of specific qualifications
+   - You forget to verify your counts before outputting
+═══════════════════════════════════════════════════════════════════════════
 """
 
     refinement_prompt = f"""I will paste:

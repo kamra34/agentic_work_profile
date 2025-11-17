@@ -1590,46 +1590,164 @@
   transform: scale(1.15);
 }
 
+/* =================================================================
+   AI REFINEMENT BUTTONS - MODERN & DISTINCTIVE DESIGN
+   ================================================================= */
+
+/* Base Refine Button Styles */
 .refine-section-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
-  border-radius: 6px;
-  padding: 0.35rem 0.5rem;
-  font-size: 1rem;
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
   cursor: pointer;
-  transition: all 0.2s;
-  opacity: 0.9;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.92;
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Section-Level Refinement - Powerful & Comprehensive */
+.refine-section-level {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%);
+  animation: section-pulse 3s ease-in-out infinite;
+}
+
+.refine-section-level .ai-icon-section {
+  width: 20px;
+  height: 20px;
+  color: white;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  animation: section-rotate 4s linear infinite;
+}
+
+@keyframes section-pulse {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3), 0 0 0 0 rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5), 0 0 0 4px rgba(139, 92, 246, 0.1);
+  }
+}
+
+@keyframes section-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.refine-section-level:hover {
+  opacity: 1;
+  transform: scale(1.12) translateY(-2px);
+  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4), 0 0 0 3px rgba(139, 92, 246, 0.2);
+  background: linear-gradient(135deg, #9333ea 0%, #7c3aed 50%, #4f46e5 100%);
+}
+
+.refine-section-level:hover .ai-icon-section {
+  animation: section-rotate 1s linear infinite, section-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes section-glow {
+  0%, 100% {
+    filter: drop-shadow(0 2px 4px rgba(255, 255, 255, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.6));
+  }
+}
+
+/* Entry-Level Refinement - Precise & Focused */
+.refine-entry-level {
+  background: linear-gradient(135deg, #f59e0b 0%, #ef4444 50%, #ec4899 100%);
+  animation: entry-shimmer 3s ease-in-out infinite;
+}
+
+.refine-entry-level .ai-icon-entry {
+  width: 20px;
+  height: 20px;
+  color: white;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  animation: entry-sparkle 2s ease-in-out infinite;
+}
+
+@keyframes entry-shimmer {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3), 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5), 0 0 0 4px rgba(239, 68, 68, 0.1);
+  }
+}
+
+@keyframes entry-sparkle {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.85;
+  }
+}
+
+.refine-entry-level:hover {
+  opacity: 1;
+  transform: scale(1.12) translateY(-2px);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4), 0 0 0 3px rgba(236, 72, 153, 0.2);
+  background: linear-gradient(135deg, #f97316 0%, #dc2626 50%, #db2777 100%);
+}
+
+.refine-entry-level:hover .ai-icon-entry {
+  animation: entry-sparkle 0.6s ease-in-out infinite, entry-glow 1.2s ease-in-out infinite;
+}
+
+@keyframes entry-glow {
+  0%, 100% {
+    filter: drop-shadow(0 2px 4px rgba(255, 255, 255, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.6)) drop-shadow(0 0 12px rgba(255, 255, 255, 0.4));
+  }
+}
+
+/* Tooltip Labels */
 .refine-section-btn::after {
   content: attr(data-refine-label);
   position: absolute;
-  bottom: -22px;
+  bottom: -26px;
   left: 50%;
   transform: translateX(-50%) scale(0);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(31, 41, 55, 0.95) 100%);
   color: white;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.7rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.65rem;
   font-weight: 700;
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.refine-section-btn:hover {
-  opacity: 1;
-  transform: scale(1.15);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+.refine-section-level::after {
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.refine-entry-level::after {
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .refine-section-btn:hover::after {
   opacity: 1;
-  transform: translateX(-50%) scale(1);
+  transform: translateX(-50%) scale(1) translateY(-2px);
 }
 
 .toggle-visibility-btn {
