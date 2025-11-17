@@ -20,6 +20,7 @@ from io import BytesIO
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import html
+import re
 
 
 def sanitize_text(text: str) -> str:
@@ -356,6 +357,39 @@ class CVPDFGenerator:
 
         # Regenerate styles with new config
         self.template.styles = self.template._create_styles()
+
+    def _extract_linkedin_username(self, linkedin_url: str) -> str:
+        """Extract username from LinkedIn URL"""
+        # Remove trailing slash
+        linkedin_url = linkedin_url.rstrip('/')
+        # Try to extract username from URL patterns:
+        # https://www.linkedin.com/in/username
+        # https://linkedin.com/in/username
+        # linkedin.com/in/username
+        match = re.search(r'linkedin\.com/in/([^/?\s]+)', linkedin_url, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        # If it's already just a username, return it
+        if '/' not in linkedin_url and '.' not in linkedin_url:
+            return linkedin_url
+        # Fallback to the URL itself
+        return linkedin_url
+
+    def _extract_github_username(self, github_url: str) -> str:
+        """Extract username from GitHub URL"""
+        # Remove trailing slash
+        github_url = github_url.rstrip('/')
+        # Try to extract username from URL patterns:
+        # https://github.com/username
+        # github.com/username
+        match = re.search(r'github\.com/([^/?\s]+)', github_url, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        # If it's already just a username, return it
+        if '/' not in github_url and '.' not in github_url:
+            return github_url
+        # Fallback to the URL itself
+        return github_url
 
     def generate_pdf(
         self,

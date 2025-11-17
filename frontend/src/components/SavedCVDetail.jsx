@@ -599,13 +599,10 @@ function SavedCVDetail({ cvId, onBack }) {
       }
       // Entry header (###)
       else if (trimmed.startsWith('### ')) {
-        // For entry-level refinement: Skip (entry cannot contain entry)
-        if (baseNodeType === 'entry') {
-          return; // Skip this line
-        }
-
-        // For section-level refinement: Create entry nodes
         const title = trimmed.substring(4).trim();
+
+        // For entry-level refinement: Create nested entries (level 1)
+        // For section-level refinement: Create top-level entries
         currentLevel1Entry = {
           id: nextId++,
           global_id: `ai-refined-entry-${nextId}`,
@@ -614,39 +611,32 @@ function SavedCVDetail({ cvId, onBack }) {
           children: [],
           is_selected: true,
           ai_refined: true,
-          level: 1
+          level: baseNodeType === 'entry' ? 2 : 1  // Nested if parent is entry
         };
 
         nodes.push(currentLevel1Entry);
         currentLevel2Entry = null; // Reset nested entry when new level1 entry starts
       }
 
-      // Nested Entry header (####) - For section-level refinement with nested entries
+      // Nested Entry header (####)
       else if (trimmed.startsWith('#### ')) {
-        // Only allowed for section-level refinement
-        if (baseNodeType === 'section') {
-          const title = trimmed.substring(5).trim();
-          currentLevel2Entry = {
-            id: nextId++,
-            global_id: `ai-refined-entry-${nextId}`,
-            node_type: 'entry',
-            title: title,
-            children: [],
-            is_selected: true,
-            ai_refined: true,
-            level: 2
-          };
+        const title = trimmed.substring(5).trim();
+        currentLevel2Entry = {
+          id: nextId++,
+          global_id: `ai-refined-entry-${nextId}`,
+          node_type: 'entry',
+          title: title,
+          children: [],
+          is_selected: true,
+          ai_refined: true,
+          level: baseNodeType === 'entry' ? 3 : 2  // Adjust level based on parent
+        };
 
-          // Add as child of current level1 entry if exists, otherwise add to nodes
-          if (currentLevel1Entry) {
-            currentLevel1Entry.children.push(currentLevel2Entry);
-          } else {
-            nodes.push(currentLevel2Entry);
-          }
-        }
-        // For entry-level refinement: Skip
-        else {
-          return;
+        // Add as child of current level1 entry if exists, otherwise add to nodes
+        if (currentLevel1Entry) {
+          currentLevel1Entry.children.push(currentLevel2Entry);
+        } else {
+          nodes.push(currentLevel2Entry);
         }
       }
       // Subtitle (italic text like *Company Name*)
@@ -746,18 +736,57 @@ function SavedCVDetail({ cvId, onBack }) {
       const updatedCvData = { ...cvData };
       const content_snapshot = { ...updatedCvData.content_snapshot };
 
+      // Recursively merge refined nodes with existing nodes, preserving unselected children
+      const mergeRefinedNodes = (refinedNodes, existingChildren) => {
+        return refinedNodes.map(refinedNode => {
+          if (refinedNode.node_type === 'entry') {
+            // Find matching existing entry by title
+            const matchingExisting = existingChildren.find(
+              child => child.node_type === 'entry' &&
+                       child.title === refinedNode.title &&
+                       nodeSelections[child.global_id] !== false // Was selected for refinement
+            );
+
+            if (matchingExisting && matchingExisting.children) {
+              // Keep unselected children from the existing entry
+              const unselectedChildren = matchingExisting.children.filter(child => {
+                return child.global_id && nodeSelections[child.global_id] === false;
+              });
+
+              // Recursively merge refined children with existing children
+              const mergedChildren = mergeRefinedNodes(
+                refinedNode.children || [],
+                matchingExisting.children || []
+              );
+
+              // Combine: unselected children + refined children
+              return {
+                ...refinedNode,
+                children: [...unselectedChildren, ...mergedChildren]
+              };
+            }
+          }
+          // For non-entry nodes or non-matching entries, return as-is
+          return refinedNode;
+        });
+      };
+
       // Find and update the target node's children
       const updateNodeChildren = (nodes, targetId) => {
         for (let node of nodes) {
           if (node.id === targetId) {
-            // Keep unselected children, remove selected ones, add refined ones
-            const unselectedChildren = (node.children || []).filter(child => {
-              // Keep nodes that were NOT selected (not sent to AI)
+            const existingChildren = node.children || [];
+
+            // Keep unselected children at the top level
+            const unselectedTopLevel = existingChildren.filter(child => {
               return child.global_id && nodeSelections[child.global_id] === false;
             });
 
-            // Combine: unselected children (kept) + refined nodes (new)
-            node.children = [...unselectedChildren, ...refinedNodes];
+            // Merge refined nodes with existing entries (preserving unselected nested children)
+            const mergedRefinedNodes = mergeRefinedNodes(refinedNodes, existingChildren);
+
+            // Combine: unselected top-level children + merged refined nodes
+            node.children = [...unselectedTopLevel, ...mergedRefinedNodes];
             return true;
           }
           if (node.children && node.children.length > 0) {

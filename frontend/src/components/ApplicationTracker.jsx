@@ -293,6 +293,34 @@ function ApplicationTracker() {
     setCvViewerModal(null);
   };
 
+  const handleViewCVInNewTab = async (app) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/applications/${app.id}/download-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load CV');
+      }
+
+      const blob = await response.blob();
+      const pdfUrl = window.URL.createObjectURL(blob);
+      window.open(pdfUrl, '_blank');
+
+      // Clean up the URL after a delay to allow the new tab to load
+      setTimeout(() => {
+        window.URL.revokeObjectURL(pdfUrl);
+      }, 1000);
+    } catch (error) {
+      console.error('Error loading CV:', error);
+      alert('Failed to load CV. Please try again.');
+    }
+  };
+
   const getFilteredAndSortedApplications = () => {
     let filtered = applications;
 
