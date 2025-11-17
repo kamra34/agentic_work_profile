@@ -49,7 +49,8 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refinementModal, setRefinementModal] = useState({
     isOpen: false,
     section: null,
-    sectionId: null
+    sectionId: null,
+    nodeType: null  // Track whether refining a section or entry
   });
   const [userInstructions, setUserInstructions] = useState('');
   const [refining, setRefining] = useState(false);
@@ -503,11 +504,12 @@ function SavedCVDetail({ cvId, onBack }) {
   };
 
   // Refinement handlers
-  const handleRefineSection = (section) => {
+  const handleRefineSection = (node) => {
     setRefinementModal({
       isOpen: true,
-      section: section,
-      sectionId: section.id
+      section: node,
+      sectionId: node.id,
+      nodeType: node.node_type  // Track the node type
     });
     setUserInstructions('');
     setRefinementResult(null);
@@ -518,7 +520,8 @@ function SavedCVDetail({ cvId, onBack }) {
     setRefinementModal({
       isOpen: false,
       section: null,
-      sectionId: null
+      sectionId: null,
+      nodeType: null
     });
     setUserInstructions('');
     setRefinementResult(null);
@@ -537,21 +540,22 @@ function SavedCVDetail({ cvId, onBack }) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          section_id: refinementModal.sectionId,
+          node_id: refinementModal.sectionId,
+          node_type: refinementModal.nodeType,
           user_instructions: userInstructions || null
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to refine section');
+        throw new Error(errorData.detail || `Failed to refine ${refinementModal.nodeType}`);
       }
 
       const data = await response.json();
       setRefinementResult(data);
     } catch (error) {
-      console.error('Error refining section:', error);
-      alert(`Failed to refine section: ${error.message}`);
+      console.error(`Error refining ${refinementModal.nodeType}:`, error);
+      alert(`Failed to refine ${refinementModal.nodeType}: ${error.message}`);
     } finally {
       setRefining(false);
     }
@@ -1466,15 +1470,15 @@ function SavedCVDetail({ cvId, onBack }) {
                 ✏️
               </button>
 
-              {/* Refine Section Button - Only for sections */}
-              {node.node_type === 'section' && (
+              {/* Refine Button - For sections and entries */}
+              {(node.node_type === 'section' || node.node_type === 'entry') && (
                 <button
                   className="refine-section-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleRefineSection(node);
                   }}
-                  title="GPT-5.1 Thinking Mode: Intelligently refine this section by merging redundant items, tightening wording, and optimizing for the job description"
+                  title={`GPT-5.1 Thinking Mode: Intelligently refine this ${node.node_type} by merging redundant items, tightening wording, and optimizing for the job description`}
                   data-refine-label="GPT-5.1"
                 >
                   ✨
@@ -2320,7 +2324,7 @@ function SavedCVDetail({ cvId, onBack }) {
         <div className="refinement-sidepanel">
           <div className="sidepanel-header">
             <div className="sidepanel-title-group">
-              <h2>✨ AI Refinement: {refinementModal.section?.title || 'Section'}</h2>
+              <h2>✨ AI Refinement: {refinementModal.section?.title || (refinementModal.nodeType === 'entry' ? 'Entry' : 'Section')}</h2>
               <div className="gpt-badge">
                 <span className="gpt-icon">🧠</span>
                 <span className="gpt-text">GPT-5.1 Thinking</span>

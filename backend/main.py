@@ -1918,41 +1918,56 @@ async def refine_section(
     if not tailored_cv:
         raise HTTPException(status_code=404, detail="Tailored CV not found")
 
-    # Validate request
-    section_id = request_data.get('section_id')
-    if section_id is None:
-        raise HTTPException(status_code=400, detail="section_id is required")
+    # Validate request - support both old (section_id) and new (node_id) parameters
+    node_id = request_data.get('node_id') or request_data.get('section_id')
+    if node_id is None:
+        raise HTTPException(status_code=400, detail="node_id is required")
 
+    requested_node_type = request_data.get('node_type')
     user_instructions = request_data.get('user_instructions', None)
 
-    # Find the section in content_snapshot
+    # Find the node in content_snapshot
     content_snapshot = tailored_cv.content_snapshot
     if not content_snapshot or not content_snapshot.get('nodes'):
         raise HTTPException(status_code=400, detail="No content snapshot found")
 
-    # Find section node by ID
-    section_node = None
-    def find_section_by_id(nodes, target_id):
+    # Find node by ID - accepts both sections and entries
+    target_node = None
+    def find_node_by_id(nodes, target_id, allowed_types=['section', 'entry']):
+        """Find a node by ID, accepting multiple node types"""
         for node in nodes:
-            if node.get('id') == target_id and node.get('node_type') == 'section':
-                return node
+            if node.get('id') == target_id:
+                # If node_type was specified, verify it matches
+                if requested_node_type and node.get('node_type') != requested_node_type:
+                    continue
+                # Check if this node type is allowed for refinement
+                if node.get('node_type') in allowed_types:
+                    return node
             # Also check children recursively
             if node.get('children'):
-                found = find_section_by_id(node.get('children', []), target_id)
+                found = find_node_by_id(node.get('children', []), target_id, allowed_types)
                 if found:
                     return found
         return None
 
-    section_node = find_section_by_id(content_snapshot['nodes'], section_id)
+    target_node = find_node_by_id(content_snapshot['nodes'], node_id)
 
-    if not section_node:
-        raise HTTPException(status_code=404, detail=f"Section with ID {section_id} not found")
+    if not target_node:
+        raise HTTPException(status_code=404, detail=f"Node with ID {node_id} not found or not refinable")
 
-    # Extract section content as markdown
-    section_content = extract_section_content_as_markdown(section_node)
+    # Determine node type
+    node_type = target_node.get('node_type', 'section')
 
-    if not section_content or section_content.strip() == f"## {section_node.get('title', '')}\n":
-        raise HTTPException(status_code=400, detail="Section has no content to refine")
+    # Extract node content as markdown
+    node_content = extract_section_content_as_markdown(target_node)
+
+    # Validate content based on node type
+    if node_type == 'section':
+        if not node_content or node_content.strip() == f"## {target_node.get('title', '')}\n":
+            raise HTTPException(status_code=400, detail="Section has no content to refine")
+    elif node_type == 'entry':
+        if not node_content or node_content.strip() == f"### {target_node.get('title', '')}\n":
+            raise HTTPException(status_code=400, detail="Entry has no content to refine")
 
     # Extract FULL CV content for context (all selected sections)
     full_cv_content = extract_full_cv_content_as_markdown(content_snapshot['nodes'])
@@ -1965,17 +1980,22 @@ async def refine_section(
     if not job_description:
         raise HTTPException(status_code=400, detail="No job description found for this CV")
 
-    # Call AI service with full CV context
+    # Call AI service with full CV context and node type
     result = refine_section_content_with_openai(
-        section_content=section_content,
+        section_content=node_content,
         full_cv_content=full_cv_content,
         job_description=job_description,
-        user_instructions=user_instructions
+        user_instructions=user_instructions,
+        node_type=node_type
     )
 
-    # Add original content to response for comparison
-    result['original_content'] = section_content
-    result['section_title'] = section_node.get('title', 'Untitled Section')
+    # Add metadata to response for comparison and tracking
+    result['original_content'] = node_content
+    result['node_type'] = node_type
+    result['node_id'] = node_id
+    result['node_title'] = target_node.get('title', f'Untitled {node_type.title()}')
+    # Keep backward compatibility
+    result['section_title'] = result['node_title']
 
     return result
 

@@ -991,15 +991,16 @@ def profile_nodes_to_text(nodes: List[Dict]) -> str:
     return "".join(text_parts)
 
 
-def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None) -> Dict[str, Any]:
+def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None, node_type: str = "section") -> Dict[str, Any]:
     """
-    Refine a section's content using OpenAI GPT-4o-mini (fast and cheap).
+    Refine a section or entry's content using OpenAI GPT-5.1.
 
     Args:
-        section_content: Markdown content of the specific section to refine
+        section_content: Markdown content of the specific section/entry to refine
         full_cv_content: Markdown content of the entire CV (all selected sections) for context
         job_description: The job description for context
         user_instructions: Optional user instructions for refinement
+        node_type: Type of node being refined ("section" or "entry")
 
     Returns:
         Dict with refined_content, changes_summary, stats, and prompt_sent
@@ -1012,21 +1013,24 @@ def refine_section_content_with_openai(section_content: str, full_cv_content: st
         }
 
     # Build the refinement prompt with full CV context
+    refinement_target = "SECTION" if node_type == "section" else "ENTRY"
+    refinement_target_lower = refinement_target.lower()
+
     refinement_prompt = f"""I will paste:
 1) The full tailored CV content (all selected sections and their children)
 2) A job description
-3) A specific CV section to refine
+3) A specific CV {refinement_target_lower} to refine
 
 You are a senior hiring manager and CV editor.
 
 Your job:
-Apply VERY light-touch editing to the SECTION ONLY to make it as strong a fit as possible for THIS specific role, while strictly respecting the constraints below AND reducing length by merging/removing redundancies.
+Apply VERY light-touch editing to the {refinement_target} ONLY to make it as strong a fit as possible for THIS specific role, while strictly respecting the constraints below AND reducing length by merging/removing redundancies.
 
 Important context rules:
 - Treat the FULL CV content as the source of truth about my background.
-- You may assume any information that appears anywhere in the full CV when deciding what is redundant or low-priority in this section.
+- You may assume any information that appears anywhere in the full CV when deciding what is redundant or low-priority in this {refinement_target_lower}.
 - However, you may NOT invent new responsibilities, achievements, technologies, or domains that are not present somewhere in the full CV.
-- You are only allowed to refine, merge, shorten, re-order, and lightly rephrase the SECTION TO REFINE.
+- You are only allowed to refine, merge, shorten, re-order, and lightly rephrase the {refinement_target} TO REFINE.
 
 Hard constraints (must follow all):
 - Do NOT add or invent any new responsibilities, achievements, technologies, or domains beyond what appears in the full CV.
@@ -1037,18 +1041,18 @@ Hard constraints (must follow all):
 - Do NOT exaggerate scope, impact, seniority, or team size beyond what the CV clearly implies.
 - Do NOT introduce generic AI-sounding fluff or buzzwords. Keep language human, grounded, and concrete.
 - Keep the tone humble but confident, and professional.
-- Do NOT move content from this section into other sections or vice versa; you are only editing this section's text.
-- Preserve the section heading and general structure (e.g., role title, company, dates); you may reorder bullets inside the section for relevance.
+- Do NOT move content from this {refinement_target_lower} into other {refinement_target_lower}s or vice versa; you are only editing this {refinement_target_lower}'s text.
+- Preserve the {refinement_target_lower} heading and general structure (e.g., role title, company, dates); you may reorder bullets inside the {refinement_target_lower} for relevance.
 
 Length & compression rules:
-- Actively shorten this section while preserving all major signals that are relevant to this specific role.
+- Actively shorten this {refinement_target_lower} while preserving all major signals that are relevant to this specific role.
 - Merge bullets wherever two or more bullets express related ideas that can be combined without losing important information.
-- It is encouraged to drop or heavily compress bullets that are clearly low-relevance for this role or duplicative of stronger bullets already in this section or elsewhere in the CV.
-- Aim for a noticeable reduction in total characters and bullet count in this section, but do NOT remove unique, high-value content that clearly matches the job description or is important to my profile.
+- It is encouraged to drop or heavily compress bullets that are clearly low-relevance for this role or duplicative of stronger bullets already in this {refinement_target_lower} or elsewhere in the CV.
+- Aim for a noticeable reduction in total characters and bullet count in this {refinement_target_lower}, but do NOT remove unique, high-value content that clearly matches the job description or is important to my profile.
 
 ATS / job-fit optimization rules:
 - Prioritize and, if needed, slightly rephrase bullets so they align with the MUST-HAVE parts of the job description.
-- Make sure important skills from the full CV that match the job description (e.g., leadership, ML/LLM, MLOps, experimentation, cloud, stakeholder management, product ownership) are easy to spot in this section and use wording that an ATS and a human recruiter will both recognize.
+- Make sure important skills from the full CV that match the job description (e.g., leadership, ML/LLM, MLOps, experimentation, cloud, stakeholder management, product ownership) are easy to spot in this {refinement_target_lower} and use wording that an ATS and a human recruiter will both recognize.
 - Preserve tense consistency and a clean, readable Markdown format.
 
 {f"Additional user instructions: {user_instructions}" if user_instructions else ""}
@@ -1057,19 +1061,19 @@ Output format (important):
 Return ONLY a JSON object with this exact structure:
 
 {{
-  "refined_content": "The improved SECTION ONLY in markdown format with bullets, ready to paste back into my CV",
+  "refined_content": "The improved {refinement_target} ONLY in markdown format with bullets, ready to paste back into my CV",
   "changes_summary": "2-4 sentences summarizing the main edits you made (e.g., merged redundant bullets, tightened wording, reordered for relevance, removed low-relevance items). Do NOT mention the job description explicitly here.",
   "stats": {{
-    "original_character_count_estimate": <integer count of characters in the original section>,
-    "refined_character_count_estimate": <integer count of characters in the refined section>,
+    "original_character_count_estimate": <integer count of characters in the original {refinement_target_lower}>,
+    "refined_character_count_estimate": <integer count of characters in the refined {refinement_target_lower}>,
     "characters_reduced_estimate": <original minus refined>,
-    "original_bullet_count_estimate": <integer count of bullets in the original section>,
-    "refined_bullet_count_estimate": <integer count of bullets in the refined section>,
+    "original_bullet_count_estimate": <integer count of bullets in the original {refinement_target_lower}>,
+    "refined_bullet_count_estimate": <integer count of bullets in the refined {refinement_target_lower}>,
     "bullets_removed_or_merged_estimate": <original minus refined, or your best estimate>
   }}
 }}
 
-Fill in the numeric stats fields with your best estimates based on the SECTION text.
+Fill in the numeric stats fields with your best estimates based on the {refinement_target} text.
 
 Now I will provide:
 
@@ -1079,7 +1083,7 @@ FULL CV Content (for context, do NOT rewrite this as a whole):
 Job Description (for relevance context):
 {job_description}
 
-SECTION TO REFINE (this is the ONLY part you should rewrite):
+{refinement_target} TO REFINE (this is the ONLY part you should rewrite):
 {section_content}
 
 Remember: Return ONLY the JSON object, no other text."""

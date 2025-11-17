@@ -688,10 +688,8 @@ function KanbanView({ groups, onSelectApp, onUpdateStatus, onDeleteApp, onRefres
   const [columnSearches, setColumnSearches] = useState({});
   const INITIAL_CARDS_LIMIT = 5;
 
-  // Include rejected in the kanban board, but exclude withdrawn
-  const activeStatuses = Object.keys(STATUS_CONFIG).filter(
-    status => status !== 'withdrawn'
-  );
+  // Include all statuses in the kanban board
+  const activeStatuses = Object.keys(STATUS_CONFIG);
 
   const handleDragStart = (app) => {
     setDraggedApp(app);
