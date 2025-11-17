@@ -583,8 +583,9 @@ function SavedCVDetail({ cvId, onBack }) {
   const convertMarkdownToNodes = (markdownText, baseNodeType) => {
     const lines = markdownText.split('\n');
     const nodes = [];
-    let currentLevel1Entry = null;  // ### entry
-    let currentLevel2Entry = null;  // #### nested entry
+    let currentLevel1Entry = null;  // ### entry (h3)
+    let currentLevel2Entry = null;  // #### nested entry (h4)
+    let currentLevel3Entry = null;  // ##### deeply nested entry (h5)
     let nextId = Date.now(); // Temporary IDs for new nodes
 
     lines.forEach((line, idx) => {
@@ -598,7 +599,52 @@ function SavedCVDetail({ cvId, onBack }) {
         // For entry-level refinement: Also skip (entry cannot contain section)
         return; // Skip this line
       }
-      // Entry header (###)
+      // Deeply nested entry header (##### - h5)
+      else if (trimmed.startsWith('##### ')) {
+        const title = trimmed.substring(6).trim();
+        currentLevel3Entry = {
+          id: nextId++,
+          global_id: `ai-refined-entry-${nextId}`,
+          node_type: 'entry',
+          title: title,
+          children: [],
+          is_selected: true,
+          ai_refined: true,
+          level: baseNodeType === 'entry' ? 4 : 3
+        };
+
+        // Add as child of current level2 entry if exists, otherwise level1, otherwise root
+        if (currentLevel2Entry) {
+          currentLevel2Entry.children.push(currentLevel3Entry);
+        } else if (currentLevel1Entry) {
+          currentLevel1Entry.children.push(currentLevel3Entry);
+        } else {
+          nodes.push(currentLevel3Entry);
+        }
+      }
+      // Nested Entry header (#### - h4)
+      else if (trimmed.startsWith('#### ')) {
+        const title = trimmed.substring(5).trim();
+        currentLevel2Entry = {
+          id: nextId++,
+          global_id: `ai-refined-entry-${nextId}`,
+          node_type: 'entry',
+          title: title,
+          children: [],
+          is_selected: true,
+          ai_refined: true,
+          level: baseNodeType === 'entry' ? 3 : 2
+        };
+
+        // Add as child of current level1 entry if exists, otherwise add to nodes
+        if (currentLevel1Entry) {
+          currentLevel1Entry.children.push(currentLevel2Entry);
+        } else {
+          nodes.push(currentLevel2Entry);
+        }
+        currentLevel3Entry = null; // Reset deeper level when new level2 entry starts
+      }
+      // Top-level Entry header (### - h3)
       else if (trimmed.startsWith('### ')) {
         const title = trimmed.substring(4).trim();
 
@@ -617,34 +663,13 @@ function SavedCVDetail({ cvId, onBack }) {
 
         nodes.push(currentLevel1Entry);
         currentLevel2Entry = null; // Reset nested entry when new level1 entry starts
-      }
-
-      // Nested Entry header (####)
-      else if (trimmed.startsWith('#### ')) {
-        const title = trimmed.substring(5).trim();
-        currentLevel2Entry = {
-          id: nextId++,
-          global_id: `ai-refined-entry-${nextId}`,
-          node_type: 'entry',
-          title: title,
-          children: [],
-          is_selected: true,
-          ai_refined: true,
-          level: baseNodeType === 'entry' ? 3 : 2  // Adjust level based on parent
-        };
-
-        // Add as child of current level1 entry if exists, otherwise add to nodes
-        if (currentLevel1Entry) {
-          currentLevel1Entry.children.push(currentLevel2Entry);
-        } else {
-          nodes.push(currentLevel2Entry);
-        }
+        currentLevel3Entry = null; // Reset deeper level
       }
       // Subtitle (italic text like *Company Name*)
       else if (trimmed.match(/^\*[^*]+\*$/)) {
         const subtitle = trimmed.replace(/\*/g, '').trim();
-        // Apply subtitle to the most recent entry (level2 > level1)
-        const targetEntry = currentLevel2Entry || currentLevel1Entry;
+        // Apply subtitle to the most recent entry (level3 > level2 > level1)
+        const targetEntry = currentLevel3Entry || currentLevel2Entry || currentLevel1Entry;
         if (targetEntry) {
           targetEntry.subtitle = subtitle;
         }
@@ -652,8 +677,8 @@ function SavedCVDetail({ cvId, onBack }) {
       // Metadata line (location | dates)
       else if (trimmed.includes(' | ')) {
         const parts = trimmed.split(' | ');
-        // Apply metadata to the most recent entry (level2 > level1)
-        const targetEntry = currentLevel2Entry || currentLevel1Entry;
+        // Apply metadata to the most recent entry (level3 > level2 > level1)
+        const targetEntry = currentLevel3Entry || currentLevel2Entry || currentLevel1Entry;
         if (targetEntry) {
           if (parts[0]) targetEntry.location = parts[0].trim();
           if (parts[1]) {
@@ -679,8 +704,10 @@ function SavedCVDetail({ cvId, onBack }) {
           children: []
         };
 
-        // Smart placement: level2 entry > level1 entry > root
-        if (currentLevel2Entry) {
+        // Smart placement: level3 > level2 > level1 > root
+        if (currentLevel3Entry) {
+          currentLevel3Entry.children.push(bulletNode);
+        } else if (currentLevel2Entry) {
           currentLevel2Entry.children.push(bulletNode);
         } else if (currentLevel1Entry) {
           currentLevel1Entry.children.push(bulletNode);
@@ -701,8 +728,10 @@ function SavedCVDetail({ cvId, onBack }) {
           children: []
         };
 
-        // Smart placement: level2 entry > level1 entry > root
-        if (currentLevel2Entry) {
+        // Smart placement: level3 > level2 > level1 > root
+        if (currentLevel3Entry) {
+          currentLevel3Entry.children.push(paragraphNode);
+        } else if (currentLevel2Entry) {
           currentLevel2Entry.children.push(paragraphNode);
         } else if (currentLevel1Entry) {
           currentLevel1Entry.children.push(paragraphNode);
@@ -770,10 +799,19 @@ function SavedCVDetail({ cvId, onBack }) {
                 selectedEntryChildren
               );
 
-              // Combine: unselected children (untouched) + refined children (replacing selected)
+              // PRESERVE ORIGINAL METADATA: Use the original entry's properties but update children
+              // This maintains the hierarchy structure (id, global_id, level, etc.)
               return {
-                ...refinedNode,
-                children: [...unselectedEntryChildren, ...mergedChildren]
+                ...matchingExisting,  // Preserve original entry metadata
+                children: [...unselectedEntryChildren, ...mergedChildren],
+                ai_refined: true,  // Mark as AI-refined
+                // Update title/subtitle/dates if AI changed them
+                title: refinedNode.title || matchingExisting.title,
+                subtitle: refinedNode.subtitle !== undefined ? refinedNode.subtitle : matchingExisting.subtitle,
+                location: refinedNode.location !== undefined ? refinedNode.location : matchingExisting.location,
+                start_date: refinedNode.start_date !== undefined ? refinedNode.start_date : matchingExisting.start_date,
+                end_date: refinedNode.end_date !== undefined ? refinedNode.end_date : matchingExisting.end_date,
+                content: refinedNode.content !== undefined ? refinedNode.content : matchingExisting.content
               };
             }
           }

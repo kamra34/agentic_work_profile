@@ -1860,8 +1860,14 @@ def extract_section_content_as_markdown(section_node: dict) -> str:
     if section_node.get('title'):
         lines.append(f"## {section_node['title']}\n")
 
-    def render_node(node, level=0):
-        """Recursively render a node and its children as markdown"""
+    def render_node(node, level=0, entry_depth=0):
+        """Recursively render a node and its children as markdown
+
+        Args:
+            node: The node to render
+            level: Indentation level for bullets (0, 1, 2, ...)
+            entry_depth: Depth of entry nesting (0=top-level entry, 1=nested entry, etc.)
+        """
         # Skip unselected nodes
         if node.get('is_selected') is False:
             return
@@ -1869,8 +1875,13 @@ def extract_section_content_as_markdown(section_node: dict) -> str:
         node_type = node.get('node_type', '')
 
         if node_type == 'entry':
-            # Entry header with title, subtitle, dates, location
-            lines.append(f"\n### {node.get('title', 'Untitled')}")
+            # Entry header with proper markdown heading level based on nesting depth
+            # entry_depth 0 (top-level entry) => ### (h3)
+            # entry_depth 1 (nested entry) => #### (h4)
+            # entry_depth 2 (deeply nested) => ##### (h5)
+            heading_level = 3 + entry_depth  # Start at h3 (###) for top-level entries
+            heading_prefix = '#' * heading_level
+            lines.append(f"\n{heading_prefix} {node.get('title', 'Untitled')}")
 
             if node.get('subtitle'):
                 lines.append(f"*{node['subtitle']}*")
@@ -1905,12 +1916,14 @@ def extract_section_content_as_markdown(section_node: dict) -> str:
             lines.append(f"\n{content}\n")
 
         # Recurse through children
+        # If this node is an entry, increment entry_depth for nested entries
+        next_entry_depth = entry_depth + 1 if node_type == 'entry' else entry_depth
         for child in node.get('children', []):
-            render_node(child, level + 1)
+            render_node(child, level + 1, next_entry_depth)
 
-    # Render all children of the section
+    # Render all children of the section (starting at entry_depth 0)
     for child in section_node.get('children', []):
-        render_node(child)
+        render_node(child, level=0, entry_depth=0)
 
     return "\n".join(lines)
 
