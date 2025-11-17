@@ -578,6 +578,254 @@ function SavedCVDetail({ cvId, onBack }) {
     });
   };
 
+  // Convert refined markdown to ProfileNode structure with proper BULLET/PARAGRAPH distinction
+  const convertMarkdownToNodes = (markdownText, baseNodeType) => {
+    const lines = markdownText.split('\n');
+    const nodes = [];
+    let currentLevel1Entry = null;  // ### entry
+    let currentLevel2Entry = null;  // #### nested entry
+    let nextId = Date.now(); // Temporary IDs for new nodes
+
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      // Section header (##) - ALWAYS SKIP (section cannot contain section)
+      if (trimmed.startsWith('## ')) {
+        // For section-level refinement: AI returns section header, but we skip it
+        //   (we're adding children TO the section, not creating a new section)
+        // For entry-level refinement: Also skip (entry cannot contain section)
+        return; // Skip this line
+      }
+      // Entry header (###)
+      else if (trimmed.startsWith('### ')) {
+        // For entry-level refinement: Skip (entry cannot contain entry)
+        if (baseNodeType === 'entry') {
+          return; // Skip this line
+        }
+
+        // For section-level refinement: Create entry nodes
+        const title = trimmed.substring(4).trim();
+        currentLevel1Entry = {
+          id: nextId++,
+          global_id: `ai-refined-entry-${nextId}`,
+          node_type: 'entry',
+          title: title,
+          children: [],
+          is_selected: true,
+          ai_refined: true,
+          level: 1
+        };
+
+        nodes.push(currentLevel1Entry);
+        currentLevel2Entry = null; // Reset nested entry when new level1 entry starts
+      }
+
+      // Nested Entry header (####) - For section-level refinement with nested entries
+      else if (trimmed.startsWith('#### ')) {
+        // Only allowed for section-level refinement
+        if (baseNodeType === 'section') {
+          const title = trimmed.substring(5).trim();
+          currentLevel2Entry = {
+            id: nextId++,
+            global_id: `ai-refined-entry-${nextId}`,
+            node_type: 'entry',
+            title: title,
+            children: [],
+            is_selected: true,
+            ai_refined: true,
+            level: 2
+          };
+
+          // Add as child of current level1 entry if exists, otherwise add to nodes
+          if (currentLevel1Entry) {
+            currentLevel1Entry.children.push(currentLevel2Entry);
+          } else {
+            nodes.push(currentLevel2Entry);
+          }
+        }
+        // For entry-level refinement: Skip
+        else {
+          return;
+        }
+      }
+      // Subtitle (italic text like *Company Name*)
+      else if (trimmed.match(/^\*[^*]+\*$/)) {
+        const subtitle = trimmed.replace(/\*/g, '').trim();
+        // Apply subtitle to the most recent entry (level2 > level1)
+        const targetEntry = currentLevel2Entry || currentLevel1Entry;
+        if (targetEntry) {
+          targetEntry.subtitle = subtitle;
+        }
+      }
+      // Metadata line (location | dates)
+      else if (trimmed.includes(' | ')) {
+        const parts = trimmed.split(' | ');
+        // Apply metadata to the most recent entry (level2 > level1)
+        const targetEntry = currentLevel2Entry || currentLevel1Entry;
+        if (targetEntry) {
+          if (parts[0]) targetEntry.location = parts[0].trim();
+          if (parts[1]) {
+            const dates = parts[1].trim();
+            if (dates.includes(' - ')) {
+              const [start, end] = dates.split(' - ');
+              targetEntry.start_date = start.trim();
+              targetEntry.end_date = end.trim() === 'Present' ? null : end.trim();
+            }
+          }
+        }
+      }
+      // BULLET point (starts with -)
+      else if (trimmed.startsWith('- ')) {
+        const content = trimmed.substring(2).trim();
+        const bulletNode = {
+          id: nextId++,
+          global_id: `ai-refined-bullet-${nextId}`,
+          node_type: 'bullet',
+          content: content,
+          is_selected: true,
+          ai_refined: true,
+          children: []
+        };
+
+        // Smart placement: level2 entry > level1 entry > root
+        if (currentLevel2Entry) {
+          currentLevel2Entry.children.push(bulletNode);
+        } else if (currentLevel1Entry) {
+          currentLevel1Entry.children.push(bulletNode);
+        } else {
+          // No entry context, add directly (for section with bullets, or entry refinement)
+          nodes.push(bulletNode);
+        }
+      }
+      // PARAGRAPH text (doesn't start with -, not metadata, not header)
+      else {
+        const paragraphNode = {
+          id: nextId++,
+          global_id: `ai-refined-paragraph-${nextId}`,
+          node_type: 'paragraph',
+          content: trimmed,
+          is_selected: true,
+          ai_refined: true,
+          children: []
+        };
+
+        // Smart placement: level2 entry > level1 entry > root
+        if (currentLevel2Entry) {
+          currentLevel2Entry.children.push(paragraphNode);
+        } else if (currentLevel1Entry) {
+          currentLevel1Entry.children.push(paragraphNode);
+        } else {
+          // No entry context, add directly (for section with paragraphs, or entry refinement)
+          nodes.push(paragraphNode);
+        }
+      }
+    });
+
+    return nodes;
+  };
+
+  // Handle including refined content into the tree (silent, immediate update)
+  const handleIncludeRefinedContent = async () => {
+    if (!refinementResult || !refinementResult.refined_content) {
+      return;
+    }
+
+    try {
+      // Convert markdown to node structure with AI-refined markers
+      const refinedNodes = convertMarkdownToNodes(
+        refinementResult.refined_content,
+        refinementModal.nodeType
+      );
+
+      if (refinedNodes.length === 0) {
+        return;
+      }
+
+      // Update the cvData state immediately (optimistic update)
+      const updatedCvData = { ...cvData };
+      const content_snapshot = { ...updatedCvData.content_snapshot };
+
+      // Find and update the target node's children
+      const updateNodeChildren = (nodes, targetId) => {
+        for (let node of nodes) {
+          if (node.id === targetId) {
+            // Keep unselected children, remove selected ones, add refined ones
+            const unselectedChildren = (node.children || []).filter(child => {
+              // Keep nodes that were NOT selected (not sent to AI)
+              return child.global_id && nodeSelections[child.global_id] === false;
+            });
+
+            // Combine: unselected children (kept) + refined nodes (new)
+            node.children = [...unselectedChildren, ...refinedNodes];
+            return true;
+          }
+          if (node.children && node.children.length > 0) {
+            if (updateNodeChildren(node.children, targetId)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      updateNodeChildren(content_snapshot.nodes, refinementModal.sectionId);
+      updatedCvData.content_snapshot = content_snapshot;
+
+      // Update state immediately - this makes nodes appear in left panel
+      setCvData(updatedCvData);
+
+      // Auto-select all refined nodes by updating nodeSelections
+      const newSelections = { ...nodeSelections };
+      const markNodesAsSelected = (nodes) => {
+        nodes.forEach(node => {
+          if (node.global_id) {
+            newSelections[node.global_id] = true;
+          }
+          if (node.children && node.children.length > 0) {
+            markNodesAsSelected(node.children);
+          }
+        });
+      };
+      markNodesAsSelected(refinedNodes);
+      setNodeSelections(newSelections);
+
+      // Expand the parent node to show refined children
+      setExpandedNodes(prev => {
+        const newExpanded = new Set(prev);
+        newExpanded.add(refinementModal.section?.global_id);
+        return newExpanded;
+      });
+
+      // Send to backend to persist
+      const updatePayload = {
+        node_id: refinementModal.sectionId,
+        node_type: refinementModal.nodeType,
+        refined_nodes: refinedNodes,
+        operation: 'merge_children',  // Changed from 'replace_children' to preserve unselected
+        node_selections: nodeSelections  // Send selections so backend knows what to keep
+      };
+
+      const token = localStorage.getItem('token');
+      fetch(`${API_URL}/api/tailor/${cvId}/apply-refinement`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatePayload)
+      }).catch(err => {
+        console.error('Failed to persist refinement:', err);
+      });
+
+      // Close modal silently - no alert
+      closeRefinementModal();
+
+    } catch (error) {
+      console.error('Error including refined content:', error);
+    }
+  };
+
   // Navigate to a node in the left panel from preview click
   const navigateToNode = (globalId) => {
     if (!cvData?.content_snapshot?.nodes) return;
@@ -1279,6 +1527,13 @@ function SavedCVDetail({ cvId, onBack }) {
           <span className={`node-type-badge badge-${node.node_type}`}>
             {node.node_type.toUpperCase()}
           </span>
+
+          {/* AI-Refined Indicator */}
+          {node.ai_refined && (
+            <span className="ai-refined-badge" title="AI-refined content">
+              ✨
+            </span>
+          )}
 
           {/* Node Content */}
           <div className="node-content-wrapper">
@@ -2457,12 +2712,21 @@ function SavedCVDetail({ cvId, onBack }) {
                   <div className="refined-content-display">
                     <div className="refined-header">
                       <h4>✨ Refined Content</h4>
-                      <button
-                        onClick={(e) => copyToClipboard(refinementResult.refined_content, e)}
-                        className="btn-copy-all"
-                      >
-                        📋 Copy All
-                      </button>
+                      <div className="refined-actions">
+                        <button
+                          onClick={handleIncludeRefinedContent}
+                          className="btn-include"
+                          title="Include this refined content in your CV tree"
+                        >
+                          ✓ Include
+                        </button>
+                        <button
+                          onClick={(e) => copyToClipboard(refinementResult.refined_content, e)}
+                          className="btn-copy-all"
+                        >
+                          📋 Copy All
+                        </button>
+                      </div>
                     </div>
 
                     <div className="refined-items">

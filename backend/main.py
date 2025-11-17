@@ -2000,6 +2000,102 @@ async def refine_section(
     return result
 
 
+@app.post("/api/tailor/{cv_id}/apply-refinement")
+async def apply_refinement(
+    cv_id: int,
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Apply AI-refined content by replacing the children of the target node.
+
+    Request body:
+    {
+        "node_id": int,  # The target node (section or entry)
+        "node_type": str,  # "section" or "entry"
+        "refined_nodes": list,  # Array of new child nodes to replace existing children
+        "operation": str  # "replace_children" (for now, only this operation)
+    }
+
+    Returns:
+    {
+        "success": bool,
+        "message": str,
+        "updated_content_snapshot": dict
+    }
+    """
+    # Get the tailored CV
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    # Validate request
+    node_id = request_data.get('node_id')
+    node_type = request_data.get('node_type')
+    refined_nodes = request_data.get('refined_nodes', [])
+    operation = request_data.get('operation', 'merge_children')
+    node_selections = request_data.get('node_selections', {})
+
+    if node_id is None:
+        raise HTTPException(status_code=400, detail="node_id is required")
+    if not refined_nodes:
+        raise HTTPException(status_code=400, detail="refined_nodes is required")
+
+    # Get content snapshot
+    content_snapshot = tailored_cv.content_snapshot
+    if not content_snapshot or not content_snapshot.get('nodes'):
+        raise HTTPException(status_code=400, detail="No content snapshot found")
+
+    # Find and update the target node
+    def find_and_update_node(nodes, target_id):
+        """Recursively find the target node and update its children"""
+        for i, node in enumerate(nodes):
+            if node.get('id') == target_id:
+                # Found the target node
+                if operation == 'merge_children':
+                    # Keep unselected children, remove selected ones, add refined ones
+                    unselected_children = []
+                    for child in node.get('children', []):
+                        global_id = child.get('global_id')
+                        # Keep nodes that were NOT selected (not sent to AI)
+                        if global_id and node_selections.get(global_id) == False:
+                            unselected_children.append(child)
+
+                    # Combine: unselected children (kept) + refined nodes (new)
+                    node['children'] = unselected_children + refined_nodes
+                    return True
+                elif operation == 'replace_children':
+                    # Legacy operation - replace all children
+                    node['children'] = refined_nodes
+                    return True
+            # Recurse into children
+            if node.get('children'):
+                if find_and_update_node(node['children'], target_id):
+                    return True
+        return False
+
+    success = find_and_update_node(content_snapshot['nodes'], node_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Node with ID {node_id} not found")
+
+    # Update the content_snapshot in database
+    tailored_cv.content_snapshot = content_snapshot
+    db.commit()
+    db.refresh(tailored_cv)
+
+    return {
+        "success": True,
+        "message": f"Successfully applied refinement to {node_type}",
+        "updated_content_snapshot": content_snapshot
+    }
+
+
 @app.delete("/api/tailor/{cv_id}")
 async def delete_tailored_cv(
     cv_id: int,
