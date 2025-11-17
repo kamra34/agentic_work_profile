@@ -236,6 +236,7 @@ class TailoredCVResponse(BaseModel):
     ats_scores: Optional[Dict[str, int]]
     selected_node_ids: List[str]
     content_snapshot: Dict[str, Any]
+    original_snapshot: Optional[Dict[str, Any]]
     recommendations: Optional[Dict[str, Any]]
     job_analysis: Optional[Dict[str, Any]]
     notes: Optional[str]

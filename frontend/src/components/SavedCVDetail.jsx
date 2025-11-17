@@ -18,6 +18,7 @@ function SavedCVDetail({ cvId, onBack }) {
   const [editedContent, setEditedContent] = useState({}); // Store edited content
   const [recalculating, setRecalculating] = useState(false);
   const [showPromptSection, setShowPromptSection] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   // Drag and drop state
   const [draggedNode, setDraggedNode] = useState(null);
@@ -736,7 +737,7 @@ function SavedCVDetail({ cvId, onBack }) {
       const updatedCvData = { ...cvData };
       const content_snapshot = { ...updatedCvData.content_snapshot };
 
-      // Recursively merge refined nodes with existing nodes, preserving unselected children
+      // Recursively merge refined nodes with existing nodes, preserving unselected children at ALL levels
       const mergeRefinedNodes = (refinedNodes, existingChildren) => {
         return refinedNodes.map(refinedNode => {
           if (refinedNode.node_type === 'entry') {
@@ -747,19 +748,22 @@ function SavedCVDetail({ cvId, onBack }) {
                        nodeSelections[child.global_id] !== false // Was selected for refinement
             );
 
-            if (matchingExisting && matchingExisting.children) {
-              // Keep unselected children from the existing entry
-              const unselectedChildren = matchingExisting.children.filter(child => {
+            if (matchingExisting) {
+              const existingChildrenOfEntry = matchingExisting.children || [];
+
+              // Keep ALL unselected children from the existing entry (bullets, paragraphs, AND entries)
+              const unselectedChildren = existingChildrenOfEntry.filter(child => {
                 return child.global_id && nodeSelections[child.global_id] === false;
               });
 
               // Recursively merge refined children with existing children
+              // This will match nested entries and preserve THEIR unselected children too
               const mergedChildren = mergeRefinedNodes(
                 refinedNode.children || [],
-                matchingExisting.children || []
+                existingChildrenOfEntry
               );
 
-              // Combine: unselected children + refined children
+              // Combine: unselected children + merged refined children
               return {
                 ...refinedNode,
                 children: [...unselectedChildren, ...mergedChildren]
@@ -1183,6 +1187,66 @@ function SavedCVDetail({ cvId, onBack }) {
       alert('Failed to recalculate scores: ' + err.message);
     } finally {
       setRecalculating(false);
+    }
+  };
+
+  // Restore CV to original state (before any refinements or edits)
+  const restoreOriginal = async () => {
+    const confirmed = window.confirm(
+      '⚠️ Restore to Original?\n\n' +
+      'This will remove ALL refinements and edits, returning this CV to its original state when first saved.\n\n' +
+      'This action cannot be undone. Are you sure?'
+    );
+
+    if (!confirmed) return;
+
+    setRestoring(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/tailor/${cvId}/restore-original`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to restore original');
+      }
+
+      const result = await response.json();
+
+      // Update local state with restored data
+      setCvData(prev => ({
+        ...prev,
+        content_snapshot: result.content_snapshot,
+        selected_node_ids: result.selected_node_ids,
+        updated_at: result.updated_at
+      }));
+
+      // Rebuild nodeSelections from restored snapshot
+      const restoredSelections = {};
+      const buildSelections = (nodes) => {
+        nodes.forEach(node => {
+          if (node.global_id) {
+            restoredSelections[node.global_id] = node.is_selected || false;
+          }
+          if (node.children) {
+            buildSelections(node.children);
+          }
+        });
+      };
+      buildSelections(result.content_snapshot.nodes);
+      setNodeSelections(restoredSelections);
+
+      alert('✅ CV restored to original state successfully!');
+    } catch (err) {
+      console.error('Error restoring original:', err);
+      alert('Failed to restore original: ' + err.message);
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -2436,6 +2500,47 @@ function SavedCVDetail({ cvId, onBack }) {
             </div>
             <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses OpenAI GPT-5.1 & Claude</div>
           </div>
+
+          {/* Restore Original Section */}
+          {cvData.original_snapshot && (
+            <div className="metric-card">
+              <div className="metric-header">
+                <div className="metric-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                  </svg>
+                  Restore to Original
+                </div>
+              </div>
+              <div className="metric-body">
+                <p className="reevaluate-description">
+                  Remove all AI refinements and manual edits to return this CV to its original state when first saved.
+                </p>
+                <button
+                  onClick={restoreOriginal}
+                  className="btn-restore-original"
+                  disabled={restoring}
+                >
+                  {restoring ? (
+                    <>
+                      <span className="spinner-medium"></span>
+                      Restoring...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 2 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                      </svg>
+                      Restore Original Version
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="metric-subtitle">⚠️ This will remove all your refinements and edits</div>
+            </div>
+          )}
         </div>
       </div>
 

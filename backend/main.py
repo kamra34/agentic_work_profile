@@ -1210,6 +1210,10 @@ async def save_tailored_cv(
     print(f"📋 [SAVE-CV] Saving recommendations from both models: {list(complete_recommendations.keys())}")
 
     # Create tailored CV record with complete snapshot
+    # Save ORIGINAL snapshot as a pristine copy for "restore to original" functionality
+    import copy
+    original_snapshot = copy.deepcopy(content_snapshot)
+
     tailored_cv = TailoredCV(
         user_id=current_user.id,
         profile_id=profile_id,
@@ -1220,6 +1224,7 @@ async def save_tailored_cv(
         ats_scores=ats_scores,
         selected_node_ids=selected_nodes_with_ids,
         content_snapshot=content_snapshot,
+        original_snapshot=original_snapshot,  # Store pristine copy for restoration
         recommendations=complete_recommendations,  # Complete recommendations from BOTH models
         job_analysis=job_analysis,  # Job requirements from BOTH models
         status=status
@@ -1550,6 +1555,71 @@ async def reset_cv_contact_info(
         "success": True,
         "message": "Contact info reset to profile defaults",
         "contact_info": user_contact_info,
+        "updated_at": tailored_cv.updated_at.isoformat()
+    }
+
+
+@app.post("/api/tailor/{cv_id}/restore-original")
+async def restore_original_snapshot(
+    cv_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Restore the CV to its original state by reverting content_snapshot to original_snapshot.
+    This removes all AI refinements and manual edits, returning to the pristine state.
+    """
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    if not tailored_cv.original_snapshot:
+        raise HTTPException(
+            status_code=400,
+            detail="No original snapshot available for this CV. This CV may have been created before the restore feature was added."
+        )
+
+    print(f"[RestoreOriginal] Restoring CV {cv_id} to original state")
+
+    # Create a deep copy of original_snapshot to avoid reference issues
+    import copy
+    restored_snapshot = copy.deepcopy(tailored_cv.original_snapshot)
+
+    # Replace content_snapshot with the original
+    tailored_cv.content_snapshot = restored_snapshot
+
+    # Rebuild selected_node_ids from the original snapshot's nodes
+    def collect_selected_nodes(nodes, selected_list):
+        """Recursively collect all nodes marked as selected"""
+        for node in nodes:
+            if node.get('is_selected') and node.get('global_id'):
+                selected_list.append({
+                    "id": node.get('id'),
+                    "global_id": node.get('global_id')
+                })
+            if node.get('children'):
+                collect_selected_nodes(node['children'], selected_list)
+
+    selected_nodes_list = []
+    if restored_snapshot.get('nodes'):
+        collect_selected_nodes(restored_snapshot['nodes'], selected_nodes_list)
+
+    tailored_cv.selected_node_ids = selected_nodes_list
+
+    db.commit()
+    db.refresh(tailored_cv)
+
+    print(f"[RestoreOriginal] Successfully restored CV {cv_id}. Selected nodes: {len(selected_nodes_list)}")
+
+    return {
+        "success": True,
+        "message": "CV restored to original state. All refinements and edits have been removed.",
+        "content_snapshot": tailored_cv.content_snapshot,
+        "selected_node_ids": tailored_cv.selected_node_ids,
         "updated_at": tailored_cv.updated_at.isoformat()
     }
 

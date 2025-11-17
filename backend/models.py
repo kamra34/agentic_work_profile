@@ -156,6 +156,10 @@ class TailoredCV(Base):
     #   "contact_info": {...}
     # }
 
+    # Original snapshot - pristine copy saved when first created (never modified by refinements)
+    # Used for "restore to original" functionality
+    original_snapshot = Column(JSON, nullable=True)
+
     # AI recommendations and analysis (complete data from Step 3)
     recommendations = Column(JSON, nullable=True)
     # {

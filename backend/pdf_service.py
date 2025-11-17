@@ -766,10 +766,15 @@ class CVPDFGenerator:
 
         for item in visible_items:
             content = item.get('content', '')
+            node_type = item.get('node_type', 'bullet')  # Default to bullet for backward compatibility
             if content:
-                # Add bullet point
-                bullet_text = f"• {content}"
-                story.append(Paragraph(sanitize_text(bullet_text), styles['CVBullet']))
+                # Add bullet point only if node_type is 'bullet' or 'item', not 'paragraph'
+                if node_type.lower() in ['bullet', 'item']:
+                    bullet_text = f"• {content}"
+                    story.append(Paragraph(sanitize_text(bullet_text), styles['CVBullet']))
+                else:
+                    # For paragraph type, just add the content without bullet
+                    story.append(Paragraph(sanitize_text(content), styles['CVDescription']))
 
         # Handle sub-entries (for hierarchical work experience)
         sub_entries = entry.get('sub_entries', [])
@@ -791,10 +796,15 @@ class CVPDFGenerator:
 
                 for item in visible_sub_items:
                     content = item.get('content', '')
+                    node_type = item.get('node_type', 'bullet')  # Default to bullet for backward compatibility
                     if content:
-                        # Add bullet point
-                        bullet_text = f"• {content}"
-                        story.append(Paragraph(sanitize_text(bullet_text), styles['CVBullet']))
+                        # Add bullet point only if node_type is 'bullet' or 'item', not 'paragraph'
+                        if node_type.lower() in ['bullet', 'item']:
+                            bullet_text = f"• {content}"
+                            story.append(Paragraph(sanitize_text(bullet_text), styles['CVBullet']))
+                        else:
+                            # For paragraph type, just add the content without bullet
+                            story.append(Paragraph(sanitize_text(content), styles['CVDescription']))
 
         # Add spacing after entry
         story.append(Spacer(1, 0.15*inch))

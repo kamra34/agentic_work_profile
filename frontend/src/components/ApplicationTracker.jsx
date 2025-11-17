@@ -721,7 +721,7 @@ function ApplicationTracker() {
           onUpdateStatus={updateApplicationStatus}
           onDeleteApp={deleteApplication}
           onRefresh={fetchApplications}
-          onViewCV={handleViewCV}
+          onViewCV={handleViewCVInNewTab}
         />
       )}
 

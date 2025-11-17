@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import './PDFTemplateSelector.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -206,6 +206,10 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null);
 
+  // Refs to prevent duplicate API calls
+  const previewRequestRef = useRef(null);
+  const abortControllerRef = useRef(null);
+
   const selectedTemplateData = TEMPLATES.find(t => t.id === selectedTemplate);
 
   // Fetch CV sections for ordering
@@ -248,6 +252,30 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
   const fetchPreview = useCallback(async () => {
     if (!cvId) return;
 
+    // Create a unique request signature to detect duplicates
+    const requestSignature = JSON.stringify({
+      cvId,
+      template: selectedTemplate,
+      customizations,
+      sectionOrder: sectionOrder.map(s => s.title)
+    });
+
+    // Skip if the same request is already in flight
+    if (previewRequestRef.current === requestSignature) {
+      console.log('[PreviewDebug] Skipping duplicate request');
+      return;
+    }
+
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    previewRequestRef.current = requestSignature;
+
     setIsLoadingPreview(true);
     setPreviewError(null);
 
@@ -271,7 +299,8 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
           body: JSON.stringify({
             cv_format: selectedTemplate,
             customizations: customizationsWithOrder
-          })
+          }),
+          signal: abortController.signal
         }),
         fetch(`${API_URL}/api/tailor/${cvId}/preview-image`, {
           method: 'POST',
@@ -284,7 +313,8 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
             customizations: customizationsWithOrder,
             page_index: 0,
             all_pages: false  // Only fetch first page for thumbnail
-          })
+          }),
+          signal: abortController.signal
         })
       ]);
 
@@ -308,12 +338,20 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
       setPreviewImageUrl(imageUrl);
 
     } catch (error) {
+      // Ignore aborted requests
+      if (error.name === 'AbortError') {
+        console.log('[PreviewDebug] Request aborted');
+        return;
+      }
       console.error('Error fetching preview:', error);
       setPreviewError(error.message);
     } finally {
       setIsLoadingPreview(false);
+      // Clear the request ref when done
+      previewRequestRef.current = null;
+      abortControllerRef.current = null;
     }
-  }, [cvId, selectedTemplate, customizations, previewImageUrl]);
+  }, [cvId, selectedTemplate, customizations, sectionOrder]);
 
   // Fetch full-size preview (all pages)
   const fetchFullSizePreview = useCallback(async () => {
@@ -368,20 +406,27 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
   // Fetch preview when template, customizations, or section order changes
   useEffect(() => {
     fetchPreview();
+  }, [fetchPreview]);
 
-    // Invalidate full-size preview when settings change
+  // Invalidate full-size preview when settings change
+  useEffect(() => {
     if (fullSizeImageUrl) {
       URL.revokeObjectURL(fullSizeImageUrl);
       setFullSizeImageUrl(null);
     }
+  }, [selectedTemplate, customizations, sectionOrder]);
 
-    // Cleanup function to revoke object URL
+  // Cleanup URLs on unmount
+  useEffect(() => {
     return () => {
       if (previewImageUrl) {
         URL.revokeObjectURL(previewImageUrl);
       }
+      if (fullSizeImageUrl) {
+        URL.revokeObjectURL(fullSizeImageUrl);
+      }
     };
-  }, [selectedTemplate, customizations.fontSize, customizations.spacing, customizations.colorIntensity, sectionOrder]);
+  }, [previewImageUrl, fullSizeImageUrl]);
 
   // Fetch full-size preview when modal is opened
   useEffect(() => {
