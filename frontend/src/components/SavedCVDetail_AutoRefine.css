@@ -1,0 +1,334 @@
+/* =================================================================
+   AUTO-REFINE ALL SECTIONS - MODERN VISUAL DESIGN
+   ================================================================= */
+
+/* Auto-Refine Button in Top Bar */
+.btn-auto-refine-modern {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.25rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
+}
+
+.btn-auto-refine-modern:hover:not(:disabled) {
+  background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+}
+
+.btn-auto-refine-modern:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-auto-refine-modern .btn-icon {
+  width: 20px;
+  height: 20px;
+  animation: rotate-sparkle 3s linear infinite;
+}
+
+@keyframes rotate-sparkle {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.btn-auto-refine-modern .btn-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Auto-Refine Progress Modal */
+.auto-refine-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.auto-refine-modal {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 650px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Header */
+.auto-refine-header {
+  padding: 2rem 2rem 1.5rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  border-radius: 16px 16px 0 0;
+}
+
+.auto-refine-header h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.auto-refine-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+
+/* Progress Container */
+.auto-refine-progress-container {
+  padding: 2rem 2rem 1.5rem;
+  background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+}
+
+.progress-bar-wrapper {
+  width: 100%;
+  height: 12px;
+  background: #e9ecef;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 0.75rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.progress-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #6c757d;
+  font-weight: 600;
+}
+
+.progress-count {
+  color: #8b5cf6;
+}
+
+.progress-percent {
+  color: #6366f1;
+  font-size: 1.1rem;
+}
+
+/* Current Section Indicator */
+.current-section-indicator {
+  padding: 1rem 2rem;
+  background: #fff;
+  border-top: 1px solid #e9ecef;
+  border-bottom: 1px solid #e9ecef;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.95rem;
+  color: #495057;
+}
+
+.spinner-animation {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(139, 92, 246, 0.2);
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.current-section-indicator strong {
+  color: #8b5cf6;
+  font-weight: 700;
+}
+
+/* Activity Log */
+.auto-refine-log {
+  padding: 1.5rem 2rem;
+  background: #fff;
+}
+
+.auto-refine-log h3 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #212529;
+}
+
+.log-entries {
+  max-height: 250px;
+  overflow-y: auto;
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+}
+
+.log-entry {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e9ecef;
+  animation: logAppear 0.3s ease;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+@keyframes logAppear {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.log-processing .log-message::before {
+  content: '⏳ ';
+  color: #ffc107;
+}
+
+.log-success .log-message::before {
+  content: '';
+  color: #28a745;
+  font-weight: bold;
+}
+
+.log-error .log-message::before {
+  content: '';
+  color: #dc3545;
+  font-weight: bold;
+}
+
+.log-complete {
+  padding: 1rem;
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  border: 2px solid #28a745;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+}
+
+.log-complete .log-message {
+  color: #155724;
+  font-weight: bold;
+  font-size: 0.95rem;
+}
+
+.log-complete .log-message::before {
+  content: '🎉 ';
+}
+
+/* Note */
+.auto-refine-note {
+  padding: 1.5rem 2rem 2rem;
+  background: linear-gradient(to top, #f8f9fa, #ffffff);
+  border-radius: 0 0 16px 16px;
+  font-size: 0.9rem;
+  color: #6c757d;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* Scrollbar Styling for Log */
+.log-entries::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log-entries::-webkit-scrollbar-track {
+  background: #e9ecef;
+  border-radius: 4px;
+}
+
+.log-entries::-webkit-scrollbar-thumb {
+  background: #8b5cf6;
+  border-radius: 4px;
+}
+
+.log-entries::-webkit-scrollbar-thumb:hover {
+  background: #7c3aed;
+}

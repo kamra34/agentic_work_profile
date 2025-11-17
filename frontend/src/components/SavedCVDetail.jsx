@@ -1045,14 +1045,11 @@ function SavedCVDetail({ cvId, onBack }) {
             // Save to backend
             await autoSave(accumulatedSelections);
 
-            // Reload fresh data from backend
+            // Reload fresh data from backend (without triggering full UI refresh)
             log.push({ status: 'processing', message: `Reloading fresh state...` });
             setAutoRefineLog([...log]);
 
-            await fetchCVData();
-
-            // Re-sync accumulatedSelections from the freshly loaded cvData
-            // This is critical - we need to use the PERSISTED state, not in-memory state
+            // Fetch fresh data directly without calling fetchCVData() to avoid page refresh
             const freshData = await fetch(`${API_URL}/api/tailor/${cvId}`, {
               headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -1217,37 +1214,42 @@ function SavedCVDetail({ cvId, onBack }) {
     updatedCvData.content_snapshot = content_snapshot;
     setCvData(updatedCvData);
 
-    // Auto-select ALL nodes in the updated section (including refined ones)
-    // Use currentSelections passed from parent to accumulate across sections
+    // Sync selections from node tree to selection state
+    // CRITICAL: Do NOT force all nodes to selected=true!
+    // Instead, preserve each node's is_selected property
+    // Only newly refined nodes (with is_selected=true from convertMarkdownToNodes) should be selected
     const newSelections = { ...currentSelections };
 
-    // Find the updated section in the tree and mark all its descendants as selected
-    const findAndMarkSection = (nodes) => {
+    // Find the updated section and sync its descendants' is_selected to newSelections
+    const findAndSyncSection = (nodes) => {
       for (const node of nodes) {
         if (node.id === section.id) {
-          // Found the section - now mark all children as selected recursively
-          const markAllDescendantsSelected = (n) => {
+          // Found the section - now sync all children's is_selected to newSelections
+          const syncDescendantSelections = (n) => {
             if (n.global_id) {
-              newSelections[n.global_id] = true;
+              // CRITICAL: Use the node's is_selected property, don't force to true
+              // Unselected nodes should stay unselected, refined nodes have is_selected=true
+              newSelections[n.global_id] = n.is_selected !== false;
             }
             if (n.children && n.children.length > 0) {
-              n.children.forEach(child => markAllDescendantsSelected(child));
+              n.children.forEach(child => syncDescendantSelections(child));
             }
           };
 
-          // Mark the section itself and all its children
+          // Sync the section itself
           if (node.global_id) {
-            newSelections[node.global_id] = true;
+            newSelections[node.global_id] = node.is_selected !== false;
           }
+          // Sync all children
           if (node.children && node.children.length > 0) {
-            node.children.forEach(child => markAllDescendantsSelected(child));
+            node.children.forEach(child => syncDescendantSelections(child));
           }
           return true;
         }
 
         // Recursively search children
         if (node.children && node.children.length > 0) {
-          if (findAndMarkSection(node.children)) {
+          if (findAndSyncSection(node.children)) {
             return true;
           }
         }
@@ -1255,7 +1257,7 @@ function SavedCVDetail({ cvId, onBack }) {
       return false;
     };
 
-    findAndMarkSection(content_snapshot.nodes);
+    findAndSyncSection(content_snapshot.nodes);
 
     // Update React state for UI (but this is async, so we also return the selections)
     setNodeSelections(newSelections);
