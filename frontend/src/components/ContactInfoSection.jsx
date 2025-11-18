@@ -307,11 +307,6 @@ function ContactInfoSection({ cvId, initialContactInfo, onUpdate, onSaveStart, o
         })}
       </div>
 
-      <div className="contact-info-note-compact">
-        <span className="info-icon">ℹ️</span>
-        Colored circles are active in your CV. Grayed circles are hidden.
-      </div>
-
       {/* Edit Modal */}
       {showEditModal && (
         <div className="modal-overlay" onClick={closeEditModal}>

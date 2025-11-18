@@ -64,6 +64,17 @@ function SavedCVDetail({ cvId, onBack }) {
   const [autoRefineProgress, setAutoRefineProgress] = useState({ current: 0, total: 0, currentSection: '' });
   const [autoRefineLog, setAutoRefineLog] = useState([]);
 
+  // Live Preview PDF Customization State
+  const [livePreviewTemplate, setLivePreviewTemplate] = useState('ats_optimized');
+  const [livePreviewCustomizations, setLivePreviewCustomizations] = useState({
+    fontSize: 'normal',
+    spacing: 'tight',
+    colorIntensity: 'normal'
+  });
+  const [livePreviewMetadata, setLivePreviewMetadata] = useState(null);
+  const [loadingPreviewMetadata, setLoadingPreviewMetadata] = useState(false);
+  const [previewMetadataTimer, setPreviewMetadataTimer] = useState(null);
+
   useEffect(() => {
     fetchCVData();
   }, [cvId]);
@@ -250,6 +261,63 @@ function SavedCVDetail({ cvId, onBack }) {
       throw err;
     }
   };
+
+  // Fetch live preview metadata (page count, word count, etc.)
+  const fetchLivePreviewMetadata = async () => {
+    if (!cvData) return;
+
+    setLoadingPreviewMetadata(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/tailor/${cvId}/preview-metadata`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          cv_format: livePreviewTemplate,
+          customizations: livePreviewCustomizations
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch preview metadata');
+      }
+
+      const metadata = await response.json();
+      setLivePreviewMetadata(metadata);
+    } catch (err) {
+      console.error('Error fetching preview metadata:', err);
+      setLivePreviewMetadata(null);
+    } finally {
+      setLoadingPreviewMetadata(false);
+    }
+  };
+
+  // Fetch preview metadata when template, customizations, or node selections change
+  useEffect(() => {
+    if (cvData && previewTab === 'preview') {
+      // Clear existing timer
+      if (previewMetadataTimer) {
+        clearTimeout(previewMetadataTimer);
+      }
+
+      // Set new timer
+      const timer = setTimeout(() => {
+        fetchLivePreviewMetadata();
+      }, 800); // 800ms debounce
+
+      setPreviewMetadataTimer(timer);
+
+      // Cleanup timer on unmount or when dependencies change
+      return () => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      };
+    }
+  }, [cvId, livePreviewTemplate, livePreviewCustomizations, nodeSelections, cvData, previewTab]);
 
   const toggleExpanded = (nodeId) => {
     setExpandedNodes(prev => {
@@ -2699,7 +2767,7 @@ function SavedCVDetail({ cvId, onBack }) {
             onClick={handleAutoRefineAllSections}
             className="btn-auto-refine-modern"
             disabled={autoRefining || autoSaveStatus === 'saving'}
-            title="Automatically refine all sections with AI"
+            title="Automatically refine all sections using GPT-5.1 Thinking Mode"
           >
             {autoRefining ? (
               <>
@@ -2712,7 +2780,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
                   <circle cx="12" cy="12" r="3" fill="white" opacity="0.9"/>
                 </svg>
-                <span>Auto-Refine All</span>
+                <span>Auto-Refine All (GPT-5.1)</span>
               </>
             )}
           </button>
@@ -2742,19 +2810,6 @@ function SavedCVDetail({ cvId, onBack }) {
 
           {/* Note: Save to Tracker is now integrated into "Finalize Application" button above */}
           {/* The unified workflow ensures settings are always saved */}
-        </div>
-      </div>
-
-      {/* GPT-5.1 AI Refinement Banner */}
-      <div className="ai-refinement-banner">
-        <div className="banner-content">
-          <div className="banner-icon">🧠</div>
-          <div className="banner-text">
-            <strong>GPT-5.1 Thinking Mode</strong> available: Click the ✨ icon on any section to intelligently refine your content
-          </div>
-          <div className="banner-badge">
-            <span className="premium-badge">POWERED BY GPT-5.1</span>
-          </div>
         </div>
       </div>
 
@@ -2890,7 +2945,7 @@ function SavedCVDetail({ cvId, onBack }) {
             <div className="metric-subtitle">Applicant Tracking System readiness</div>
           </div>
 
-          {/* Re-evaluate Button Card */}
+          {/* Update AI Scores & Restore Card */}
           <div className="metric-card reevaluate-card">
             <div className="metric-header">
               <div className="metric-title">
@@ -2899,34 +2954,60 @@ function SavedCVDetail({ cvId, onBack }) {
                   <polyline points="1 20 1 14 7 14"></polyline>
                   <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                 </svg>
-                Update AI Scores
+                Update AI Scores & Restore
               </div>
             </div>
             <div className="metric-body">
               <p className="reevaluate-description">
-                Re-run AI evaluation based on your current edits to get updated fit and ATS compatibility scores.
+                Re-run AI evaluation to get updated scores, or restore to the original version.
               </p>
-              <button
-                onClick={recalculateScores}
-                className="btn-reevaluate-full"
-                disabled={recalculating}
-              >
-                {recalculating ? (
-                  <>
-                    <span className="spinner-medium"></span>
-                    Processing AI Evaluation...
-                  </>
-                ) : (
-                  <>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <polyline points="1 20 1 14 7 14"></polyline>
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                    </svg>
-                    Re-evaluate with AI
-                  </>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  onClick={recalculateScores}
+                  className="btn-reevaluate-full"
+                  disabled={recalculating || restoring}
+                  style={{ flex: 1 }}
+                >
+                  {recalculating ? (
+                    <>
+                      <span className="spinner-medium"></span>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                      </svg>
+                      Update Scores
+                    </>
+                  )}
+                </button>
+                {cvData.original_snapshot && (
+                  <button
+                    onClick={restoreOriginal}
+                    className="btn-restore-original"
+                    disabled={restoring || recalculating}
+                    style={{ flex: 1 }}
+                  >
+                    {restoring ? (
+                      <>
+                        <span className="spinner-medium"></span>
+                        Restoring...
+                      </>
+                    ) : (
+                      <>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 1-2-2z"></path>
+                          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        Restore Original
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
+              </div>
 
               {/* AI Input Section - Only show after recalculation */}
               {cvData.recalculated_scores && cvData.recalculated_scores.length > 0 && (
@@ -2954,47 +3035,6 @@ function SavedCVDetail({ cvId, onBack }) {
             </div>
             <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses OpenAI GPT-5.1 & Claude</div>
           </div>
-
-          {/* Restore Original Section */}
-          {cvData.original_snapshot && (
-            <div className="metric-card">
-              <div className="metric-header">
-                <div className="metric-title">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                  </svg>
-                  Restore to Original
-                </div>
-              </div>
-              <div className="metric-body">
-                <p className="reevaluate-description">
-                  Remove all AI refinements and manual edits to return this CV to its original state when first saved.
-                </p>
-                <button
-                  onClick={restoreOriginal}
-                  className="btn-restore-original"
-                  disabled={restoring}
-                >
-                  {restoring ? (
-                    <>
-                      <span className="spinner-medium"></span>
-                      Restoring...
-                    </>
-                  ) : (
-                    <>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 2 0 1-2-2z"></path>
-                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                      </svg>
-                      Restore Original Version
-                    </>
-                  )}
-                </button>
-              </div>
-              <div className="metric-subtitle">⚠️ This will remove all your refinements and edits</div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -3076,6 +3116,27 @@ function SavedCVDetail({ cvId, onBack }) {
                 <span className="tab-icon">🧠</span>
                 Claude Analysis
               </button>
+
+              {/* Page Count Badge in Tabs */}
+              {livePreviewMetadata && !loadingPreviewMetadata && (
+                <div
+                  className="page-count-badge-tab"
+                  title={`📄 ${livePreviewMetadata.page_count} ${livePreviewMetadata.page_count === 1 ? 'page' : 'pages'}
+📝 ${livePreviewMetadata.word_count} words
+📊 ${livePreviewMetadata.section_count} sections
+
+🎨 Template: ${livePreviewTemplate === 'ats_optimized' ? 'ATS Optimized' : livePreviewTemplate.charAt(0).toUpperCase() + livePreviewTemplate.slice(1)}
+🔤 Font: ${livePreviewCustomizations.fontSize.charAt(0).toUpperCase() + livePreviewCustomizations.fontSize.slice(1)}
+📏 Spacing: ${livePreviewCustomizations.spacing.charAt(0).toUpperCase() + livePreviewCustomizations.spacing.slice(1)}`}
+                >
+                  📄 <strong>{livePreviewMetadata.page_count}</strong> {livePreviewMetadata.page_count === 1 ? 'pg' : 'pages'}
+                </div>
+              )}
+              {loadingPreviewMetadata && (
+                <div className="page-count-badge-tab loading">
+                  <div className="spinner-tiny"></div>
+                </div>
+              )}
             </div>
           </div>
 
