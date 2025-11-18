@@ -1,10 +1,11 @@
 """
 PDF Generation Service for Professional CVs
 Supports multiple templates and customization options
-Version: 3.16.2-fixed
+Hybrid approach: ReportLab for ATS, HTML2PDF (xhtml2pdf) for creative templates
+Version: 4.0.0-hybrid
 """
 
-print("[PDF_SERVICE] Module loaded - Version 3.16.2-fixed - Bullet separator fixed")
+print("[PDF_SERVICE] Module loaded - Version 4.0.0-hybrid - HTML2PDF integration")
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
@@ -21,6 +22,209 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 import html
 import re
+
+# Import HTML2PDF generator (xhtml2pdf)
+try:
+    from weasyprint_service import WeasyPrintCVGenerator
+    HTML2PDF_AVAILABLE = True
+    print("[PDF_SERVICE] HTML2PDF generator loaded successfully")
+except ImportError as e:
+    HTML2PDF_AVAILABLE = False
+    print(f"[PDF_SERVICE] HTML2PDF not available: {e}")
+
+# Define which templates use HTML2PDF (xhtml2pdf) vs ReportLab
+HTML2PDF_TEMPLATES = {"creative"}  # Only Creative uses HTML2PDF for now
+REPORTLAB_TEMPLATES = {"professional", "modern", "compact", "ats_optimized"}  # Others use ReportLab
+
+
+def _transform_cv_data_for_weasyprint(cv_data: Dict[str, Any], hidden_items: Optional[List[int]] = None) -> Dict[str, Any]:
+    """
+    Transform cv_data from ReportLab format to WeasyPrint format
+
+    Args:
+        cv_data: CV data in ReportLab format (selected_content structure)
+        hidden_items: List of item IDs to hide
+
+    Returns:
+        CV data in WeasyPrint format (personal_info + sections)
+    """
+    hidden_items = hidden_items or []
+
+    selected_content = cv_data.get('selected_content', {})
+    contact_info = selected_content.get('contact_info', {})
+    sections = selected_content.get('sections', [])
+
+    # Transform contact info to personal_info
+    personal_info = {
+        'name': contact_info.get('full_name', 'N/A'),
+        'email': contact_info.get('email', ''),
+        'phone': contact_info.get('phone_number') or contact_info.get('phone', ''),
+        'linkedin': contact_info.get('linkedin_url') or contact_info.get('linkedin', ''),
+        'github': contact_info.get('github_url') or contact_info.get('github', ''),
+        'website': contact_info.get('portfolio_url') or contact_info.get('website', ''),
+    }
+
+    # Build location from city and country, or use location field
+    location = contact_info.get('location')
+    if not location:
+        city = contact_info.get('city', '')
+        country = contact_info.get('country', '')
+        location_parts = [p for p in [city, country] if p]
+        if location_parts:
+            location = ', '.join(location_parts)
+    personal_info['location'] = location or ''
+
+    # Transform sections
+    transformed_sections = []
+
+    for section in sections:
+        section_type = section.get('section_type', '').lower()
+        section_title = section.get('title', '')
+        entries = section.get('entries', [])
+
+        # Filter out hidden entries
+        visible_entries = []
+        for entry in entries:
+            items = entry.get('items', [])
+            visible_items = [item for item in items if item.get('id') not in hidden_items]
+
+            # Check sub-entries too
+            has_visible_content = bool(visible_items)
+            if not has_visible_content:
+                sub_entries = entry.get('sub_entries', [])
+                for sub_entry in sub_entries:
+                    sub_items = sub_entry.get('items', [])
+                    if any(item.get('id') not in hidden_items for item in sub_items):
+                        has_visible_content = True
+                        break
+
+            if has_visible_content or entry.get('description') or entry.get('title'):
+                visible_entries.append(entry)
+
+        if not visible_entries:
+            continue
+
+        # Transform based on section type
+        transformed_section = {
+            'type': section_type,
+            'title': section_title,
+            'items': []
+        }
+
+        # Handle different section types
+        if section_type in ['experience', 'work_experience', 'professional_experience']:
+            for entry in visible_entries:
+                exp_item = {
+                    'position': entry.get('title', ''),
+                    'company': entry.get('subtitle', ''),
+                    'location': entry.get('location', ''),
+                    'date_range': _format_date_range(entry),
+                    'description': _extract_description_items(entry, hidden_items)
+                }
+                transformed_section['items'].append(exp_item)
+
+        elif section_type == 'education':
+            for entry in visible_entries:
+                edu_item = {
+                    'degree': entry.get('title', ''),
+                    'school': entry.get('subtitle', ''),
+                    'field': entry.get('field', ''),
+                    'date_range': _format_date_range(entry),
+                    'gpa': entry.get('gpa', ''),
+                    'honors': _extract_description_items(entry, hidden_items)
+                }
+                transformed_section['items'].append(edu_item)
+
+        elif section_type == 'skills':
+            # Extract skill items
+            for entry in visible_entries:
+                items = entry.get('items', [])
+                for item in items:
+                    if item.get('id') not in hidden_items:
+                        transformed_section['items'].append({
+                            'name': item.get('content', item.get('text', ''))
+                        })
+
+        elif section_type == 'projects':
+            for entry in visible_entries:
+                project_item = {
+                    'name': entry.get('title', ''),
+                    'description': entry.get('description', ''),
+                    'technologies': _extract_description_items(entry, hidden_items),
+                    'link': entry.get('link', '')
+                }
+                transformed_section['items'].append(project_item)
+
+        elif section_type == 'summary':
+            # Summary is usually a single text block
+            if visible_entries:
+                summary_text = visible_entries[0].get('description', '')
+                if not summary_text:
+                    # Try to get from items
+                    items = visible_entries[0].get('items', [])
+                    visible_items = [item for item in items if item.get('id') not in hidden_items]
+                    summary_text = ' '.join([item.get('content', item.get('text', '')) for item in visible_items])
+                transformed_section['content'] = summary_text
+
+        else:
+            # Generic section - extract all visible items
+            for entry in visible_entries:
+                items = entry.get('items', [])
+                for item in items:
+                    if item.get('id') not in hidden_items:
+                        transformed_section['items'].append(
+                            item.get('content', item.get('text', ''))
+                        )
+
+        transformed_sections.append(transformed_section)
+
+    return {
+        'personal_info': personal_info,
+        'sections': transformed_sections
+    }
+
+
+def _format_date_range(entry: Dict[str, Any]) -> str:
+    """Format date range from entry"""
+    start = entry.get('start_date', '')
+    end = entry.get('end_date', '')
+
+    if start and end:
+        return f"{start} - {end}"
+    elif start:
+        return f"{start} - Present"
+    elif end:
+        return end
+    return ''
+
+
+def _extract_description_items(entry: Dict[str, Any], hidden_items: List[int]) -> List[str]:
+    """Extract description items from entry, filtering hidden ones"""
+    description = []
+
+    # Check direct description field
+    if entry.get('description'):
+        description.append(entry['description'])
+
+    # Check items
+    items = entry.get('items', [])
+    for item in items:
+        if item.get('id') not in hidden_items:
+            content = item.get('content', item.get('text', ''))
+            if content:
+                description.append(content)
+
+    # Check sub-entries
+    sub_entries = entry.get('sub_entries', [])
+    for sub_entry in sub_entries:
+        sub_items = sub_entry.get('items', [])
+        for item in sub_items:
+            if item.get('id') not in hidden_items:
+                content = item.get('content', item.get('text', ''))
+                if content:
+                    description.append(content)
+
+    return description
 
 
 def sanitize_text(text: str) -> str:
@@ -820,6 +1024,7 @@ def generate_cv_pdf(
 ) -> BytesIO:
     """
     Convenience function to generate a CV PDF
+    Routes to appropriate generator (WeasyPrint or ReportLab) based on template
 
     Args:
         cv_data: CV data dictionary
@@ -830,8 +1035,26 @@ def generate_cv_pdf(
     Returns:
         BytesIO buffer containing the PDF
     """
-    generator = CVPDFGenerator(template_name, customizations)
-    return generator.generate_pdf(cv_data, hidden_items)
+    # Check if we should use HTML2PDF for this template
+    if template_name in HTML2PDF_TEMPLATES and HTML2PDF_AVAILABLE:
+        print(f"[PDF_SERVICE] Using HTML2PDF generator for template: {template_name}")
+
+        # Transform cv_data to format expected by HTML2PDF generator
+        html2pdf_data = _transform_cv_data_for_weasyprint(cv_data, hidden_items)
+
+        # Create HTML2PDF generator
+        generator = WeasyPrintCVGenerator(
+            cv_data=html2pdf_data,
+            template=template_name,
+            customizations=customizations or {}
+        )
+
+        return generator.generate()
+    else:
+        # Use ReportLab generator (original implementation)
+        print(f"[PDF_SERVICE] Using ReportLab generator for template: {template_name}")
+        generator = CVPDFGenerator(template_name, customizations)
+        return generator.generate_pdf(cv_data, hidden_items)
 
 
 def get_cv_pdf_metadata(
@@ -855,9 +1078,8 @@ def get_cv_pdf_metadata(
     """
     from PyPDF2 import PdfReader
 
-    # Generate the PDF first
-    generator = CVPDFGenerator(template_name, customizations)
-    pdf_buffer = generator.generate_pdf(cv_data, hidden_items)
+    # Generate the PDF first using the same routing logic
+    pdf_buffer = generate_cv_pdf(cv_data, hidden_items, template_name, customizations)
 
     # Read the PDF to get page count
     pdf_reader = PdfReader(pdf_buffer)
@@ -949,9 +1171,8 @@ def generate_cv_preview_image(
             "Install it with: pip install pdf2image"
         )
 
-    # Generate the PDF
-    generator = CVPDFGenerator(template_name, customizations)
-    pdf_buffer = generator.generate_pdf(cv_data, hidden_items)
+    # Generate the PDF using hybrid routing (will use HTML2PDF for modern/creative, ReportLab for others)
+    pdf_buffer = generate_cv_pdf(cv_data, hidden_items, template_name, customizations)
 
     # Convert PDF to images
     images = convert_from_bytes(
@@ -1001,9 +1222,8 @@ def generate_cv_preview_all_pages(
             "Install them with: pip install pdf2image pillow"
         )
 
-    # Generate the PDF
-    generator = CVPDFGenerator(template_name, customizations)
-    pdf_buffer = generator.generate_pdf(cv_data, hidden_items)
+    # Generate the PDF using hybrid routing (will use HTML2PDF for modern/creative, ReportLab for others)
+    pdf_buffer = generate_cv_pdf(cv_data, hidden_items, template_name, customizations)
 
     # Convert all PDF pages to images
     images = convert_from_bytes(
