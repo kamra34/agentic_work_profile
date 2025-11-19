@@ -644,6 +644,112 @@ def move_node(
     return node
 
 
+@app.post("/profiles/download-pdf")
+async def download_profile_pdf(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate and download the full profile pool as a PDF.
+    This shows ALL content from the user's default profile.
+    """
+    # Get the user's default profile
+    profile = db.query(Profile).filter(
+        Profile.user_id == current_user.id,
+        Profile.is_default == True
+    ).first()
+
+    if not profile:
+        # Fallback to any profile if no default
+        profile = db.query(Profile).filter(
+            Profile.user_id == current_user.id
+        ).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="No profile found")
+
+    # Helper function to convert ProfileNode ORM objects to dictionaries recursively
+    def node_to_dict(node):
+        """Convert ProfileNode ORM object to dictionary with children"""
+        node_dict = {
+            'id': node.id,
+            'global_id': node.global_id,
+            'profile_id': node.profile_id,
+            'parent_id': node.parent_id,
+            'node_type': node.node_type,
+            'title': node.title,
+            'subtitle': node.subtitle,
+            'content': node.content,
+            'content_type': node.content_type,
+            'start_date': node.start_date,
+            'end_date': node.end_date,
+            'location': node.location,
+            'icon': node.icon,
+            'order': node.order,
+            'is_visible': node.is_visible,
+            'is_selected': True,  # For profile pool, everything is selected by default
+            'level': node.level,
+            'root_id': node.root_id,
+            'children': []
+        }
+
+        # Recursively convert children
+        if node.children:
+            node_dict['children'] = [node_to_dict(child) for child in sorted(node.children, key=lambda x: x.order)]
+
+        return node_dict
+
+    # Get all root nodes for this profile
+    root_nodes = db.query(ProfileNode).filter(
+        ProfileNode.profile_id == profile.id,
+        ProfileNode.parent_id == None
+    ).order_by(ProfileNode.order).all()
+
+    # Convert ORM objects to dictionaries
+    nodes_as_dicts = [node_to_dict(node) for node in root_nodes]
+
+    # Transform nodes to sections for PDF generation
+    sections = transform_nodes_to_sections(nodes_as_dicts)
+
+    # Build contact info with user's full name and current date
+    contact_info = profile.contact_info or {}
+    # Add a header title for the profile snapshot - use 'full_name' key as that's what PDF template expects
+    contact_info_with_header = {
+        **contact_info,
+        'full_name': f"{current_user.full_name} - Full Profile Snapshot ({datetime.now().strftime('%B %d, %Y')})"
+    }
+
+    # Build selected_content structure
+    selected_content = {
+        'contact_info': contact_info_with_header,
+        'sections': sections
+    }
+
+    cv_data = {
+        "selected_content": selected_content
+    }
+
+    # Generate PDF using default professional template
+    try:
+        generator = pdf_service.CVPDFGenerator(
+            template_name="professional",
+            customizations={}
+        )
+        pdf_buffer = generator.generate_pdf(cv_data, hidden_items=[])
+
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="Profile_Pool_CV.pdf"'
+            }
+        )
+
+    except Exception as e:
+        print(f"Error generating profile PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================

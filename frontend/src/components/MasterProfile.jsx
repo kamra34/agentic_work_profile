@@ -293,6 +293,63 @@ function MasterProfile() {
     }
   };
 
+  const handleDownloadProfileCV = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/profiles/download-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download profile CV');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Profile_Pool_CV.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading profile CV:', error);
+      alert('Failed to download profile CV. Please try again.');
+    }
+  };
+
+  const handleViewProfileInNewTab = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/profiles/download-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to view profile CV');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+
+      // Clean up the URL after a delay to ensure the new tab has loaded
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 1000);
+    } catch (error) {
+      console.error('Error viewing profile CV:', error);
+      alert('Failed to view profile CV. Please try again.');
+    }
+  };
+
   if (loading) {
     return <div className="master-profile-loading">Loading profile...</div>;
   }
@@ -354,8 +411,26 @@ function MasterProfile() {
         {/* Right Panel - Preview */}
         <div className="preview-panel">
           <div className="preview-header">
-            <h2>Live Preview</h2>
-            <span className="preview-label">How it looks in your CV</span>
+            <div className="preview-header-left">
+              <h2>Live Preview</h2>
+              <span className="preview-label">How it looks in your CV</span>
+            </div>
+            <div className="preview-header-actions">
+              <button
+                className="btn-view-cv"
+                onClick={handleViewProfileInNewTab}
+                title="View full profile CV in new tab"
+              >
+                👁️ View in New Tab
+              </button>
+              <button
+                className="btn-download-cv"
+                onClick={handleDownloadProfileCV}
+                title="Download full profile CV as PDF"
+              >
+                📥 Download CV
+              </button>
+            </div>
           </div>
 
           <div className="cv-preview">

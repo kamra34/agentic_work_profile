@@ -219,6 +219,12 @@
   border-bottom: 1px solid #e5e7eb;
 }
 
+.preview-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .preview-header h2 {
   margin: 0;
   font-size: 18px;
@@ -228,6 +234,41 @@
 .preview-label {
   color: #6b7280;
   font-size: 13px;
+}
+
+.preview-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.preview-header-actions .btn-view-cv,
+.preview-header-actions .btn-download-cv {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.preview-header-actions .btn-view-cv:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.preview-header-actions .btn-download-cv {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.preview-header-actions .btn-download-cv:hover {
+  background: #2563eb;
+  border-color: #2563eb;
 }
 
 .cv-preview {
