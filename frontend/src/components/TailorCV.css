@@ -2430,3 +2430,134 @@
     width: 100%;
   }
 }
+
+/* ============================================================================
+   AI Model Info Display (Reasoning Tokens Badge)
+   ============================================================================ */
+
+/* Reasoning Badge on Model Cards */
+.reasoning-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* AI Model Details Section (for detailed info display) */
+.ai-model-details {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border-left: 4px solid #667eea;
+  padding: 16px;
+  margin: 16px 0;
+  border-radius: 8px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #667eea;
+  font-size: 14px;
+}
+
+.detail-value {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .detail-value {
+    color: #e0e0e0;
+  }
+
+  .ai-model-details {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+  }
+}
+
+/* ============================================================================
+   Real-time Model Activity Logs
+   ============================================================================ */
+
+.model-activity-logs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 20px 0;
+}
+
+.activity-log-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #ccc;
+}
+
+.activity-log-card.openai-activity {
+  border-left-color: #10a37f;
+}
+
+.activity-log-card.claude-activity {
+  border-left-color: #8B5CF6;
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.activity-icon {
+  font-size: 20px;
+}
+
+.activity-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: #666;
+  font-size: 14px;
+}
+
+.spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.activity-detail {
+  font-size: 12px;
+  color: #999;
+  margin-top: 8px;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .model-activity-logs {
+    grid-template-columns: 1fr;
+  }
+}

@@ -9,6 +9,11 @@ import json
 from openai import OpenAI
 from anthropic import Anthropic
 from typing import Dict, Any, List
+from openai_wrapper import call_openai_for_json
+from logger_config import get_logger
+
+# Initialize logger
+logger = get_logger("TailorService")
 
 
 def sanitize_unicode_for_pdf(text: str) -> str:
@@ -498,40 +503,58 @@ Return JSON with node IDs and selection status:
 """
 
 
-def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
-    """Analyze job description using OpenAI GPT-5.1"""
-    if not openai_client:
-        return {
-            "success": False,
-            "model": "openai-gpt-4o",
-            "error": "OpenAI client not initialized. Check API key."
-        }
+def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str, Any]:
+    """
+    Analyze job description using OpenAI (supports both GPT-4o and GPT-5.1)
+
+    Args:
+        job_description: The job description text to analyze
+        model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+    """
+    model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    logger.step(f"Job analysis with OpenAI ({model_name})", step_num=1)
 
     try:
         # Build the exact prompt that will be sent
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
+        logger.info(f"Job description length: {len(job_description)} characters")
 
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert job requirement analyst. Always respond with valid JSON."},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"}
+        # Use the unified wrapper
+        result = call_openai_for_json(
+            system_prompt="You are an expert job requirement analyst. Always respond with valid JSON.",
+            user_prompt=user_prompt,
+            model=model
         )
 
-        result = json.loads(response.choices[0].message.content)
-        return {
+        if not result["success"]:
+            logger.error(f"Job analysis failed: {result['error']}")
+            return {
+                "success": False,
+                "model": result.get("model", "unknown"),
+                "error": result["error"]
+            }
+
+        logger.success(f"Job analysis complete using {result['model']}")
+
+        response_data = {
             "success": True,
-            "model": "openai-gpt-4o",
-            "analysis": result,
-            "prompt_sent": user_prompt  # Include the exact prompt sent
+            "model": f"openai-{result['model']}",
+            "analysis": result["data"],
+            "prompt_sent": user_prompt
         }
+
+        # Include reasoning token count for GPT-5.1
+        if "reasoning_tokens" in result:
+            response_data["reasoning_tokens"] = result["reasoning_tokens"]
+            logger.info(f"🧠 Reasoning tokens: {result['reasoning_tokens']}")
+
+        return response_data
+
     except Exception as e:
+        logger.error("Job analysis exception", error=e)
         return {
             "success": False,
-            "model": "openai-gpt-4o",
+            "model": f"openai-{model or 'default'}",
             "error": str(e)
         }
 
@@ -598,14 +621,17 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         }
 
 
-def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> Dict[str, Any]:
-    """Score profile fit using OpenAI GPT-5.1"""
-    if not openai_client:
-        return {
-            "success": False,
-            "model": "openai-gpt-4o",
-            "error": "OpenAI client not initialized. Check API key."
-        }
+def score_profile_with_openai(job_requirements: Dict, profile_content: str, model: str = None) -> Dict[str, Any]:
+    """
+    Score profile fit using OpenAI (supports both GPT-4o and GPT-5.1)
+
+    Args:
+        job_requirements: Extracted job requirements dictionary
+        profile_content: Candidate profile text
+        model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+    """
+    model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    logger.step(f"Profile scoring with OpenAI ({model_name})", step_num=1)
 
     try:
         # Build the exact prompt that will be sent
@@ -613,28 +639,49 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str) -> D
             job_requirements=json.dumps(job_requirements, indent=2),
             profile_content=profile_content
         )
+        logger.info(f"Profile content length: {len(profile_content)} characters")
 
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert recruiter and ATS specialist. Always respond with valid JSON."},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"}
+        # Use the unified wrapper
+        result = call_openai_for_json(
+            system_prompt="You are an expert recruiter and ATS specialist. Always respond with valid JSON.",
+            user_prompt=user_prompt,
+            model=model
         )
 
-        result = json.loads(response.choices[0].message.content)
-        return {
+        if not result["success"]:
+            logger.error(f"Profile scoring failed: {result['error']}")
+            return {
+                "success": False,
+                "model": result.get("model", "unknown"),
+                "error": result["error"]
+            }
+
+        # Log scores
+        scores_data = result["data"]
+        fit_score = scores_data.get("fit_score", "N/A")
+        ats_score = scores_data.get("ats_score", "N/A")
+        verdict = scores_data.get("verdict", "N/A")
+        logger.success(f"Scoring complete: Fit={fit_score}, ATS={ats_score}, Verdict={verdict}")
+
+        response_data = {
             "success": True,
-            "model": "openai-gpt-4o",
-            "scores": result,
-            "prompt_sent": user_prompt  # Include the exact prompt sent
+            "model": f"openai-{result['model']}",
+            "scores": result["data"],
+            "prompt_sent": user_prompt
         }
+
+        # Include reasoning token count for GPT-5.1
+        if "reasoning_tokens" in result:
+            response_data["reasoning_tokens"] = result["reasoning_tokens"]
+            logger.info(f"🧠 Reasoning tokens: {result['reasoning_tokens']}")
+
+        return response_data
+
     except Exception as e:
+        logger.error("Profile scoring exception", error=e)
         return {
             "success": False,
-            "model": "openai-gpt-4o",
+            "model": f"openai-{model or 'default'}",
             "error": str(e)
         }
 
@@ -687,17 +734,17 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
         }
 
 
-def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict]) -> Dict[str, Any]:
-    """Recommend which nodes to include using OpenAI GPT-5.1"""
-    print(f"🤖 [OpenAI-Recommend] Starting with {len(profile_nodes)} nodes")
+def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict], model: str = None) -> Dict[str, Any]:
+    """
+    Recommend which nodes to include using OpenAI (supports both GPT-4o and GPT-5.1)
 
-    if not openai_client:
-        print(f"❌ [OpenAI-Recommend] Client not initialized")
-        return {
-            "success": False,
-            "model": "openai-gpt-4o",
-            "error": "OpenAI client not initialized. Check API key."
-        }
+    Args:
+        job_requirements: Extracted job requirements dictionary
+        profile_nodes: List of profile node dictionaries to evaluate
+        model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+    """
+    model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    logger.step(f"Node selection with OpenAI ({model_name}) - {len(profile_nodes)} nodes", step_num=1)
 
     try:
         prompt_content = NODE_SELECTION_PROMPT.format(
@@ -705,40 +752,53 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
             profile_nodes=json.dumps(profile_nodes, indent=2)
         )
         prompt_length = len(prompt_content)
-        print(f"📤 [OpenAI-Recommend] Sending request to GPT-5.1...")
-        print(f"📏 [OpenAI-Recommend] Prompt length: {prompt_length} characters ({prompt_length/1000:.1f}K)")
+        logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
 
-        import time
-        request_start = time.time()
-
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert CV tailoring specialist. Always respond with valid JSON."},
-                {"role": "user", "content": prompt_content}
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"},
+        # Use the unified wrapper (timing is handled in wrapper)
+        result = call_openai_for_json(
+            system_prompt="You are an expert CV tailoring specialist. Always respond with valid JSON.",
+            user_prompt=prompt_content,
+            model=model,
             timeout=180  # 180 second timeout (3 minutes)
         )
 
-        request_duration = time.time() - request_start
-        print(f"📥 [OpenAI-Recommend] Response received in {request_duration:.2f}s, parsing...")
-        result = json.loads(response.choices[0].message.content)
-        print(f"✅ [OpenAI-Recommend] Success! Parsed {len(result.get('selected_nodes', []))} node recommendations")
-        return {
+        if not result["success"]:
+            logger.error(f"Node selection failed: {result['error']}")
+            return {
+                "success": False,
+                "model": result.get("model", "unknown"),
+                "error": result["error"]
+            }
+
+        node_count = len(result["data"].get('selected_nodes', []))
+        recommended_count = sum(1 for node in result["data"].get('selected_nodes', []) if node.get('include'))
+        logger.success(f"Node selection complete: {recommended_count}/{node_count} nodes recommended")
+
+        response_data = {
             "success": True,
-            "model": "openai-gpt-4o",
-            "recommendations": result,
-            "prompt_sent": prompt_content  # Include the exact prompt sent
+            "model": f"openai-{result['model']}",
+            "recommendations": result["data"],
+            "prompt_sent": prompt_content
         }
+
+        # Include reasoning token count for GPT-5.1
+        if "reasoning_tokens" in result:
+            response_data["reasoning_tokens"] = result["reasoning_tokens"]
+            logger.info(f"🧠 Reasoning tokens: {result['reasoning_tokens']}")
+
+        # Log token usage summary
+        if "usage" in result:
+            logger.tokens_summary(result['model'], result['usage'])
+
+        return response_data
+
     except Exception as e:
-        print(f"❌ [OpenAI-Recommend] Error: {type(e).__name__}: {str(e)}")
+        logger.error(f"Node selection exception", error=e)
         import traceback
         traceback.print_exc()
         return {
             "success": False,
-            "model": "openai-gpt-4o",
+            "model": f"openai-{model or 'default'}",
             "error": str(e)
         }
 
@@ -1176,59 +1236,60 @@ Job Description (for relevance context):
 
 Remember: Return ONLY the JSON object, no other text."""
 
+    # Log the refinement operation
+    logger.step(f"Refining {refinement_target_lower} with GPT-5.1", step_num=1)
+    logger.info(f"Content length: {len(section_content)} chars | Type: {node_type}")
+
     try:
-        # Use GPT-5.1 with new responses API
-        response = openai_client.responses.create(
-            model="gpt-5.1",
-            input=refinement_prompt
+        # Use the unified wrapper to call GPT-5.1
+        # Note: We always use GPT-5.1 for refinement as it requires deep reasoning
+        result = call_openai_for_json(
+            system_prompt="You are a senior hiring manager and CV editor. Always respond with valid JSON.",
+            user_prompt=refinement_prompt,
+            model="gpt-5.1",  # Always use GPT-5.1 for refinement (needs reasoning)
+            timeout=120  # 2 minute timeout for refinement
         )
 
-        # GPT-5.1 response structure: response.output[0].content[0].text contains the JSON string
-        if hasattr(response, 'output') and isinstance(response.output, list) and len(response.output) > 0:
-            # Get the first message from output
-            first_message = response.output[0]
+        if not result["success"]:
+            logger.error(f"Refinement failed: {result['error']}")
+            return {
+                "success": False,
+                "error": result["error"],
+                "model": "gpt-5.1",
+                "prompt_sent": refinement_prompt
+            }
 
-            # Extract text from the message content
-            if hasattr(first_message, 'content') and isinstance(first_message.content, list) and len(first_message.content) > 0:
-                first_content = first_message.content[0]
-
-                # Get the text from the content item
-                if hasattr(first_content, 'text'):
-                    result_text = first_content.text
-                else:
-                    raise ValueError("GPT-5.1 response content has no 'text' attribute")
-            else:
-                raise ValueError("GPT-5.1 response message has no 'content' list")
-        else:
-            raise ValueError("GPT-5.1 response has no 'output' list")
-
-        # Parse the JSON string
-        result = json.loads(result_text)
+        # Extract and sanitize the data
+        data = result["data"]
 
         # Sanitize Unicode for PDF compatibility
-        if result.get("refined_content"):
-            result["refined_content"] = sanitize_unicode_for_pdf(result["refined_content"])
-        if result.get("changes_summary"):
-            result["changes_summary"] = sanitize_unicode_for_pdf(result["changes_summary"])
+        if data.get("refined_content"):
+            data["refined_content"] = sanitize_unicode_for_pdf(data["refined_content"])
+        if data.get("changes_summary"):
+            data["changes_summary"] = sanitize_unicode_for_pdf(data["changes_summary"])
+
+        # Log the results
+        stats = data.get("stats", {})
+        chars_before = stats.get("original_character_count_estimate", "N/A")
+        chars_after = stats.get("refined_character_count_estimate", "N/A")
+        chars_saved = stats.get("characters_reduced_estimate", "N/A")
+        logger.success(f"Refinement complete: {chars_before} → {chars_after} chars ({chars_saved} saved)")
+
+        if "reasoning_tokens" in result:
+            logger.info(f"🧠 Reasoning tokens: {result['reasoning_tokens']}")
 
         return {
             "success": True,
             "model": "gpt-5.1",
-            "refined_content": result.get("refined_content", ""),
-            "changes_summary": result.get("changes_summary", ""),
-            "stats": result.get("stats", {}),
-            "prompt_sent": refinement_prompt
+            "refined_content": data.get("refined_content", ""),
+            "changes_summary": data.get("changes_summary", ""),
+            "stats": stats,
+            "prompt_sent": refinement_prompt,
+            "reasoning_tokens": result.get("reasoning_tokens")
         }
 
-    except json.JSONDecodeError as e:
-        return {
-            "success": False,
-            "error": f"Failed to parse AI response as JSON: {str(e)}",
-            "model": "gpt-5.1",
-            "raw_response": result_text if 'result_text' in locals() else None,
-            "prompt_sent": refinement_prompt
-        }
     except Exception as e:
+        logger.error("Refinement exception", error=e)
         return {
             "success": False,
             "error": str(e),

@@ -1285,6 +1285,22 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
   const currentAnalysis = selectedTab === 'openai' ? openaiAnalysis : claudeAnalysis;
   const currentScores = scores?.[selectedTab];
 
+  // Helper functions for model info display
+  const getModelDisplayName = (analysisOrScore) => {
+    if (!analysisOrScore) return 'Loading...';
+    const model = analysisOrScore.model || '';
+
+    if (model.includes('gpt-5.1') || model.includes('gpt5.1')) return 'GPT-5.1 Thinking';
+    if (model.includes('gpt-4o')) return 'GPT-4o';
+    if (model.includes('claude')) return 'Claude Sonnet 4.5';
+
+    return model || 'AI Model';
+  };
+
+  const hasReasoningTokens = (analysisOrScore) => {
+    return analysisOrScore?.reasoning_tokens && analysisOrScore.reasoning_tokens > 0;
+  };
+
   // Convert profile nodes to readable text (same as backend does)
   const profileToText = (nodes) => {
     if (!nodes || nodes.length === 0) return 'No profile data';
@@ -1501,8 +1517,15 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             <div className="model-card-header">
               <div className="model-indicator openai-indicator"></div>
               <div className="model-name">
-                <strong>OpenAI GPT-5.1</strong>
-                <span className="model-provider">OpenAI</span>
+                <strong>{getModelDisplayName(scores?.openai || openaiAnalysis)}</strong>
+                <span className="model-provider">
+                  OpenAI
+                  {hasReasoningTokens(scores?.openai || openaiAnalysis) && (
+                    <span className="reasoning-badge" title={`Used ${(scores?.openai || openaiAnalysis)?.reasoning_tokens} reasoning tokens`}>
+                      🧠 {(scores?.openai || openaiAnalysis)?.reasoning_tokens}
+                    </span>
+                  )}
+                </span>
               </div>
             </div>
             {scores?.openai?.scores && (
@@ -1518,7 +1541,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             <div className="model-card-header">
               <div className="model-indicator claude-indicator"></div>
               <div className="model-name">
-                <strong>Claude Sonnet 4.5</strong>
+                <strong>{getModelDisplayName(scores?.claude || claudeAnalysis)}</strong>
                 <span className="model-provider">Anthropic</span>
               </div>
             </div>
@@ -1533,18 +1556,54 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
         {/* Analysis Content */}
         {scoring ? (
           <div className="loading-state">
-            <div className="spinner-container">
-              <div className="spinner" />
-              <div className="spinner-text">Analyzing job requirements and scoring your profile...</div>
-              <div className="spinner-subtext">Using {selectedTab === 'openai' ? 'OpenAI GPT-5.1' : 'Claude Sonnet 4.5'}</div>
+            <div className="model-activity-logs">
+              <div className="activity-log-card openai-activity">
+                <div className="activity-header">
+                  <span className="activity-icon">🔵</span>
+                  <strong>{getModelDisplayName(openaiAnalysis) || 'OpenAI'}</strong>
+                </div>
+                <div className="activity-status">
+                  <div className="spinner-small" />
+                  <span>Analyzing job requirements and scoring profile...</span>
+                </div>
+                <div className="activity-detail">⏱️ Typically takes 5-10 seconds</div>
+              </div>
+              <div className="activity-log-card claude-activity">
+                <div className="activity-header">
+                  <span className="activity-icon">🔷</span>
+                  <strong>Claude Sonnet 4.5</strong>
+                </div>
+                <div className="activity-status">
+                  <div className="spinner-small" />
+                  <span>Analyzing job requirements and scoring profile...</span>
+                </div>
+                <div className="activity-detail">⏱️ Typically takes 3-7 seconds</div>
+              </div>
             </div>
           </div>
         ) : !scores ? (
           <div className="loading-state">
-            <div className="spinner-container">
-              <div className="spinner" />
-              <div className="spinner-text">Preparing analysis...</div>
-              <div className="spinner-subtext">This may take a few moments</div>
+            <div className="model-activity-logs">
+              <div className="activity-log-card openai-activity">
+                <div className="activity-header">
+                  <span className="activity-icon">🔵</span>
+                  <strong>{getModelDisplayName(openaiAnalysis) || 'OpenAI'}</strong>
+                </div>
+                <div className="activity-status">
+                  <div className="spinner-small" />
+                  <span>Preparing analysis...</span>
+                </div>
+              </div>
+              <div className="activity-log-card claude-activity">
+                <div className="activity-header">
+                  <span className="activity-icon">🔷</span>
+                  <strong>Claude Sonnet 4.5</strong>
+                </div>
+                <div className="activity-status">
+                  <div className="spinner-small" />
+                  <span>Preparing analysis...</span>
+                </div>
+              </div>
             </div>
           </div>
         ) : (

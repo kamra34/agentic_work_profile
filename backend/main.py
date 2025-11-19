@@ -36,6 +36,7 @@ from schemas import (
 )
 import ai_tailor_service
 import pdf_service
+from logger_config import get_logger
 
 # ============================================================================
 # SHARED HELPER FUNCTIONS
@@ -199,6 +200,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours to prevent interruptions during a
 security = HTTPBearer()
 
 app = FastAPI(title="Work Profile API - Hierarchical v3.0")
+
+# Initialize logger for API endpoints
+api_logger = get_logger("API")
 
 # CORS - Allow frontend origins from environment variable
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
@@ -799,9 +803,19 @@ async def analyze_job_description(
     if not job_description or len(job_description.strip()) < 50:
         raise HTTPException(status_code=400, detail="Job description too short (minimum 50 characters)")
 
+    api_logger.step("Starting job description analysis with dual models", step_num=1)
+    api_logger.dual_analysis_start(["OpenAI", "Claude"])
+
     # Call both AI models in parallel
     openai_result = ai_tailor_service.analyze_job_with_openai(job_description)
     claude_result = ai_tailor_service.analyze_job_with_claude(job_description)
+
+    # Log summary
+    api_logger.dual_analysis_summary({
+        "openai": openai_result,
+        "claude": claude_result
+    })
+    api_logger.success("Job analysis complete")
 
     return {
         "openai": openai_result,
@@ -855,9 +869,19 @@ async def score_profile_fit(
     nodes_list = [node_to_dict(node) for node in profile.nodes if node.parent_id is None]
     profile_text = ai_tailor_service.profile_nodes_to_text(nodes_list)
 
+    api_logger.step("Starting profile scoring with dual models", step_num=1)
+    api_logger.dual_analysis_start(["OpenAI", "Claude"])
+
     # Score with both models
     openai_scores = ai_tailor_service.score_profile_with_openai(job_requirements, profile_text)
     claude_scores = ai_tailor_service.score_profile_with_claude(job_requirements, profile_text)
+
+    # Log summary
+    api_logger.dual_analysis_summary({
+        "openai": openai_scores,
+        "claude": claude_scores
+    })
+    api_logger.success("Profile scoring complete")
 
     return {
         "openai": openai_scores,
@@ -977,6 +1001,8 @@ async def recommend_node_selection(
 
     # Get recommendations from both models IN PARALLEL
     print(f"🤖 [RECOMMEND-NODES] Calling OpenAI and Claude IN PARALLEL...")
+    api_logger.step("Starting node recommendations with dual models", step_num=1)
+    api_logger.dual_analysis_start(["OpenAI", "Claude"])
     parallel_start = time.time()
 
     # Run both AI calls in parallel using ThreadPoolExecutor
@@ -1088,6 +1114,13 @@ async def recommend_node_selection(
 
     total_time = time.time() - start_time
     print(f"🏁 [RECOMMEND-NODES] Total request time: {total_time:.2f}s")
+
+    # Log summary
+    api_logger.dual_analysis_summary({
+        "openai": openai_recommendations,
+        "claude": claude_recommendations
+    })
+    api_logger.success(f"Node recommendations complete in {total_time:.2f}s")
 
     # Prepare response
     response_data = {
@@ -2190,6 +2223,14 @@ async def refine_section(
     result['node_title'] = target_node.get('title', f'Untitled {node_type.title()}')
     # Keep backward compatibility
     result['section_title'] = result['node_title']
+
+    # Add AI model information for UI display
+    import os
+    result['ai_info'] = {
+        'model': 'GPT-5.1 Thinking',
+        'reasoning_effort': os.getenv('OPENAI_REASONING_EFFORT', 'medium').title(),
+        'reasoning_tokens': result.get('reasoning_tokens', 0)
+    }
 
     return result
 

@@ -3,6 +3,7 @@ import ContactInfoSection from './ContactInfoSection';
 import PDFTemplateSelector from './PDFTemplateSelector';
 import './SavedCVDetail.css';
 import './SavedCVDetail_AutoRefine.css';
+import './refinement-status.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -630,6 +631,12 @@ function SavedCVDetail({ cvId, onBack }) {
       }
 
       const data = await response.json();
+
+      // Store reasoning effort info for display
+      if (data.ai_info) {
+        localStorage.setItem('reasoning_effort', data.ai_info.reasoning_effort);
+      }
+
       setRefinementResult(data);
     } catch (error) {
       console.error(`Error refining ${refinementModal.nodeType}:`, error);
@@ -3296,7 +3303,17 @@ function SavedCVDetail({ cvId, onBack }) {
                   disabled={refining}
                   className="btn-primary btn-refine"
                 >
-                  {refining ? '⏳ Refining...' : '✨ Refine with AI'}
+                  {refining ? (
+                    <span className="refining-status">
+                      <span className="refining-spinner"></span>
+                      <span className="refining-text">
+                        GPT-5.1 Thinking<br/>
+                        <small style={{fontSize: '0.85em', opacity: 0.9}}>
+                          Reasoning Effort: {localStorage.getItem('reasoning_effort') || 'Medium'}
+                        </small>
+                      </span>
+                    </span>
+                  ) : '✨ Refine with AI'}
                 </button>
                 {refinementResult && (
                   <button
@@ -3359,6 +3376,28 @@ function SavedCVDetail({ cvId, onBack }) {
                     <h4>What Changed:</h4>
                     <p>{refinementResult.changes_summary}</p>
                   </div>
+
+                  {/* AI Model Info */}
+                  {refinementResult.ai_info && (
+                    <div className="ai-model-info">
+                      <div className="ai-info-badge">
+                        <svg className="ai-badge-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
+                        </svg>
+                        <span className="ai-model-name">{refinementResult.ai_info.model}</span>
+                      </div>
+                      <div className="ai-info-details">
+                        <span className="ai-detail">
+                          <strong>Reasoning:</strong> {refinementResult.ai_info.reasoning_effort}
+                        </span>
+                        {refinementResult.ai_info.reasoning_tokens > 0 && (
+                          <span className="ai-detail">
+                            <strong>🧠 Thinking Tokens:</strong> {refinementResult.ai_info.reasoning_tokens.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Refined Content Display with Individual Copy Buttons */}
                   <div className="refined-content-display">

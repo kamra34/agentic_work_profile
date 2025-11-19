@@ -5,6 +5,11 @@ Analyzes job descriptions using both OpenAI and Anthropic models
 import os
 import json
 from typing import Dict, Any, Optional
+from openai_wrapper import call_openai_for_json
+from logger_config import get_logger
+
+# Initialize logger
+logger = get_logger("JobAnalysis")
 
 # Initialize clients conditionally
 openai_client = None
@@ -27,9 +32,9 @@ except Exception as e:
     print(f"Anthropic client initialization failed: {e}")
 
 
-def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
+def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str, Any]:
     """
-    Analyze job description using OpenAI's latest model (GPT-4o)
+    Analyze job description using OpenAI (supports both GPT-4o and GPT-5.1)
 
     Returns structured analysis including:
     - Job category (managerial, leadership, technical, hybrid, etc.)
@@ -37,10 +42,13 @@ def analyze_job_with_openai(job_description: str) -> Dict[str, Any]:
     - Extracted sections from job description
     - Required qualifications
     - Preferred qualifications
-    """
 
-    if not openai_client:
-        raise Exception("OpenAI client not initialized. Please set OPENAI_API_KEY environment variable.")
+    Args:
+        job_description: The job description text to analyze
+        model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+    """
+    model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    logger.step(f"Analyzing job description with OpenAI ({model_name})", step_num=1)
 
     system_prompt = """You are an expert job description analyst. Analyze the provided job description and extract structured information.
 
@@ -59,25 +67,37 @@ Your analysis should include:
 Return your analysis as a JSON object with clear structure."""
 
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",  # Latest GPT-4 Optimized model
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Analyze this job description:\n\n{job_description}"}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.3  # Lower temperature for more consistent analysis
+        user_prompt = f"Analyze this job description:\n\n{job_description}"
+        logger.info(f"Job description length: {len(job_description)} characters")
+
+        # Use the unified wrapper
+        result = call_openai_for_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model=model
         )
 
-        result = json.loads(response.choices[0].message.content)
+        if not result["success"]:
+            logger.error(f"OpenAI analysis failed: {result['error']}")
+            raise Exception(result["error"])
 
-        return {
+        logger.success(f"Job analysis complete using {result['model']}")
+
+        response_data = {
             "provider": "openai",
-            "model": "gpt-4o",
-            "analysis": result
+            "model": result["model"],
+            "analysis": result["data"]
         }
 
+        # Include reasoning token count for GPT-5.1
+        if "reasoning_tokens" in result:
+            response_data["reasoning_tokens"] = result["reasoning_tokens"]
+            logger.info(f"🧠 Used {result['reasoning_tokens']} reasoning tokens")
+
+        return response_data
+
     except Exception as e:
+        logger.error("OpenAI job analysis failed", error=e)
         raise Exception(f"OpenAI analysis failed: {str(e)}")
 
 
@@ -154,30 +174,43 @@ def analyze_job_description_dual(job_description: str) -> Dict[str, Any]:
     """
     Analyze job description with both OpenAI and Claude, return both results
     """
+    logger.dual_analysis_start(["OpenAI", "Claude"])
 
     results = {
         "job_description": job_description,
         "analyses": []
     }
 
+    analysis_results = {}
+
     # Try OpenAI analysis
     try:
+        logger.step("Running OpenAI analysis", step_num=1)
         openai_result = analyze_job_with_openai(job_description)
         results["analyses"].append(openai_result)
+        analysis_results["OpenAI"] = {"success": True, "model": openai_result.get("model", "openai")}
     except Exception as e:
+        logger.error(f"OpenAI analysis failed in dual mode", error=e)
         results["analyses"].append({
             "provider": "openai",
             "error": str(e)
         })
+        analysis_results["OpenAI"] = {"success": False, "error": str(e)}
 
     # Try Claude analysis
     try:
+        logger.step("Running Claude analysis", step_num=2)
         claude_result = analyze_job_with_claude(job_description)
         results["analyses"].append(claude_result)
+        analysis_results["Claude"] = {"success": True, "model": claude_result.get("model", "claude")}
     except Exception as e:
+        logger.error(f"Claude analysis failed in dual mode", error=e)
         results["analyses"].append({
             "provider": "anthropic",
             "error": str(e)
         })
+        analysis_results["Claude"] = {"success": False, "error": str(e)}
+
+    logger.dual_analysis_summary(analysis_results)
 
     return results
