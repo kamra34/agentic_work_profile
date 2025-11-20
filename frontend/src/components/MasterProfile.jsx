@@ -357,7 +357,7 @@ function MasterProfile() {
       sections: 0,
       entries: 0,
       bullets: 0,
-      items: 0,
+      paragraphs: 0,
       sectionBreakdown: {}
     };
 
@@ -371,7 +371,7 @@ function MasterProfile() {
           stats.sectionBreakdown[currentSection] = {
             entries: 0,
             bullets: 0,
-            items: 0
+            paragraphs: 0
           };
         } else if (node.node_type === 'entry') {
           stats.entries++;
@@ -383,10 +383,10 @@ function MasterProfile() {
           if (currentSection && stats.sectionBreakdown[currentSection]) {
             stats.sectionBreakdown[currentSection].bullets++;
           }
-        } else if (node.node_type === 'item') {
-          stats.items++;
+        } else if (node.node_type === 'paragraph') {
+          stats.paragraphs++;
           if (currentSection && stats.sectionBreakdown[currentSection]) {
-            stats.sectionBreakdown[currentSection].items++;
+            stats.sectionBreakdown[currentSection].paragraphs++;
           }
         }
 
@@ -402,6 +402,16 @@ function MasterProfile() {
 
   const nodeStats = calculateNodeStats(nodes);
 
+  // Calculate risk level based on total nodes
+  const getRiskLevel = (total) => {
+    if (total < 30) return { level: 'low', label: 'Optimal', color: '#10b981', emoji: '🟢' };
+    if (total < 50) return { level: 'medium', label: 'Good', color: '#f59e0b', emoji: '🟡' };
+    if (total < 70) return { level: 'high', label: 'Large', color: '#f97316', emoji: '🟠' };
+    return { level: 'critical', label: 'Very Large', color: '#ef4444', emoji: '🔴' };
+  };
+
+  const riskLevel = getRiskLevel(nodeStats.total);
+
   if (loading) {
     return <div className="master-profile-loading">Loading profile...</div>;
   }
@@ -413,105 +423,139 @@ function MasterProfile() {
         <p>Build your comprehensive professional profile with unlimited flexibility</p>
       </div>
 
-      {/* Node Statistics Dashboard */}
+      {/* Ultra-Modern Node Statistics Dashboard */}
       <div className="node-stats-dashboard">
-        <div className="stats-header">
-          <h3>📊 Profile Analytics</h3>
-          <span className="stats-subtitle">Your content pool overview</span>
-        </div>
-
-        <div className="stats-grid">
-          {/* Total Nodes */}
-          <div className="stat-card stat-card-total">
-            <div className="stat-icon">🎯</div>
-            <div className="stat-content">
-              <div className="stat-value">{nodeStats.total}</div>
-              <div className="stat-label">Total Nodes</div>
+        {/* Hero Stats Section */}
+        <div className="stats-hero">
+          <div className="hero-main">
+            <div className="hero-count">
+              <span className="hero-number">{nodeStats.total}</span>
+              <span className="hero-label">Content Nodes</span>
             </div>
-            <div className="stat-progress">
-              <div
-                className="stat-progress-bar stat-progress-total"
-                style={{width: '100%'}}
-              ></div>
+            <div className="hero-risk">
+              <span className="risk-indicator" style={{backgroundColor: riskLevel.color}}>
+                {riskLevel.emoji} {riskLevel.label}
+              </span>
+              <span className="risk-subtitle">AI Prompt Size</span>
             </div>
           </div>
+          <div className="hero-description">
+            Your master profile contains {nodeStats.sections} section{nodeStats.sections !== 1 ? 's' : ''} with rich content ready for AI-powered CV tailoring
+          </div>
+        </div>
 
-          {/* Sections */}
-          <div className="stat-card stat-card-sections">
-            <div className="stat-icon">📑</div>
-            <div className="stat-content">
-              <div className="stat-value">{nodeStats.sections}</div>
-              <div className="stat-label">Sections</div>
+        {/* Modern Grid Stats */}
+        <div className="stats-modern-grid">
+          {/* Sections Card */}
+          <div className="modern-card card-sections">
+            <div className="card-header">
+              <span className="card-icon-large">📑</span>
+              <span className="card-type">Sections</span>
             </div>
-            <div className="stat-progress">
+            <div className="card-value">{nodeStats.sections}</div>
+            <div className="card-bar">
               <div
-                className="stat-progress-bar stat-progress-sections"
+                className="card-bar-fill fill-sections"
                 style={{width: `${nodeStats.total > 0 ? (nodeStats.sections / nodeStats.total * 100) : 0}%`}}
               ></div>
             </div>
+            <div className="card-percent">
+              {nodeStats.total > 0 ? ((nodeStats.sections / nodeStats.total * 100).toFixed(1)) : 0}% of total
+            </div>
           </div>
 
-          {/* Entries */}
-          <div className="stat-card stat-card-entries">
-            <div className="stat-icon">💼</div>
-            <div className="stat-content">
-              <div className="stat-value">{nodeStats.entries}</div>
-              <div className="stat-label">Entries</div>
+          {/* Entries Card */}
+          <div className="modern-card card-entries">
+            <div className="card-header">
+              <span className="card-icon-large">💼</span>
+              <span className="card-type">Entries</span>
             </div>
-            <div className="stat-progress">
+            <div className="card-value">{nodeStats.entries}</div>
+            <div className="card-bar">
               <div
-                className="stat-progress-bar stat-progress-entries"
+                className="card-bar-fill fill-entries"
                 style={{width: `${nodeStats.total > 0 ? (nodeStats.entries / nodeStats.total * 100) : 0}%`}}
               ></div>
             </div>
+            <div className="card-percent">
+              {nodeStats.total > 0 ? ((nodeStats.entries / nodeStats.total * 100).toFixed(1)) : 0}% of total
+            </div>
           </div>
 
-          {/* Bullets */}
-          <div className="stat-card stat-card-bullets">
-            <div className="stat-icon">▪️</div>
-            <div className="stat-content">
-              <div className="stat-value">{nodeStats.bullets}</div>
-              <div className="stat-label">Bullets</div>
+          {/* Bullets Card */}
+          <div className="modern-card card-bullets">
+            <div className="card-header">
+              <span className="card-icon-large">✦</span>
+              <span className="card-type">Bullets</span>
             </div>
-            <div className="stat-progress">
+            <div className="card-value">{nodeStats.bullets}</div>
+            <div className="card-bar">
               <div
-                className="stat-progress-bar stat-progress-bullets"
+                className="card-bar-fill fill-bullets"
                 style={{width: `${nodeStats.total > 0 ? (nodeStats.bullets / nodeStats.total * 100) : 0}%`}}
               ></div>
             </div>
+            <div className="card-percent">
+              {nodeStats.total > 0 ? ((nodeStats.bullets / nodeStats.total * 100).toFixed(1)) : 0}% of total
+            </div>
           </div>
 
-          {/* Items */}
-          <div className="stat-card stat-card-items">
-            <div className="stat-icon">🔸</div>
-            <div className="stat-content">
-              <div className="stat-value">{nodeStats.items}</div>
-              <div className="stat-label">Items</div>
+          {/* Paragraphs Card */}
+          <div className="modern-card card-paragraphs">
+            <div className="card-header">
+              <span className="card-icon-large">¶</span>
+              <span className="card-type">Paragraphs</span>
             </div>
-            <div className="stat-progress">
+            <div className="card-value">{nodeStats.paragraphs}</div>
+            <div className="card-bar">
               <div
-                className="stat-progress-bar stat-progress-items"
-                style={{width: `${nodeStats.total > 0 ? (nodeStats.items / nodeStats.total * 100) : 0}%`}}
+                className="card-bar-fill fill-paragraphs"
+                style={{width: `${nodeStats.total > 0 ? (nodeStats.paragraphs / nodeStats.total * 100) : 0}%`}}
               ></div>
+            </div>
+            <div className="card-percent">
+              {nodeStats.total > 0 ? ((nodeStats.paragraphs / nodeStats.total * 100).toFixed(1)) : 0}% of total
             </div>
           </div>
         </div>
 
-        {/* Section Breakdown */}
+        {/* Section Breakdown - Redesigned */}
         {Object.keys(nodeStats.sectionBreakdown).length > 0 && (
-          <div className="section-breakdown">
-            <h4>📂 Content by Section</h4>
-            <div className="breakdown-list">
-              {Object.entries(nodeStats.sectionBreakdown).map(([sectionName, counts]) => (
-                <div key={sectionName} className="breakdown-item">
-                  <div className="breakdown-section-name">{sectionName}</div>
-                  <div className="breakdown-counts">
-                    {counts.entries > 0 && <span className="breakdown-badge breakdown-badge-entries">{counts.entries} entries</span>}
-                    {counts.bullets > 0 && <span className="breakdown-badge breakdown-badge-bullets">{counts.bullets} bullets</span>}
-                    {counts.items > 0 && <span className="breakdown-badge breakdown-badge-items">{counts.items} items</span>}
+          <div className="section-breakdown-modern">
+            <div className="breakdown-header">
+              <h4>📂 Section Breakdown</h4>
+              <span className="breakdown-count">{Object.keys(nodeStats.sectionBreakdown).length} sections</span>
+            </div>
+            <div className="breakdown-cards">
+              {Object.entries(nodeStats.sectionBreakdown).map(([sectionName, counts]) => {
+                const totalInSection = counts.entries + counts.bullets + counts.paragraphs;
+                return (
+                  <div key={sectionName} className="breakdown-card">
+                    <div className="breakdown-card-title">{sectionName}</div>
+                    <div className="breakdown-card-total">{totalInSection} nodes</div>
+                    <div className="breakdown-card-details">
+                      {counts.entries > 0 && (
+                        <div className="detail-chip chip-entries">
+                          <span className="chip-icon">💼</span>
+                          <span className="chip-count">{counts.entries}</span>
+                        </div>
+                      )}
+                      {counts.bullets > 0 && (
+                        <div className="detail-chip chip-bullets">
+                          <span className="chip-icon">✦</span>
+                          <span className="chip-count">{counts.bullets}</span>
+                        </div>
+                      )}
+                      {counts.paragraphs > 0 && (
+                        <div className="detail-chip chip-paragraphs">
+                          <span className="chip-icon">¶</span>
+                          <span className="chip-count">{counts.paragraphs}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
