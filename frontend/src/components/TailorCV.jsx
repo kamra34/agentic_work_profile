@@ -1509,7 +1509,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
                 <ul>
                   <li>Review the analysis below and decide if you still want to apply</li>
                   <li>Click "Continue to Selection" to proceed anyway and customize your CV</li>
-                  <li>Click "Discard Analysis" to skip this job</li>
+                  <li>Click "Start Over" to skip and run a new job</li>
                 </ul>
               </div>
             </div>

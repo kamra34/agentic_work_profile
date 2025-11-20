@@ -561,17 +561,25 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
 
 def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
     """Analyze job description using Claude Sonnet 4.5"""
+    logger.step("Job analysis with Claude (claude-sonnet-4.5)", step_num=1)
+
     if not anthropic_client:
-        print("ERROR: Claude client is None - API key not loaded")
+        logger.error("Claude client not initialized")
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
             "error": "Claude client not initialized. Check API key."
         }
 
+    logger.info(f"Job description length: {len(job_description)} characters")
+
     try:
         # Build the exact prompt that will be sent
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
+
+        import time
+        start_time = time.time()
+        logger.info("Calling Claude Sonnet 4.5 API...")
 
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -604,6 +612,10 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
             text = text[:last_brace + 1]
 
         result = json.loads(text)
+
+        duration = time.time() - start_time
+        logger.success(f"Job analysis complete using claude-sonnet-4.5 in {duration:.2f}s")
+
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
@@ -611,9 +623,8 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
             "prompt_sent": user_prompt  # Include the exact prompt sent
         }
     except Exception as e:
-        print(f"ERROR: Claude analysis failed: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        duration = time.time() - start_time
+        logger.error(f"Claude analysis failed after {duration:.2f}s: {str(e)}")
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
@@ -688,12 +699,17 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, mode
 
 def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> Dict[str, Any]:
     """Score profile fit using Claude Sonnet 4.5"""
+    logger.step("Profile scoring with Claude (claude-sonnet-4.5)", step_num=1)
+
     if not anthropic_client:
+        logger.error("Claude client not initialized")
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
             "error": "Claude client not initialized. Check API key."
         }
+
+    logger.info(f"Profile content length: {len(profile_content)} characters")
 
     try:
         # Build the exact prompt that will be sent
@@ -701,6 +717,10 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
             job_requirements=json.dumps(job_requirements, indent=2),
             profile_content=profile_content
         )
+
+        import time
+        start_time = time.time()
+        logger.info("Calling Claude Sonnet 4.5 API...")
 
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -720,6 +740,13 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
             text = '\n'.join(lines[1:-1])
 
         result = json.loads(text)
+
+        duration = time.time() - start_time
+        fit_score = result.get('fit_score', 'N/A')
+        ats_score = result.get('ats_score', 'N/A')
+        verdict = result.get('verdict', 'N/A')
+        logger.success(f"Scoring complete: Fit={fit_score}, ATS={ats_score}, Verdict={verdict} in {duration:.2f}s")
+
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
@@ -727,6 +754,8 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
             "prompt_sent": user_prompt  # Include the exact prompt sent
         }
     except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"Claude scoring failed after {duration:.2f}s: {str(e)}")
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
@@ -805,10 +834,10 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
 
 def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict]) -> Dict[str, Any]:
     """Recommend which nodes to include using Claude Sonnet 4.5"""
-    print(f"🤖 [Claude-Recommend] Starting with {len(profile_nodes)} nodes")
+    logger.step(f"Node selection with Claude (claude-sonnet-4.5) - {len(profile_nodes)} nodes", step_num=1)
 
     if not anthropic_client:
-        print(f"❌ [Claude-Recommend] Client not initialized")
+        logger.error("Claude client not initialized")
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
@@ -821,8 +850,8 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
             profile_nodes=json.dumps(profile_nodes, indent=2)
         )
         prompt_length = len(prompt_content)
-        print(f"📤 [Claude-Recommend] Sending request to Claude Sonnet 4...")
-        print(f"📏 [Claude-Recommend] Prompt length: {prompt_length} characters ({prompt_length/1000:.1f}K)")
+        logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
+        logger.info("Calling Claude Sonnet 4.5 API...")
 
         import time
         request_start = time.time()
@@ -955,7 +984,10 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
 
                 raise ValueError(f"Claude returned invalid JSON that couldn't be repaired. Error: {str(json_error)}. Debug file: {debug_file}")
 
-        print(f"✅ [Claude-Recommend] Success! Parsed {len(result.get('selected_nodes', []))} node recommendations")
+        request_duration = time.time() - request_start
+        selected_count = len(result.get('selected_nodes', []))
+        logger.success(f"Node selection complete: {selected_count} nodes recommended in {request_duration:.2f}s")
+
         return {
             "success": True,
             "model": "claude-sonnet-4.5",
@@ -963,9 +995,8 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
             "prompt_sent": prompt_content  # Include the exact prompt sent
         }
     except Exception as e:
-        print(f"❌ [Claude-Recommend] Error: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        request_duration = time.time() - request_start
+        logger.error(f"Claude node selection failed after {request_duration:.2f}s: {str(e)}")
         return {
             "success": False,
             "model": "claude-sonnet-4.5",
