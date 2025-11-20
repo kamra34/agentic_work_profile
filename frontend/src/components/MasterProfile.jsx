@@ -350,6 +350,58 @@ function MasterProfile() {
     }
   };
 
+  // Calculate node statistics
+  const calculateNodeStats = (nodes) => {
+    const stats = {
+      total: 0,
+      sections: 0,
+      entries: 0,
+      bullets: 0,
+      items: 0,
+      sectionBreakdown: {}
+    };
+
+    const traverse = (nodeList, currentSection = null) => {
+      nodeList.forEach(node => {
+        stats.total++;
+
+        if (node.node_type === 'section') {
+          stats.sections++;
+          currentSection = node.title || 'Untitled Section';
+          stats.sectionBreakdown[currentSection] = {
+            entries: 0,
+            bullets: 0,
+            items: 0
+          };
+        } else if (node.node_type === 'entry') {
+          stats.entries++;
+          if (currentSection && stats.sectionBreakdown[currentSection]) {
+            stats.sectionBreakdown[currentSection].entries++;
+          }
+        } else if (node.node_type === 'bullet') {
+          stats.bullets++;
+          if (currentSection && stats.sectionBreakdown[currentSection]) {
+            stats.sectionBreakdown[currentSection].bullets++;
+          }
+        } else if (node.node_type === 'item') {
+          stats.items++;
+          if (currentSection && stats.sectionBreakdown[currentSection]) {
+            stats.sectionBreakdown[currentSection].items++;
+          }
+        }
+
+        if (node.children && node.children.length > 0) {
+          traverse(node.children, currentSection);
+        }
+      });
+    };
+
+    traverse(nodes);
+    return stats;
+  };
+
+  const nodeStats = calculateNodeStats(nodes);
+
   if (loading) {
     return <div className="master-profile-loading">Loading profile...</div>;
   }
@@ -359,6 +411,110 @@ function MasterProfile() {
       <div className="master-profile-header">
         <h1>Master Profile</h1>
         <p>Build your comprehensive professional profile with unlimited flexibility</p>
+      </div>
+
+      {/* Node Statistics Dashboard */}
+      <div className="node-stats-dashboard">
+        <div className="stats-header">
+          <h3>📊 Profile Analytics</h3>
+          <span className="stats-subtitle">Your content pool overview</span>
+        </div>
+
+        <div className="stats-grid">
+          {/* Total Nodes */}
+          <div className="stat-card stat-card-total">
+            <div className="stat-icon">🎯</div>
+            <div className="stat-content">
+              <div className="stat-value">{nodeStats.total}</div>
+              <div className="stat-label">Total Nodes</div>
+            </div>
+            <div className="stat-progress">
+              <div
+                className="stat-progress-bar stat-progress-total"
+                style={{width: '100%'}}
+              ></div>
+            </div>
+          </div>
+
+          {/* Sections */}
+          <div className="stat-card stat-card-sections">
+            <div className="stat-icon">📑</div>
+            <div className="stat-content">
+              <div className="stat-value">{nodeStats.sections}</div>
+              <div className="stat-label">Sections</div>
+            </div>
+            <div className="stat-progress">
+              <div
+                className="stat-progress-bar stat-progress-sections"
+                style={{width: `${nodeStats.total > 0 ? (nodeStats.sections / nodeStats.total * 100) : 0}%`}}
+              ></div>
+            </div>
+          </div>
+
+          {/* Entries */}
+          <div className="stat-card stat-card-entries">
+            <div className="stat-icon">💼</div>
+            <div className="stat-content">
+              <div className="stat-value">{nodeStats.entries}</div>
+              <div className="stat-label">Entries</div>
+            </div>
+            <div className="stat-progress">
+              <div
+                className="stat-progress-bar stat-progress-entries"
+                style={{width: `${nodeStats.total > 0 ? (nodeStats.entries / nodeStats.total * 100) : 0}%`}}
+              ></div>
+            </div>
+          </div>
+
+          {/* Bullets */}
+          <div className="stat-card stat-card-bullets">
+            <div className="stat-icon">▪️</div>
+            <div className="stat-content">
+              <div className="stat-value">{nodeStats.bullets}</div>
+              <div className="stat-label">Bullets</div>
+            </div>
+            <div className="stat-progress">
+              <div
+                className="stat-progress-bar stat-progress-bullets"
+                style={{width: `${nodeStats.total > 0 ? (nodeStats.bullets / nodeStats.total * 100) : 0}%`}}
+              ></div>
+            </div>
+          </div>
+
+          {/* Items */}
+          <div className="stat-card stat-card-items">
+            <div className="stat-icon">🔸</div>
+            <div className="stat-content">
+              <div className="stat-value">{nodeStats.items}</div>
+              <div className="stat-label">Items</div>
+            </div>
+            <div className="stat-progress">
+              <div
+                className="stat-progress-bar stat-progress-items"
+                style={{width: `${nodeStats.total > 0 ? (nodeStats.items / nodeStats.total * 100) : 0}%`}}
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section Breakdown */}
+        {Object.keys(nodeStats.sectionBreakdown).length > 0 && (
+          <div className="section-breakdown">
+            <h4>📂 Content by Section</h4>
+            <div className="breakdown-list">
+              {Object.entries(nodeStats.sectionBreakdown).map(([sectionName, counts]) => (
+                <div key={sectionName} className="breakdown-item">
+                  <div className="breakdown-section-name">{sectionName}</div>
+                  <div className="breakdown-counts">
+                    {counts.entries > 0 && <span className="breakdown-badge breakdown-badge-entries">{counts.entries} entries</span>}
+                    {counts.bullets > 0 && <span className="breakdown-badge breakdown-badge-bullets">{counts.bullets} bullets</span>}
+                    {counts.items > 0 && <span className="breakdown-badge breakdown-badge-items">{counts.items} items</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="master-profile-content">
