@@ -402,15 +402,124 @@ function MasterProfile() {
 
   const nodeStats = calculateNodeStats(nodes);
 
-  // Calculate risk level based on total nodes
-  const getRiskLevel = (total) => {
-    if (total < 30) return { level: 'low', label: 'Optimal', color: '#10b981', emoji: '🟢' };
-    if (total < 50) return { level: 'medium', label: 'Good', color: '#f59e0b', emoji: '🟡' };
-    if (total < 70) return { level: 'high', label: 'Large', color: '#f97316', emoji: '🟠' };
-    return { level: 'critical', label: 'Very Large', color: '#ef4444', emoji: '🔴' };
+  // Calculate actual prompt sizes based on real profile data (in tokens)
+  const calculatePromptSizes = (profileNodes) => {
+    // Base prompt overhead (in characters)
+    const scoringBasePromptChars = 2500; // SCORING_PROMPT template
+    const nodeSelectionBasePromptChars = 5000; // NODE_SELECTION_PROMPT template
+    const jobRequirementsChars = 2000; // Estimated job analysis JSON (this varies per job)
+
+    // Calculate actual profile text size for SCORING
+    // For scoring, we send full text representation of the profile
+    let profileTextSize = 0;
+    const extractText = (nodeList) => {
+      nodeList.forEach(node => {
+        // Add title/role if present
+        if (node.title) profileTextSize += node.title.length;
+        if (node.role) profileTextSize += node.role.length;
+        if (node.company) profileTextSize += node.company.length;
+        if (node.location) profileTextSize += node.location.length;
+        if (node.dates) profileTextSize += node.dates.length;
+        // Add content
+        if (node.content) profileTextSize += node.content.length;
+        // Add some overhead for formatting (newlines, labels, etc.)
+        profileTextSize += 50;
+
+        // Recurse to children
+        if (node.children && node.children.length > 0) {
+          extractText(node.children);
+        }
+      });
+    };
+    extractText(profileNodes);
+
+    // Calculate actual nodes JSON size for NODE SELECTION
+    // For node selection, we send the full nodes structure as JSON
+    const nodesJsonString = JSON.stringify(profileNodes);
+    const nodesJsonSize = nodesJsonString.length;
+
+    // Convert all to tokens (~4 chars per token)
+    const scoringTotal = Math.ceil((scoringBasePromptChars + jobRequirementsChars + profileTextSize) / 4);
+    const nodeSelectionTotal = Math.ceil((nodeSelectionBasePromptChars + jobRequirementsChars + nodesJsonSize) / 4);
+
+    return {
+      scoring: {
+        tokens: scoringTotal,
+        formatted: scoringTotal >= 1000 ? `${(scoringTotal / 1000).toFixed(1)}K` : scoringTotal.toString()
+      },
+      nodeSelection: {
+        tokens: nodeSelectionTotal,
+        formatted: nodeSelectionTotal >= 1000 ? `${(nodeSelectionTotal / 1000).toFixed(1)}K` : nodeSelectionTotal.toString()
+      }
+    };
   };
 
-  const riskLevel = getRiskLevel(nodeStats.total);
+  const promptEstimates = calculatePromptSizes(nodes);
+
+  // Calculate risk level for a given token count
+  const getRiskLevel = (tokens, taskName) => {
+    if (tokens < 8000) {
+      return {
+        level: 'low',
+        label: 'Optimal',
+        color: '#10b981',
+        emoji: '🟢',
+        risks: [],
+        description: `${taskName}: Perfect size for fast, accurate analysis with minimal cost`
+      };
+    }
+    if (tokens < 15000) {
+      return {
+        level: 'medium',
+        label: 'Good',
+        color: '#f59e0b',
+        emoji: '🟡',
+        risks: [`${taskName}: Slightly higher API costs`],
+        description: `${taskName}: Good size - AI models handle this well`
+      };
+    }
+    if (tokens < 25000) {
+      return {
+        level: 'high',
+        label: 'Large',
+        color: '#f97316',
+        emoji: '🟠',
+        risks: [
+          `${taskName}: Significantly higher API costs (~2-3x)`,
+          `${taskName}: Slower AI response times`,
+          `${taskName}: Risk of reduced accuracy`
+        ],
+        description: `${taskName}: Large prompt - AI may struggle with all details`
+      };
+    }
+    return {
+      level: 'critical',
+      label: 'Very Large',
+      color: '#ef4444',
+      emoji: '🔴',
+      risks: [
+        `${taskName}: Very high API costs (~3-5x)`,
+        `${taskName}: Much slower response times`,
+        `${taskName}: High risk of reduced accuracy`,
+        `${taskName}: AI may miss important details`,
+        `${taskName}: May exceed context limits (failures)`
+      ],
+      description: `${taskName}: Critical size - Consider reducing profile complexity`
+    };
+  };
+
+  // Get risk levels for both tasks
+  const scoringRisk = getRiskLevel(promptEstimates.scoring.tokens, 'Scoring');
+  const nodeSelectionRisk = getRiskLevel(promptEstimates.nodeSelection.tokens, 'Node Selection');
+
+  // Overall risk is the worse of the two
+  const overallRisk = nodeSelectionRisk.level === 'critical' || scoringRisk.level === 'critical'
+    ? (nodeSelectionRisk.level === 'critical' ? nodeSelectionRisk : scoringRisk)
+    : nodeSelectionRisk.level === 'high' || scoringRisk.level === 'high'
+    ? (nodeSelectionRisk.level === 'high' ? nodeSelectionRisk : scoringRisk)
+    : nodeSelectionRisk.level === 'medium' || scoringRisk.level === 'medium'
+    ? (nodeSelectionRisk.level === 'medium' ? nodeSelectionRisk : scoringRisk)
+    : scoringRisk;
 
   if (loading) {
     return <div className="master-profile-loading">Loading profile...</div>;
@@ -433,14 +542,42 @@ function MasterProfile() {
               <span className="hero-label">Content Nodes</span>
             </div>
             <div className="hero-risk">
-              <span className="risk-indicator" style={{backgroundColor: riskLevel.color}}>
-                {riskLevel.emoji} {riskLevel.label}
+              <span className="risk-indicator" style={{backgroundColor: overallRisk.color}}>
+                {overallRisk.emoji} Overall: {overallRisk.label}
               </span>
-              <span className="risk-subtitle">AI Prompt Size</span>
+              <div className="risk-estimates">
+                <div className="estimate-item">
+                  <span className="estimate-label">Scoring:</span>
+                  <span className="estimate-value">{promptEstimates.scoring.formatted} tokens</span>
+                  <span className="estimate-verdict" style={{backgroundColor: scoringRisk.color}}>
+                    {scoringRisk.emoji} {scoringRisk.label}
+                  </span>
+                </div>
+                <div className="estimate-item">
+                  <span className="estimate-label">Node Selection:</span>
+                  <span className="estimate-value">{promptEstimates.nodeSelection.formatted} tokens</span>
+                  <span className="estimate-verdict" style={{backgroundColor: nodeSelectionRisk.color}}>
+                    {nodeSelectionRisk.emoji} {nodeSelectionRisk.label}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
           <div className="hero-description">
-            Your master profile contains {nodeStats.sections} section{nodeStats.sections !== 1 ? 's' : ''} with rich content ready for AI-powered CV tailoring
+            {/* Show risks from both tasks */}
+            {(scoringRisk.risks.length > 0 || nodeSelectionRisk.risks.length > 0) && (
+              <div className="risk-warnings">
+                <div className="risk-warnings-title">⚠️ Potential Issues:</div>
+                <ul className="risk-list">
+                  {scoringRisk.risks.map((risk, idx) => (
+                    <li key={`scoring-${idx}`}>{risk}</li>
+                  ))}
+                  {nodeSelectionRisk.risks.map((risk, idx) => (
+                    <li key={`node-${idx}`}>{risk}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 
