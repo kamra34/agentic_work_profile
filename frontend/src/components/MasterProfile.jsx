@@ -534,55 +534,18 @@ function MasterProfile() {
 
       {/* Ultra-Modern Node Statistics Dashboard */}
       <div className="node-stats-dashboard">
-        {/* Hero Stats Section */}
+        {/* Hero Stats Section - Total Nodes */}
         <div className="stats-hero">
-          <div className="hero-main">
-            <div className="hero-count">
-              <span className="hero-number">{nodeStats.total}</span>
-              <span className="hero-label">Content Nodes</span>
-            </div>
-            <div className="hero-risk">
-              <span className="risk-indicator" style={{backgroundColor: overallRisk.color}}>
-                {overallRisk.emoji} Overall: {overallRisk.label}
-              </span>
-              <div className="risk-estimates">
-                <div className="estimate-item">
-                  <span className="estimate-label">Scoring:</span>
-                  <span className="estimate-value">{promptEstimates.scoring.formatted} tokens</span>
-                  <span className="estimate-verdict" style={{backgroundColor: scoringRisk.color}}>
-                    {scoringRisk.emoji} {scoringRisk.label}
-                  </span>
-                </div>
-                <div className="estimate-item">
-                  <span className="estimate-label">Node Selection:</span>
-                  <span className="estimate-value">{promptEstimates.nodeSelection.formatted} tokens</span>
-                  <span className="estimate-verdict" style={{backgroundColor: nodeSelectionRisk.color}}>
-                    {nodeSelectionRisk.emoji} {nodeSelectionRisk.label}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="hero-description">
-            {/* Show risks from both tasks */}
-            {(scoringRisk.risks.length > 0 || nodeSelectionRisk.risks.length > 0) && (
-              <div className="risk-warnings">
-                <div className="risk-warnings-title">⚠️ Potential Issues:</div>
-                <ul className="risk-list">
-                  {scoringRisk.risks.map((risk, idx) => (
-                    <li key={`scoring-${idx}`}>{risk}</li>
-                  ))}
-                  {nodeSelectionRisk.risks.map((risk, idx) => (
-                    <li key={`node-${idx}`}>{risk}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+          <div className="hero-count">
+            <span className="hero-number">{nodeStats.total}</span>
+            <span className="hero-label">Total Content Nodes</span>
           </div>
         </div>
 
-        {/* Modern Grid Stats */}
-        <div className="stats-modern-grid">
+        {/* Two Column Layout: Stats Cards + Risk Info */}
+        <div className="stats-two-column">
+          {/* Left Column: Modern Grid Stats */}
+          <div className="stats-modern-grid">
           {/* Sections Card */}
           <div className="modern-card card-sections">
             <div className="card-header">
@@ -653,6 +616,44 @@ function MasterProfile() {
             <div className="card-percent">
               {nodeStats.total > 0 ? ((nodeStats.paragraphs / nodeStats.total * 100).toFixed(1)) : 0}% of total
             </div>
+          </div>
+        </div>
+
+          {/* Right Column: Risk Info */}
+          <div className="stats-risk-panel">
+            <div className="risk-panel-header">
+              <h4>AI Prompt Analysis</h4>
+            </div>
+            <div className="risk-estimates-panel">
+              <div className="estimate-item">
+                <span className="estimate-label">Scoring:</span>
+                <span className="estimate-value">{promptEstimates.scoring.formatted} tokens</span>
+                <span className="estimate-verdict" style={{backgroundColor: scoringRisk.color}}>
+                  {scoringRisk.emoji} {scoringRisk.label}
+                </span>
+              </div>
+              <div className="estimate-item">
+                <span className="estimate-label">Node Selection:</span>
+                <span className="estimate-value">{promptEstimates.nodeSelection.formatted} tokens</span>
+                <span className="estimate-verdict" style={{backgroundColor: nodeSelectionRisk.color}}>
+                  {nodeSelectionRisk.emoji} {nodeSelectionRisk.label}
+                </span>
+              </div>
+            </div>
+            {/* Show risks from both tasks */}
+            {(scoringRisk.risks.length > 0 || nodeSelectionRisk.risks.length > 0) && (
+              <div className="risk-warnings">
+                <div className="risk-warnings-title">⚠️ Potential Issues:</div>
+                <ul className="risk-list">
+                  {scoringRisk.risks.map((risk, idx) => (
+                    <li key={`scoring-${idx}`}>{risk}</li>
+                  ))}
+                  {nodeSelectionRisk.risks.map((risk, idx) => (
+                    <li key={`node-${idx}`}>{risk}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 
