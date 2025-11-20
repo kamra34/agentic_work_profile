@@ -967,7 +967,21 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDel
 
       {isExpanded && node.children && node.children.length > 0 && (
         <div className="node-children">
-          {node.children.map(child => (
+          {[...node.children]
+            .sort((a, b) => {
+              // Sort paragraphs before bullets
+              const typeOrder = { 'paragraph': 1, 'bullet': 2 };
+              const orderA = typeOrder[a.node_type] || 3;
+              const orderB = typeOrder[b.node_type] || 3;
+
+              if (orderA !== orderB) {
+                return orderA - orderB;
+              }
+
+              // If same type, maintain original order (by id or order field)
+              return (a.order || 0) - (b.order || 0);
+            })
+            .map(child => (
             <TreeNode
               key={child.id}
               node={child}
@@ -996,7 +1010,22 @@ function CVPreviewContent({ nodes, profile, onNodeClick }) {
   // Helper function to render children
   const renderChildren = (children, level) => {
     if (!children || children.length === 0) return null;
-    return children.map(child => renderNode(child, level));
+
+    // Sort children: paragraphs before bullets
+    const sortedChildren = [...children].sort((a, b) => {
+      const typeOrder = { 'paragraph': 1, 'bullet': 2 };
+      const orderA = typeOrder[a.node_type] || 3;
+      const orderB = typeOrder[b.node_type] || 3;
+
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      // If same type, maintain original order
+      return (a.order || 0) - (b.order || 0);
+    });
+
+    return sortedChildren.map(child => renderNode(child, level));
   };
 
   const renderNode = (node, level = 0) => {
