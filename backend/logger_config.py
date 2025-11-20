@@ -156,6 +156,13 @@ class AIServiceLogger:
         formatted = f"{Colors.HEADER}{prefix} 🔄 [{self.service_name}] Starting dual analysis with: {providers_text}{Colors.ENDC}"
         self.logger.info(formatted)
 
+    def parallel_execution_start(self, providers: list):
+        """Log start of parallel execution"""
+        prefix = f"[{self._get_timestamp()}]"
+        providers_text = " + ".join(providers)
+        formatted = f"{Colors.OKCYAN}{prefix} ⚡ [{self.service_name}] Running in PARALLEL: {providers_text}{Colors.ENDC}"
+        self.logger.info(formatted)
+
     def dual_analysis_summary(self, results: dict):
         """Log summary of dual analysis"""
         prefix = f"[{self._get_timestamp()}]"

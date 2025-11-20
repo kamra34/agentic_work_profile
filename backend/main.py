@@ -804,11 +804,24 @@ async def analyze_job_description(
         raise HTTPException(status_code=400, detail="Job description too short (minimum 50 characters)")
 
     api_logger.step("Starting job description analysis with dual models", step_num=1)
-    api_logger.dual_analysis_start(["OpenAI", "Claude"])
+    api_logger.parallel_execution_start(["OpenAI", "Claude"])
 
-    # Call both AI models in parallel
-    openai_result = ai_tailor_service.analyze_job_with_openai(job_description)
-    claude_result = ai_tailor_service.analyze_job_with_claude(job_description)
+    # Call both AI models in parallel using asyncio
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        openai_future = loop.run_in_executor(
+            executor,
+            ai_tailor_service.analyze_job_with_openai,
+            job_description
+        )
+        claude_future = loop.run_in_executor(
+            executor,
+            ai_tailor_service.analyze_job_with_claude,
+            job_description
+        )
+
+        # Wait for both to complete
+        openai_result, claude_result = await asyncio.gather(openai_future, claude_future)
 
     # Log summary
     api_logger.dual_analysis_summary({
@@ -870,11 +883,26 @@ async def score_profile_fit(
     profile_text = ai_tailor_service.profile_nodes_to_text(nodes_list)
 
     api_logger.step("Starting profile scoring with dual models", step_num=1)
-    api_logger.dual_analysis_start(["OpenAI", "Claude"])
+    api_logger.parallel_execution_start(["OpenAI", "Claude"])
 
-    # Score with both models
-    openai_scores = ai_tailor_service.score_profile_with_openai(job_requirements, profile_text)
-    claude_scores = ai_tailor_service.score_profile_with_claude(job_requirements, profile_text)
+    # Score with both models in parallel using asyncio
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        openai_future = loop.run_in_executor(
+            executor,
+            ai_tailor_service.score_profile_with_openai,
+            job_requirements,
+            profile_text
+        )
+        claude_future = loop.run_in_executor(
+            executor,
+            ai_tailor_service.score_profile_with_claude,
+            job_requirements,
+            profile_text
+        )
+
+        # Wait for both to complete
+        openai_scores, claude_scores = await asyncio.gather(openai_future, claude_future)
 
     # Log summary
     api_logger.dual_analysis_summary({
@@ -1002,7 +1030,7 @@ async def recommend_node_selection(
     # Get recommendations from both models IN PARALLEL
     print(f"🤖 [RECOMMEND-NODES] Calling OpenAI and Claude IN PARALLEL...")
     api_logger.step("Starting node recommendations with dual models", step_num=1)
-    api_logger.dual_analysis_start(["OpenAI", "Claude"])
+    api_logger.parallel_execution_start(["OpenAI", "Claude"])
     parallel_start = time.time()
 
     # Run both AI calls in parallel using ThreadPoolExecutor
