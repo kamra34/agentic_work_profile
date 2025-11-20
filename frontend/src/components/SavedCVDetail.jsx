@@ -59,6 +59,7 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refining, setRefining] = useState(false);
   const [refinementResult, setRefinementResult] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('low'); // none, low, medium, high (default: low)
 
   // Auto-refine all sections state
   const [autoRefining, setAutoRefining] = useState(false);
@@ -621,7 +622,8 @@ function SavedCVDetail({ cvId, onBack }) {
         body: JSON.stringify({
           node_id: refinementModal.sectionId,
           node_type: refinementModal.nodeType,
-          user_instructions: userInstructions || null
+          user_instructions: userInstructions || null,
+          reasoning_effort: reasoningEffort  // Send "none", "low", "medium", or "high" directly
         })
       });
 
@@ -3248,6 +3250,29 @@ function SavedCVDetail({ cvId, onBack }) {
           </div>
 
           <div className="sidepanel-body">
+              {/* Reasoning Effort Selector */}
+              <div className="reasoning-effort-selector">
+                <label htmlFor="reasoning-effort">
+                  <span className="reasoning-label-icon">🧠</span>
+                  <strong>AI Reasoning Mode</strong>
+                </label>
+                <div className="reasoning-help-text">
+                  Control how deeply GPT-5.1 thinks before responding
+                </div>
+                <select
+                  id="reasoning-effort"
+                  value={reasoningEffort}
+                  onChange={(e) => setReasoningEffort(e.target.value)}
+                  disabled={refining}
+                  className="reasoning-effort-dropdown"
+                >
+                  <option value="none">⚡ None - Fastest (No reasoning)</option>
+                  <option value="low">🔸 Low - Quick reasoning</option>
+                  <option value="medium">⭐ Medium - Balanced (Recommended)</option>
+                  <option value="high">💎 High - Deep thinking</option>
+                </select>
+              </div>
+
               {/* Instructions Input */}
               <div className="refinement-instructions">
                 <label htmlFor="user-instructions">
@@ -3307,9 +3332,9 @@ function SavedCVDetail({ cvId, onBack }) {
                     <span className="refining-status">
                       <span className="refining-spinner"></span>
                       <span className="refining-text">
-                        GPT-5.1 Thinking<br/>
+                        GPT-5.1 {reasoningEffort === 'none' ? '' : 'Thinking'}<br/>
                         <small style={{fontSize: '0.85em', opacity: 0.9}}>
-                          Reasoning Effort: {localStorage.getItem('reasoning_effort') || 'Medium'}
+                          Reasoning: {reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1)}
                         </small>
                       </span>
                     </span>

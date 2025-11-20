@@ -386,8 +386,34 @@ function TailorCV() {
       console.log('Scoring result:', data);
       setScores(data);
 
-      // Scoring complete - now automatically start recommendations in background
-      console.log('✅ Scoring complete, auto-triggering recommendations in background...');
+      // Check if any score is below 75 - if so, stop auto-advance
+      const openaiScores = data.openai?.scores;
+      const claudeScores = data.claude?.scores;
+
+      const scores = [
+        { model: 'OpenAI', type: 'fit', value: openaiScores?.fit_score },
+        { model: 'OpenAI', type: 'ATS', value: openaiScores?.ats_score },
+        { model: 'Claude', type: 'fit', value: claudeScores?.fit_score },
+        { model: 'Claude', type: 'ATS', value: claudeScores?.ats_score }
+      ].filter(s => s.value !== undefined && s.value !== null);
+
+      const lowScores = scores.filter(s => s.value < 75);
+
+      if (lowScores.length > 0) {
+        // Low scores detected - stop auto-advance and notify user
+        console.log('⚠️ Low scores detected, stopping auto-advance:', lowScores);
+        setAnalysisStep('scoring');
+        setAnalysisProgress(`⚠️ Low match scores detected. Review results before continuing.`);
+        setIsAnalyzing(false);
+
+        // Format low scores message
+        const lowScoreDetails = lowScores.map(s => `${s.model} ${s.type}: ${s.value}`).join(', ');
+        console.log(`Low scores: ${lowScoreDetails}`);
+        return; // Stop here - don't auto-advance to recommendations
+      }
+
+      // All scores are 75 or above - continue with auto-advance
+      console.log('✅ Scoring complete, all scores ≥75, auto-triggering recommendations in background...');
       const jobReqs = jobAnalysis.openai?.success ? jobAnalysis.openai.analysis : jobAnalysis.claude?.analysis;
       if (jobReqs && !recommendations) {
         // Start recommendations in background
@@ -1453,6 +1479,43 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
           </div>
         )}
 
+        {/* Low Score Warning - if any score is below 75 */}
+        {scores && !recommendations && (() => {
+          const openaiScores = scores.openai?.scores;
+          const claudeScores = scores.claude?.scores;
+          const allScores = [
+            { model: 'OpenAI', type: 'Fit', value: openaiScores?.fit_score },
+            { model: 'OpenAI', type: 'ATS', value: openaiScores?.ats_score },
+            { model: 'Claude', type: 'Fit', value: claudeScores?.fit_score },
+            { model: 'Claude', type: 'ATS', value: claudeScores?.ats_score }
+          ].filter(s => s.value !== undefined && s.value !== null);
+
+          const lowScores = allScores.filter(s => s.value < 75);
+
+          if (lowScores.length === 0) return null;
+
+          return (
+            <div className="low-score-warning">
+              <span className="low-score-icon">⚠️</span>
+              <div className="low-score-text">
+                <strong>Low Match Scores Detected</strong>
+                <p>Some scores are below 75, indicating a weaker match for this role:</p>
+                <ul className="low-score-list">
+                  {lowScores.map((s, i) => (
+                    <li key={i}>{s.model} {s.type} Score: {s.value}/100</li>
+                  ))}
+                </ul>
+                <p><strong>Options:</strong></p>
+                <ul>
+                  <li>Review the analysis below and decide if you still want to apply</li>
+                  <li>Click "Continue to Selection" to proceed anyway and customize your CV</li>
+                  <li>Click "Discard Analysis" to skip this job</li>
+                </ul>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* AI Input Display - Job Analysis */}
         <AIInputDisplay
           title="🔍 Step 1: Job Analysis Input (Sent to AI)"
@@ -1756,6 +1819,7 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
         <button className="btn-secondary" onClick={onBack}>
           ← Back
         </button>
+
         <button
           className="btn-primary btn-large"
           onClick={onNext}

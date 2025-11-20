@@ -2148,6 +2148,7 @@ async def refine_section(
 
     requested_node_type = request_data.get('node_type')
     user_instructions = request_data.get('user_instructions', None)
+    reasoning_effort = request_data.get('reasoning_effort', None)  # User's choice: none, low, medium, high
 
     # Find the node in content_snapshot
     content_snapshot = tailored_cv.content_snapshot
@@ -2206,14 +2207,15 @@ async def refine_section(
     # Get node title for summary detection
     node_title = target_node.get('title', '')
 
-    # Call AI service with full CV context, node type, and title
+    # Call AI service with full CV context, node type, title, and reasoning effort
     result = refine_section_content_with_openai(
         section_content=node_content,
         full_cv_content=full_cv_content,
         job_description=job_description,
         user_instructions=user_instructions,
         node_type=node_type,
-        node_title=node_title
+        node_title=node_title,
+        reasoning_effort=reasoning_effort
     )
 
     # Add metadata to response for comparison and tracking
@@ -2226,9 +2228,18 @@ async def refine_section(
 
     # Add AI model information for UI display
     import os
+    # Determine actual reasoning effort used (only use .env if reasoning_effort is None/empty)
+    actual_reasoning = reasoning_effort if reasoning_effort is not None else os.getenv('OPENAI_REASONING_EFFORT', 'medium')
+
+    # Always GPT-5.1, but display reasoning mode
+    if actual_reasoning and actual_reasoning.lower() == 'none':
+        model_name = 'GPT-5.1 (No Reasoning)'
+    else:
+        model_name = 'GPT-5.1 Thinking'
+
     result['ai_info'] = {
-        'model': 'GPT-5.1 Thinking',
-        'reasoning_effort': os.getenv('OPENAI_REASONING_EFFORT', 'medium').title(),
+        'model': model_name,
+        'reasoning_effort': actual_reasoning.title() if actual_reasoning else 'Medium',
         'reasoning_tokens': result.get('reasoning_tokens', 0)
     }
 

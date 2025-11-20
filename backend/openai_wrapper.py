@@ -104,8 +104,8 @@ def call_openai_for_json(
             "model": model
         }
 
-    # Validate reasoning effort
-    if reasoning_effort not in ["low", "medium", "high"]:
+    # Validate reasoning effort (GPT-5.1 supports: none, low, medium, high)
+    if reasoning_effort not in ["none", "low", "medium", "high"]:
         logger.warning(f"Invalid reasoning_effort: {reasoning_effort}, using 'medium'")
         reasoning_effort = "medium"
 

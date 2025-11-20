@@ -1051,7 +1051,7 @@ def profile_nodes_to_text(nodes: List[Dict]) -> str:
     return "".join(text_parts)
 
 
-def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None, node_type: str = "section", node_title: str = "") -> Dict[str, Any]:
+def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None, node_type: str = "section", node_title: str = "", reasoning_effort: str = None) -> Dict[str, Any]:
     """
     Refine a section or entry's content using OpenAI GPT-5.1.
 
@@ -1173,21 +1173,27 @@ Your job:
 Apply VERY light-touch editing to the {refinement_target} ONLY to make it as strong a fit as possible for THIS specific role, while strictly respecting the constraints below AND reducing length by merging/removing redundancies.
 
 Important context rules:
-- Treat the FULL CV content as the source of truth about my background.
-- You may assume any information that appears anywhere in the full CV when deciding what is redundant or low-priority in this {refinement_target_lower}.
-- However, you may NOT invent new responsibilities, achievements, technologies, or domains that are not present somewhere in the full CV.
-- You are only allowed to refine, merge, shorten, re-order, and lightly rephrase the {refinement_target} TO REFINE.
+- The FULL CV content is provided for CONTEXT ONLY - to help you understand what information might be redundant or covered elsewhere in the CV.
+- You must ONLY refine, rephrase, merge, shorten, or reorder content that ALREADY EXISTS in the "{refinement_target} TO REFINE" section below.
+- You are NOT allowed to pull content from other sections of the full CV into this {refinement_target_lower}.
+- You may NOT add new responsibilities, achievements, technologies, or domains that are not already mentioned in the "{refinement_target} TO REFINE" section.
+
+🚨 CRITICAL CONSTRAINT - READ THIS CAREFULLY:
+You can ONLY work with the content that appears in the "{refinement_target} TO REFINE" section.
+- If something appears in the FULL CV but NOT in the {refinement_target} TO REFINE section → DO NOT ADD IT
+- If something appears in the {refinement_target} TO REFINE section → You may refine, merge, shorten, or rephrase it
+- The FULL CV is ONLY for understanding what's redundant elsewhere, NOT for pulling new content
 
 Hard constraints (must follow all):
-- Do NOT add or invent any new responsibilities, achievements, technologies, or domains beyond what appears in the full CV.
-- You may only use information that is already there in the full CV, possibly rephrased or reordered.
+- Do NOT pull content from other parts of the full CV into this {refinement_target_lower}.
+- You may ONLY work with content that already exists in the "{refinement_target} TO REFINE" section below.
 - You may MERGE redundant bullets and REMOVE low-impact or less relevant items. Prefer fewer, denser bullets over many similar ones.
 - You may do small wording adjustments to improve clarity, flow, and alignment with the job description.
-- You may introduce job-description keywords ONLY when they accurately describe something already present in the full CV (e.g., rephrasing "vector search on embeddings" as "retrieval system with vector indexes" is acceptable if the CV clearly supports it).
-- Do NOT exaggerate scope, impact, seniority, or team size beyond what the CV clearly implies.
+- You may introduce job-description keywords ONLY when they accurately describe something already present in the {refinement_target} TO REFINE section (e.g., rephrasing "vector search on embeddings" as "retrieval system with vector indexes" is acceptable if the content clearly supports it).
+- Do NOT exaggerate scope, impact, seniority, or team size beyond what is clearly implied in the {refinement_target} TO REFINE section.
 - Do NOT introduce generic AI-sounding fluff or buzzwords. Keep language human, grounded, and concrete.
 - Keep the tone humble but confident, and professional.
-- Do NOT move content from this {refinement_target_lower} into other {refinement_target_lower}s or vice versa; you are only editing this {refinement_target_lower}'s text.
+- Do NOT add content from other sections; you are ONLY editing what's already in the {refinement_target} TO REFINE section.
 - Preserve the {refinement_target_lower} heading and general structure (e.g., role title, company, dates); you may reorder bullets inside the {refinement_target_lower} for relevance.
 
 Length & compression rules:
@@ -1236,17 +1242,23 @@ Job Description (for relevance context):
 
 Remember: Return ONLY the JSON object, no other text."""
 
+    # Always use GPT-5.1 for refinement
+    model_to_use = "gpt-5.1"
+
     # Log the refinement operation
     logger.step(f"Refining {refinement_target_lower} with GPT-5.1", step_num=1)
     logger.info(f"Content length: {len(section_content)} chars | Type: {node_type}")
+    if reasoning_effort:
+        logger.info(f"Reasoning effort: {reasoning_effort}")
 
     try:
-        # Use the unified wrapper to call GPT-5.1
-        # Note: We always use GPT-5.1 for refinement as it requires deep reasoning
+        # Always use GPT-5.1 for refinement
+        # Pass reasoning_effort directly (including "none") - wrapper will handle it
         result = call_openai_for_json(
             system_prompt="You are a senior hiring manager and CV editor. Always respond with valid JSON.",
             user_prompt=refinement_prompt,
-            model="gpt-5.1",  # Always use GPT-5.1 for refinement (needs reasoning)
+            model=model_to_use,
+            reasoning_effort=reasoning_effort,  # Can be none, low, medium, high, or None
             timeout=120  # 2 minute timeout for refinement
         )
 

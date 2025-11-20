@@ -2561,3 +2561,97 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================================
+   Low Score Warning Banner
+   ============================================================================ */
+
+.low-score-warning {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  border-left: 5px solid #f39c12;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  box-shadow: 0 4px 12px rgba(243, 156, 18, 0.2);
+  animation: slideInFromTop 0.4s ease-out;
+}
+
+.low-score-icon {
+  font-size: 32px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.low-score-text {
+  flex: 1;
+}
+
+.low-score-text strong {
+  font-size: 18px;
+  color: #d68910;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.low-score-text p {
+  margin: 10px 0;
+  color: #7d5a29;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.low-score-list {
+  margin: 10px 0;
+  padding-left: 20px;
+  color: #7d5a29;
+}
+
+.low-score-list li {
+  margin: 5px 0;
+  font-weight: 600;
+  color: #d68910;
+}
+
+.low-score-text ul {
+  margin: 8px 0;
+  padding-left: 25px;
+  color: #7d5a29;
+}
+
+.low-score-text ul li {
+  margin: 5px 0;
+  font-weight: normal;
+  color: #7d5a29;
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .low-score-warning {
+    background: linear-gradient(135deg, rgba(255, 243, 205, 0.15) 0%, rgba(255, 234, 167, 0.15) 100%);
+    box-shadow: 0 4px 12px rgba(243, 156, 18, 0.3);
+  }
+
+  .low-score-text strong,
+  .low-score-list li {
+    color: #f39c12;
+  }
+
+  .low-score-text p,
+  .low-score-text ul li {
+    color: #e8dcc4;
+  }
+}
