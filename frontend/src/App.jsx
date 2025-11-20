@@ -8,6 +8,12 @@ import HowItWorksPage from './pages/HowItWorksPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Dashboard from './components/Dashboard';
+import DashboardHomePage from './pages/DashboardHomePage';
+import UserProfilePage from './pages/UserProfilePage';
+import ProfilePoolPage from './pages/ProfilePoolPage';
+import TailorCVPage from './pages/TailorCVPage';
+import CVPortfolioPage from './pages/CVPortfolioPage';
+import ApplicationTrackerPage from './pages/ApplicationTrackerPage';
 import JobAnalysisView from './components/JobAnalysisView';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AIAnalysisProvider } from './context/AIAnalysisContext';
@@ -119,14 +125,21 @@ function App() {
           user ? <Navigate to="/dashboard" replace /> : <RegisterPage />
         } />
 
-        {/* Protected Routes */}
-        <Route path="/dashboard/*" element={
+        {/* Protected Routes - Dashboard with nested routes */}
+        <Route path="/dashboard" element={
           <ProtectedRoute isAuthenticated={!!user}>
             <AIAnalysisProvider>
               <Dashboard user={user} onLogout={handleLogout} />
             </AIAnalysisProvider>
           </ProtectedRoute>
-        } />
+        }>
+          <Route index element={<DashboardHomePage />} />
+          <Route path="profile" element={<UserProfilePage />} />
+          <Route path="pool" element={<ProfilePoolPage />} />
+          <Route path="tailor" element={<TailorCVPage />} />
+          <Route path="portfolio" element={<CVPortfolioPage />} />
+          <Route path="applications" element={<ApplicationTrackerPage />} />
+        </Route>
 
         {/* Job Analysis View - Standalone page */}
         <Route path="/job-analysis/:applicationId" element={

@@ -584,7 +584,7 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDel
         )}
 
         <div className="node-content">
-          <span className="node-type-badge">{node.node_type}</span>
+          <span className={`node-type-badge node-type-${node.node_type}`}>{node.node_type}</span>
           <span className="node-title">
             {node.node_type === 'bullet' || node.node_type === 'paragraph'
               ? (node.content || 'Empty')
