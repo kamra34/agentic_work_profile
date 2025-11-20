@@ -330,26 +330,25 @@ function TailorCV() {
       setOpenaiAnalysis(data.openai);
       setClaudeAnalysis(data.claude);
 
-      // Check if at least one model succeeded
+      // Always show results from both models, even if one failed
+      // Only show error if BOTH models failed, but still stay on Step 2
       if (!data.openai?.success && !data.claude?.success) {
         setAnalysisError('Both AI models failed to analyze the job');
-        alert('Both AI models failed to analyze the job. Please try again.');
-        setCurrentStep(1);
+        setAnalysisStep('scoring'); // Stay on Step 2 to show error
+        setAnalysisProgress('⚠️ Both AI models failed. Review the error and try again.');
         setIsAnalyzing(false);
-        setAnalysisStep(null);
+        // Don't go back to Step 1 - stay on Step 2 to show what happened
       } else {
-        // Job analysis successful, now auto-trigger scoring
-        // The scoring will be triggered by the useEffect
+        // At least one model succeeded - continue with scoring
         console.log('✅ Job analysis complete, waiting for profile to trigger scoring...');
       }
     } catch (error) {
       console.error('Error analyzing job:', error);
       setAnalysisError(error.message);
-      alert(`Failed to analyze job description: ${error.message}`);
-      // Go back to Step 1 on error
-      setCurrentStep(1);
+      // Stay on Step 2 to show error - don't force user back to Step 1
+      setAnalysisStep('job-analysis');
+      setAnalysisProgress(`⚠️ Error: ${error.message}`);
       setIsAnalyzing(false);
-      setAnalysisStep(null);
     }
   };
 
@@ -402,7 +401,7 @@ function TailorCV() {
       if (lowScores.length > 0) {
         // Low scores detected - stop auto-advance and notify user
         console.log('⚠️ Low scores detected, stopping auto-advance:', lowScores);
-        setAnalysisStep('scoring');
+        setAnalysisStep('complete'); // Changed from 'scoring' to 'complete' so the results are visible
         setAnalysisProgress(`⚠️ Low match scores detected. Review results before continuing.`);
         setIsAnalyzing(false);
 
@@ -1311,6 +1310,33 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
   const currentAnalysis = selectedTab === 'openai' ? openaiAnalysis : claudeAnalysis;
   const currentScores = scores?.[selectedTab];
 
+  // Debug logging
+  console.log('Step2AIAnalysis Debug:', {
+    selectedTab,
+    currentAnalysis: currentAnalysis ? {
+      success: currentAnalysis.success,
+      hasAnalysis: !!currentAnalysis.analysis,
+      analysisKeys: currentAnalysis.analysis ? Object.keys(currentAnalysis.analysis) : null,
+      model: currentAnalysis.model
+    } : null,
+    currentScores: currentScores ? {
+      success: currentScores.success,
+      hasScores: !!currentScores.scores,
+      scoresKeys: currentScores.scores ? Object.keys(currentScores.scores) : null,
+      verdict: currentScores.scores?.verdict,
+      model: currentScores.model
+    } : null,
+    renderCondition: !!(currentAnalysis?.success && currentAnalysis.analysis)
+  });
+
+  // Log the full objects for deeper inspection
+  if (currentAnalysis) {
+    console.log('Full currentAnalysis:', currentAnalysis);
+  }
+  if (currentScores) {
+    console.log('Full currentScores:', currentScores);
+  }
+
   // Helper functions for model info display
   const getModelDisplayName = (analysisOrScore) => {
     if (!analysisOrScore) return 'Loading...';
@@ -1574,7 +1600,11 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
         {/* Model Selection Cards */}
         <div className="model-selection-cards">
           <button
-            className={`model-card ${selectedTab === 'openai' ? 'active' : ''} ${scores?.openai?.scores?.verdict === 'SHOULD_APPLY' ? 'verdict-positive' : 'verdict-negative'}`}
+            className={`model-card ${selectedTab === 'openai' ? 'active' : ''} ${
+              scores?.openai?.scores?.verdict === 'SHOULD_APPLY' ? 'verdict-positive' :
+              scores?.openai?.scores?.verdict === 'CONSIDER_APPLYING' ? 'verdict-neutral' :
+              'verdict-negative'
+            }`}
             onClick={() => setSelectedTab('openai')}
           >
             <div className="model-card-header">
@@ -1593,12 +1623,18 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             </div>
             {scores?.openai?.scores && (
               <div className="model-card-verdict">
-                {scores.openai.scores.verdict === 'SHOULD_APPLY' ? '✓ Apply' : '✗ Skip'}
+                {scores.openai.scores.verdict === 'SHOULD_APPLY' ? '✓ Apply' :
+                 scores.openai.scores.verdict === 'CONSIDER_APPLYING' ? '⚠ Consider' :
+                 '✗ Skip'}
               </div>
             )}
           </button>
           <button
-            className={`model-card ${selectedTab === 'claude' ? 'active' : ''} ${scores?.claude?.scores?.verdict === 'SHOULD_APPLY' ? 'verdict-positive' : 'verdict-negative'}`}
+            className={`model-card ${selectedTab === 'claude' ? 'active' : ''} ${
+              scores?.claude?.scores?.verdict === 'SHOULD_APPLY' ? 'verdict-positive' :
+              scores?.claude?.scores?.verdict === 'CONSIDER_APPLYING' ? 'verdict-neutral' :
+              'verdict-negative'
+            }`}
             onClick={() => setSelectedTab('claude')}
           >
             <div className="model-card-header">
@@ -1610,13 +1646,16 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             </div>
             {scores?.claude?.scores && (
               <div className="model-card-verdict">
-                {scores.claude.scores.verdict === 'SHOULD_APPLY' ? '✓ Apply' : '✗ Skip'}
+                {scores.claude.scores.verdict === 'SHOULD_APPLY' ? '✓ Apply' :
+                 scores.claude.scores.verdict === 'CONSIDER_APPLYING' ? '⚠ Consider' :
+                 '✗ Skip'}
               </div>
             )}
           </button>
         </div>
 
         {/* Analysis Content */}
+        {console.log('🔍 Analysis Content Conditional:', { scoring, hasScores: !!scores, scoresKeys: scores ? Object.keys(scores) : null })}
         {scoring ? (
           <div className="loading-state">
             <div className="model-activity-logs">
@@ -1673,13 +1712,21 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
           <div className="analysis-content">
             {/* Verdict Banner */}
             {currentScores?.scores?.verdict && (
-              <div className={`verdict-banner ${currentScores.scores.verdict === 'SHOULD_APPLY' ? 'positive' : 'negative'}`}>
+              <div className={`verdict-banner ${
+                currentScores.scores.verdict === 'SHOULD_APPLY' ? 'positive' :
+                currentScores.scores.verdict === 'CONSIDER_APPLYING' ? 'neutral' :
+                'negative'
+              }`}>
                 <div className="verdict-icon">
-                  {currentScores.scores.verdict === 'SHOULD_APPLY' ? '✓' : '✗'}
+                  {currentScores.scores.verdict === 'SHOULD_APPLY' ? '✓' :
+                   currentScores.scores.verdict === 'CONSIDER_APPLYING' ? '⚠' :
+                   '✗'}
                 </div>
                 <div className="verdict-content">
                   <div className="verdict-title">
-                    {currentScores.scores.verdict === 'SHOULD_APPLY' ? 'Recommended: Apply' : 'Not Recommended: Skip This One'}
+                    {currentScores.scores.verdict === 'SHOULD_APPLY' ? 'Recommended: Apply' :
+                     currentScores.scores.verdict === 'CONSIDER_APPLYING' ? 'Mixed: Consider Applying' :
+                     'Not Recommended: Skip This One'}
                   </div>
                   <div className="verdict-reasoning">{currentScores.scores.verdict_reasoning}</div>
                 </div>
@@ -1703,6 +1750,12 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
             )}
 
             {/* Job Requirements */}
+            {console.log('Requirements panel check:', {
+              hasCurrentAnalysis: !!currentAnalysis,
+              analysisSuccess: currentAnalysis?.success,
+              hasAnalysisData: !!currentAnalysis?.analysis,
+              conditionMet: !!(currentAnalysis?.success && currentAnalysis.analysis)
+            })}
             {currentAnalysis?.success && currentAnalysis.analysis && (
               <div className="requirements-panel">
                 <h3>Extracted Requirements</h3>
@@ -1754,6 +1807,13 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
 
                 {/* Skills Analysis Grid */}
                 <div className="skills-analysis-grid">
+                  {console.log('Rendering skills grid:', {
+                    hasMatching: currentScores?.scores?.matching_skills?.length,
+                    hasStrengths: currentScores?.scores?.strengths?.length,
+                    hasMissing: currentScores?.scores?.missing_skills?.length,
+                    hasCritical: currentScores?.scores?.critical_gaps?.length,
+                    hasRec: currentScores?.scores?.recommendations?.length
+                  })}
                   {currentScores?.scores?.matching_skills?.length > 0 && (
                     <div className="insights-section matching-skills">
                       <h4>✓ Matching Skills</h4>

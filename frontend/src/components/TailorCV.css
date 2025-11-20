@@ -578,6 +578,10 @@
   background: linear-gradient(180deg, #10b981 0%, #059669 100%);
 }
 
+.model-card.active.verdict-neutral::before {
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+}
+
 .model-card.active.verdict-negative::before {
   background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
 }
@@ -636,6 +640,11 @@
 .model-card.verdict-positive .model-card-verdict {
   background: #d1fae5;
   color: #065f46;
+}
+
+.model-card.verdict-neutral .model-card-verdict {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .model-card.verdict-negative .model-card-verdict {
@@ -719,6 +728,11 @@
   border-color: #10b981;
 }
 
+.verdict-banner.neutral {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-color: #f59e0b;
+}
+
 .verdict-banner.negative {
   background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
   border-color: #ef4444;
@@ -744,6 +758,11 @@
   color: white;
 }
 
+.verdict-banner.neutral .verdict-icon {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+}
+
 .verdict-banner.negative .verdict-icon {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: white;
@@ -765,6 +784,10 @@
   color: #065f46;
 }
 
+.verdict-banner.neutral .verdict-title {
+  color: #92400e;
+}
+
 .verdict-banner.negative .verdict-title {
   color: #991b1b;
 }
@@ -776,6 +799,10 @@
 
 .verdict-banner.positive .verdict-reasoning {
   color: #047857;
+}
+
+.verdict-banner.neutral .verdict-reasoning {
+  color: #b45309;
 }
 
 .verdict-banner.negative .verdict-reasoning {
