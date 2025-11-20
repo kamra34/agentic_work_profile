@@ -65,6 +65,9 @@ function SavedCVDetail({ cvId, onBack }) {
   const [autoRefining, setAutoRefining] = useState(false);
   const [autoRefineProgress, setAutoRefineProgress] = useState({ current: 0, total: 0, currentSection: '' });
   const [autoRefineLog, setAutoRefineLog] = useState([]);
+  const [autoRefineReasoningEffort, setAutoRefineReasoningEffort] = useState('low'); // none, low, medium, high (default: low for auto-refine)
+  const [showAutoRefineModal, setShowAutoRefineModal] = useState(false); // Modal for auto-refine settings
+  const [autoRefineInstructions, setAutoRefineInstructions] = useState(''); // Optional instructions for auto-refine
 
   // Live Preview PDF Customization State
   const [livePreviewTemplate, setLivePreviewTemplate] = useState('ats_optimized');
@@ -1004,8 +1007,15 @@ function SavedCVDetail({ cvId, onBack }) {
     }
   };
 
+  // Open auto-refine settings modal
+  const openAutoRefineModal = () => {
+    setShowAutoRefineModal(true);
+  };
+
   // AUTO-REFINE ALL SECTIONS - Automated workflow
   const handleAutoRefineAllSections = async () => {
+    // Close the modal
+    setShowAutoRefineModal(false);
     if (!cvData?.content_snapshot?.nodes) return;
 
     // Find all SELECTED section nodes (respect user's selection state)
@@ -1092,7 +1102,8 @@ function SavedCVDetail({ cvId, onBack }) {
             body: JSON.stringify({
               node_id: section.id,
               node_type: 'section',
-              user_instructions: null
+              user_instructions: autoRefineInstructions || null,
+              reasoning_effort: autoRefineReasoningEffort  // Use auto-refine reasoning effort
             })
           });
 
@@ -2773,7 +2784,7 @@ function SavedCVDetail({ cvId, onBack }) {
 
           {/* Auto-Refine All Sections Button */}
           <button
-            onClick={handleAutoRefineAllSections}
+            onClick={openAutoRefineModal}
             className="btn-auto-refine-modern"
             disabled={autoRefining || autoSaveStatus === 'saving'}
             title="Automatically refine all sections using GPT-5.1 Thinking Mode"
@@ -3592,6 +3603,86 @@ function SavedCVDetail({ cvId, onBack }) {
       )}
 
       {/* Auto-Refine Progress Modal - Modern Visual */}
+      {/* Auto-Refine Settings Modal */}
+      {showAutoRefineModal && (
+        <div className="modal-overlay">
+          <div className="modal auto-refine-settings-modal">
+            <div className="modal-header">
+              <h2>🤖 Auto-Refine All Sections</h2>
+              <button
+                onClick={() => setShowAutoRefineModal(false)}
+                className="modal-close-btn"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <p className="modal-description">
+                Automatically refine all selected sections in your CV using GPT-5.1. Configure the AI reasoning mode and add optional instructions below.
+              </p>
+
+              {/* Reasoning Effort Selector */}
+              <div className="reasoning-effort-selector">
+                <label htmlFor="auto-refine-reasoning-effort">
+                  <span className="reasoning-label-icon">🧠</span>
+                  <strong>AI Reasoning Mode</strong>
+                </label>
+                <div className="reasoning-help-text">
+                  Control how deeply GPT-5.1 thinks before responding
+                </div>
+                <select
+                  id="auto-refine-reasoning-effort"
+                  value={autoRefineReasoningEffort}
+                  onChange={(e) => setAutoRefineReasoningEffort(e.target.value)}
+                  className="reasoning-effort-dropdown"
+                >
+                  <option value="none">⚡ None - Fastest (No reasoning)</option>
+                  <option value="low">🔸 Low - Quick reasoning (Recommended for batch)</option>
+                  <option value="medium">⭐ Medium - Balanced</option>
+                  <option value="high">💎 High - Deep thinking (Slower)</option>
+                </select>
+              </div>
+
+              {/* Additional Instructions */}
+              <div className="refinement-instructions">
+                <label htmlFor="auto-refine-instructions">
+                  <strong>Additional Instructions (Optional)</strong>
+                </label>
+                <div className="instructions-help-text">
+                  Provide custom guidance that will be applied to all sections
+                </div>
+                <textarea
+                  id="auto-refine-instructions"
+                  value={autoRefineInstructions}
+                  onChange={(e) => setAutoRefineInstructions(e.target.value)}
+                  placeholder="Example: Make the tone more technical, emphasize leadership experience, reduce bullet points per section..."
+                  rows="4"
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                onClick={() => setShowAutoRefineModal(false)}
+                className="btn-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAutoRefineAllSections}
+                className="btn-start-refine"
+              >
+                <span className="btn-icon">✨</span>
+                <span>Start Auto-Refine</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Refine Progress Modal */}
       {autoRefining && (
         <div className="modal-overlay auto-refine-overlay">
           <div className="modal auto-refine-modal">

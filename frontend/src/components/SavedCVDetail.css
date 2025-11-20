@@ -2865,6 +2865,187 @@
   transform: none;
 }
 
+/* Auto-Refine Settings Modal - Solid, highly readable design */
+.auto-refine-settings-modal {
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #ffffff !important; /* Force solid white background */
+  border: 2px solid #cbd5e0;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important; /* Strong shadow for visibility */
+}
+
+.auto-refine-settings-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e2e8f0;
+  background: #ffffff; /* Ensure header is solid white */
+}
+
+.auto-refine-settings-modal .modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #1a202c !important; /* Force dark color for readability */
+  font-weight: 700;
+}
+
+.auto-refine-settings-modal .modal-body {
+  background: #ffffff; /* Solid white body */
+  color: #2d3748 !important; /* Force readable text color */
+}
+
+.modal-close-btn {
+  background: #f7fafc !important;
+  border: 2px solid #cbd5e0;
+  font-size: 1.5rem;
+  color: #2d3748 !important;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  transition: all 0.2s;
+  border-radius: 6px;
+  font-weight: bold;
+}
+
+.modal-close-btn:hover {
+  background: #e2e8f0 !important;
+  color: #1a202c !important;
+  border-color: #a0aec0;
+}
+
+.modal-description {
+  margin-bottom: 1.5rem;
+  color: #2d3748 !important; /* Force readable color */
+  line-height: 1.6;
+  font-size: 0.95rem;
+  background: #f7fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+}
+
+.instructions-help-text {
+  display: block;
+  font-size: 0.875rem;
+  color: #4a5568 !important; /* Force readable color */
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid #e2e8f0;
+  background: #ffffff; /* Solid background for actions */
+}
+
+.btn-cancel {
+  padding: 0.85rem 1.75rem;
+  border: 2px solid #a0aec0;
+  background: #ffffff !important; /* Force solid white */
+  color: #2d3748 !important; /* Force dark text */
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn-cancel:hover {
+  background: #f7fafc !important;
+  border-color: #718096;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-start-refine {
+  padding: 0.85rem 1.75rem;
+  border: none;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; /* Force gradient */
+  color: #ffffff !important; /* Force white text */
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-start-refine:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-start-refine .btn-icon {
+  font-size: 1.2rem;
+}
+
+/* Ensure reasoning selector in modal has solid backgrounds */
+.auto-refine-settings-modal .reasoning-effort-selector {
+  background: #f8f9fa !important; /* Solid light gray background */
+  border: 2px solid #cbd5e0;
+  color: #2d3748 !important;
+}
+
+.auto-refine-settings-modal .reasoning-effort-selector label {
+  color: #1a202c !important;
+}
+
+.auto-refine-settings-modal .reasoning-effort-selector label strong {
+  color: #1a202c !important;
+  font-weight: 700;
+}
+
+.auto-refine-settings-modal .reasoning-help-text {
+  color: #4a5568 !important;
+}
+
+.auto-refine-settings-modal .reasoning-effort-dropdown {
+  background: #ffffff !important; /* Solid white dropdown */
+  color: #2d3748 !important;
+  border: 2px solid #a0aec0;
+  font-weight: 600;
+}
+
+.auto-refine-settings-modal .reasoning-effort-dropdown:focus {
+  border-color: #667eea;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* Ensure instructions textarea has solid background */
+.auto-refine-settings-modal .refinement-instructions label {
+  color: #1a202c !important;
+  font-weight: 700;
+}
+
+.auto-refine-settings-modal .refinement-instructions textarea {
+  background: #ffffff !important; /* Solid white background */
+  color: #2d3748 !important; /* Dark text */
+  border: 2px solid #a0aec0;
+  font-weight: 500;
+}
+
+.auto-refine-settings-modal .refinement-instructions textarea:focus {
+  border-color: #667eea;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.auto-refine-settings-modal .refinement-instructions textarea::placeholder {
+  color: #a0aec0 !important;
+  opacity: 1;
+}
+
 .reasoning-effort-dropdown option {
   padding: 0.5rem;
   font-weight: 500;
