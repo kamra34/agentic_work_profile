@@ -73,7 +73,8 @@ def transform_nodes_to_sections(nodes):
                 bullets.append({
                     'id': child.get('id', 0),
                     'content': child.get('content', ''),
-                    'order': child.get('order', 0)
+                    'order': child.get('order', 0),
+                    'node_type': child_type  # Preserve node_type for PDF rendering
                 })
 
             # If this child is an entry, treat it as a sub-entry
@@ -92,7 +93,8 @@ def transform_nodes_to_sections(nodes):
                     bullets.append({
                         'id': child.get('id', 0),
                         'content': child.get('content', ''),
-                        'order': child.get('order', 0)
+                        'order': child.get('order', 0),
+                        'node_type': child_type  # Preserve node_type for PDF rendering
                     })
 
             # For any other type, recurse into children
@@ -133,7 +135,8 @@ def transform_nodes_to_sections(nodes):
                     'items': [{
                         'id': child.get('id', 0),
                         'content': child.get('content', ''),
-                        'order': child.get('order', 0)
+                        'order': child.get('order', 0),
+                        'node_type': child_type  # Preserve node_type for PDF rendering
                     }],
                     'sub_entries': []
                 })
