@@ -25,7 +25,7 @@ Before you begin, ensure you have the following installed:
 | Software | Version | Download Link |
 |----------|---------|---------------|
 | **Python** | 3.9 or higher | [python.org/downloads](https://www.python.org/downloads/) |
-| **Node.js** | 16 or higher | [nodejs.org/download](https://nodejs.org/en/download/) |
+| **Node.js** | 20.19+ (or 22.12+) | [nodejs.org/download](https://nodejs.org/en/download/) |
 | **PostgreSQL** | 13 or higher | [postgresql.org/download](https://www.postgresql.org/download/) |
 | **Git** | Latest | [git-scm.com/downloads](https://git-scm.com/downloads) |
 
@@ -204,7 +204,7 @@ OPENAI_API_KEY=sk-your-openai-api-key-here
 ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key-here
 
 # Optional: CORS Origins (comma-separated)
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+CORS_ORIGINS=http://localhost:5174,http://localhost:3000
 ```
 
 **Important:**
@@ -212,13 +212,14 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 - Replace `your-super-secret-key-change-this-in-production` with a random string (e.g., `openssl rand -hex 32`)
 - Add your actual OpenAI API key (starts with `sk-`)
 - Add your actual Anthropic API key (starts with `sk-ant-`)
+- Use PostgreSQL only for this project (do not configure SQLite).
 
 ### **Step 5: Initialize Database Tables**
 
 Make sure your virtual environment is activated, then run:
 
 ```bash
-python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
+python -c "from sqlalchemy import create_engine; from dotenv import load_dotenv; import os; from models import Base; load_dotenv(); engine=create_engine(os.getenv('DATABASE_URL')); Base.metadata.create_all(bind=engine)"
 ```
 
 You should see no errors. This creates all necessary tables in your database.
@@ -228,7 +229,9 @@ You should see no errors. This creates all necessary tables in your database.
 Start the backend server:
 
 ```bash
-uvicorn main:app --reload --port 8000
+cd backend
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000 --log-level debug --access-log
+
 ```
 
 You should see:
@@ -267,23 +270,16 @@ npm install
 This will install:
 - React
 - Vite
-- React Beautiful DnD
 - And all other frontend dependencies
 
 ### **Step 3: Verify Frontend Configuration**
 
-The frontend is pre-configured to connect to `http://localhost:8000`.
+Frontend API base URL defaults to `http://localhost:8000`.
 
-If you need to change this, edit `frontend/vite.config.js`:
+If your backend runs on a different host/port, create `frontend/.env`:
 
-```javascript
-export default defineConfig({
-  server: {
-    proxy: {
-      '/api': 'http://localhost:8000'  // Change this if backend runs on different port
-    }
-  }
-})
+```env
+VITE_API_URL=http://localhost:8001
 ```
 
 ### **Step 4: Start Frontend Development Server**
@@ -294,7 +290,7 @@ npm run dev
 
 You should see:
 ```
-  VITE v5.x.x  ready in xxx ms
+  VITE v7.x.x  ready in xxx ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
@@ -334,7 +330,7 @@ You should see the login page!
 
 1. Click **"Register"** or **"Sign Up"**
 2. Enter your details:
-   - Username
+   - Full name
    - Email
    - Password
 3. Click **"Register"**
@@ -458,7 +454,7 @@ relation "users" does not exist
 **Solution:**
 - Run database initialization again:
   ```bash
-  python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
+  python -c "from sqlalchemy import create_engine; from dotenv import load_dotenv; import os; from models import Base; load_dotenv(); engine=create_engine(os.getenv('DATABASE_URL')); Base.metadata.create_all(bind=engine)"
   ```
 
 ---
@@ -486,7 +482,7 @@ npm install
 ### **Update Database Schema**
 ```bash
 cd backend
-python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
+python -c "from sqlalchemy import create_engine; from dotenv import load_dotenv; import os; from models import Base; load_dotenv(); engine=create_engine(os.getenv('DATABASE_URL')); Base.metadata.create_all(bind=engine)"
 ```
 
 ---
@@ -571,4 +567,4 @@ If you encounter issues not covered here:
 
 **Happy Building! 🚀**
 
-*Last Updated: January 2025*
+*Last Updated: February 12, 2026*

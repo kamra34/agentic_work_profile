@@ -6,9 +6,11 @@ using both OpenAI and Claude models.
 
 import os
 import json
+import time
 from openai import OpenAI
 from anthropic import Anthropic
 from typing import Dict, Any, List
+from datetime import datetime, timezone
 from openai_wrapper import call_openai_for_json
 from logger_config import get_logger
 
@@ -64,6 +66,163 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 
 
+def _safe_score(value: Any, default: int = 0) -> int:
+    """Normalize score-like values to int in [0, 100]."""
+    try:
+        score = int(round(float(value)))
+    except (TypeError, ValueError):
+        score = default
+    return max(0, min(100, score))
+
+
+def _safe_list_of_strings(value: Any, max_items: int = 25, max_len: int = 400) -> List[str]:
+    """Normalize model output fields into clean string lists."""
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value:
+        if item is None:
+            continue
+        text = str(item).strip()
+        if not text:
+            continue
+        out.append(text[:max_len])
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _normalize_scores_payload(scores: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize scoring output to stable frontend-friendly schema.
+    Keeps wizard rendering stable when model outputs slightly drift.
+    """
+    normalized = {
+        "fit_score": _safe_score(scores.get("fit_score")),
+        "fit_reasoning": str(scores.get("fit_reasoning", "")).strip(),
+        "ats_score": _safe_score(scores.get("ats_score")),
+        "ats_reasoning": str(scores.get("ats_reasoning", "")).strip(),
+        "verdict": str(scores.get("verdict", "CONSIDER_APPLYING")).strip().upper(),
+        "verdict_reasoning": str(scores.get("verdict_reasoning", "")).strip(),
+        "strengths": _safe_list_of_strings(scores.get("strengths")),
+        "missing_skills": _safe_list_of_strings(scores.get("missing_skills")),
+        "critical_gaps": _safe_list_of_strings(scores.get("critical_gaps")),
+        "matching_skills": _safe_list_of_strings(scores.get("matching_skills")),
+        "recommendations": _safe_list_of_strings(scores.get("recommendations")),
+    }
+
+    allowed_verdicts = {"SHOULD_APPLY", "CONSIDER_APPLYING", "SHOULD_NOT_APPLY"}
+    if normalized["verdict"] not in allowed_verdicts:
+        normalized["verdict"] = "CONSIDER_APPLYING"
+
+    return normalized
+
+
+def _normalize_recommendations_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize node recommendation payload to stable schema.
+    - Coerces id/node_id to int id
+    - Coerces confidence to 0..1 (supports 0..100 input)
+    - Ensures reason/tags are consistently typed
+    """
+    selected_nodes = data.get("selected_nodes", [])
+    if not isinstance(selected_nodes, list):
+        selected_nodes = []
+
+    normalized_nodes = []
+    for rec in selected_nodes:
+        if not isinstance(rec, dict):
+            continue
+
+        rec_id = rec.get("id", rec.get("node_id"))
+        try:
+            rec_id = int(rec_id)
+        except (TypeError, ValueError):
+            continue
+
+        include = bool(rec.get("include", False))
+
+        confidence_raw = rec.get("confidence", 0.5)
+        try:
+            confidence = float(confidence_raw)
+        except (TypeError, ValueError):
+            confidence = 0.5
+        if confidence > 1.0 and confidence <= 100.0:
+            confidence = confidence / 100.0
+        confidence = max(0.0, min(1.0, confidence))
+
+        reason = str(rec.get("reason", "")).strip()
+        relevance_tags = _safe_list_of_strings(rec.get("relevance_tags"), max_items=8, max_len=80)
+
+        normalized_nodes.append({
+            "id": rec_id,
+            "include": include,
+            "confidence": confidence,
+            "reason": reason,
+            "relevance_tags": relevance_tags
+        })
+
+    include_count = sum(1 for n in normalized_nodes if n["include"])
+    exclude_count = len(normalized_nodes) - include_count
+
+    selection_summary = data.get("selection_summary", {})
+    if not isinstance(selection_summary, dict):
+        selection_summary = {}
+
+    def _safe_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    normalized_summary = {
+        "total_nodes": _safe_int(selection_summary.get("total_nodes"), len(normalized_nodes)),
+        "recommended_include": _safe_int(selection_summary.get("recommended_include"), include_count),
+        "recommended_exclude": _safe_int(selection_summary.get("recommended_exclude"), exclude_count),
+    }
+
+    # Preserve optional informational fields if present
+    if "expected_cv_length" in selection_summary:
+        normalized_summary["expected_cv_length"] = str(selection_summary.get("expected_cv_length", "")).strip()
+    if "tailoring_percentage" in selection_summary:
+        normalized_summary["tailoring_percentage"] = str(selection_summary.get("tailoring_percentage", "")).strip()
+
+    return {
+        "selected_nodes": normalized_nodes,
+        "selection_summary": normalized_summary,
+        "tailoring_strategy": str(data.get("tailoring_strategy", "")).strip()
+    }
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _build_runtime(
+    *,
+    stage: str,
+    provider: str,
+    requested_model: str,
+    resolved_model: str,
+    api_name: str = "",
+    reasoning_effort: str = "",
+    started_at: str,
+    finished_at: str,
+    duration_ms: int
+) -> Dict[str, Any]:
+    return {
+        "stage": stage,
+        "provider": provider,
+        "requested_model": requested_model,
+        "resolved_model": resolved_model,
+        "api": api_name,
+        "reasoning_effort": reasoning_effort,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_ms": duration_ms
+    }
+
+
 JOB_ANALYSIS_PROMPT = """Analyze this job description and extract key information with critical precision.
 
 Job Description:
@@ -98,11 +257,18 @@ Be thorough and extract all relevant requirements."""
 
 SCORING_PROMPT = """You are a brutally honest technical recruiter and career advisor with 15+ years of experience in technical hiring and ATS systems. Analyze this candidate profile against the job requirements with critical precision. Your goal is to save the candidate's time by being factual, direct, and realistic about their chances.
 
-Job Requirements:
+Raw Job Description (source of truth):
+{job_description}
+
+Structured Requirements (helper extraction):
 {job_requirements}
 
 Candidate Profile:
 {profile_content}
+
+Use BOTH inputs:
+- The raw job description is authoritative when there is any conflict.
+- The structured requirements are for consistency and completeness.
 
 ## SCORING METHODOLOGY
 
@@ -310,11 +476,18 @@ Focus on:
 
 NODE_SELECTION_PROMPT = """You are an expert CV tailoring specialist and ATS optimization consultant. Your task is to recommend which profile nodes should be INCLUDED or EXCLUDED in a tailored CV for a specific job.
 
-Job Requirements:
+Raw Job Description (source of truth):
+{job_description}
+
+Structured Requirements (helper extraction):
 {job_requirements}
 
 Profile Nodes:
 {profile_nodes}
+
+Use BOTH inputs:
+- Raw job description is authoritative when any conflict exists.
+- Structured requirements help consistency and keyword normalization.
 
 ## CRITICAL: KEYWORD MATCHING STRATEGY
 
@@ -513,6 +686,8 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
     """
     model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
     logger.step(f"Job analysis with OpenAI ({model_name})", step_num=1)
+    started_at = _now_iso()
+    start_ts = time.time()
 
     try:
         # Build the exact prompt that will be sent
@@ -528,19 +703,47 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
 
         if not result["success"]:
             logger.error(f"Job analysis failed: {result['error']}")
+            finished_at = _now_iso()
+            duration_ms = int((time.time() - start_ts) * 1000)
+            resolved_model = result.get("actual_model") or result.get("model", model_name)
             return {
                 "success": False,
-                "model": result.get("model", "unknown"),
-                "error": result["error"]
+                "model": f"openai-{resolved_model}",
+                "error": result["error"],
+                "runtime": _build_runtime(
+                    stage="job_analysis",
+                    provider="openai",
+                    requested_model=model_name,
+                    resolved_model=resolved_model,
+                    api_name=result.get("api_name", ""),
+                    reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_ms=duration_ms
+                )
             }
 
-        logger.success(f"Job analysis complete using {result['model']}")
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
+        resolved_model = result.get("actual_model") or result["model"]
+        logger.success(f"Job analysis complete using {resolved_model}")
 
         response_data = {
             "success": True,
-            "model": f"openai-{result['model']}",
+            "model": f"openai-{resolved_model}",
             "analysis": result["data"],
-            "prompt_sent": user_prompt
+            "prompt_sent": user_prompt,
+            "runtime": _build_runtime(
+                stage="job_analysis",
+                provider="openai",
+                requested_model=result.get("requested_model", model_name),
+                resolved_model=resolved_model,
+                api_name=result.get("api_name", ""),
+                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
         # Include reasoning token count for GPT-5.1
@@ -552,23 +755,51 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
 
     except Exception as e:
         logger.error("Job analysis exception", error=e)
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
         return {
             "success": False,
-            "model": f"openai-{model or 'default'}",
-            "error": str(e)
+            "model": f"openai-{model_name}",
+            "error": str(e),
+            "runtime": _build_runtime(
+                stage="job_analysis",
+                provider="openai",
+                requested_model=model_name,
+                resolved_model=model_name,
+                api_name="",
+                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
 
 def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
     """Analyze job description using Claude Sonnet 4.5"""
+    requested_model = "claude-sonnet-4-20250514"
     logger.step("Job analysis with Claude (claude-sonnet-4.5)", step_num=1)
+    started_at = _now_iso()
+    start_ts = time.time()
 
     if not anthropic_client:
         logger.error("Claude client not initialized")
+        finished_at = _now_iso()
         return {
             "success": False,
-            "model": "claude-sonnet-4.5",
-            "error": "Claude client not initialized. Check API key."
+            "model": requested_model,
+            "error": "Claude client not initialized. Check API key.",
+            "runtime": _build_runtime(
+                stage="job_analysis",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=int((time.time() - start_ts) * 1000)
+            )
         }
 
     logger.info(f"Job description length: {len(job_description)} characters")
@@ -577,12 +808,10 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         # Build the exact prompt that will be sent
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
 
-        import time
-        start_time = time.time()
         logger.info("Calling Claude Sonnet 4.5 API...")
 
         response = anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=requested_model,
             max_tokens=4096,
             messages=[
                 {"role": "user", "content": user_prompt}
@@ -613,26 +842,51 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
 
         result = json.loads(text)
 
-        duration = time.time() - start_time
-        logger.success(f"Job analysis complete using claude-sonnet-4.5 in {duration:.2f}s")
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
+        resolved_model = getattr(response, "model", requested_model)
+        logger.success(f"Job analysis complete using {resolved_model} in {duration_ms / 1000:.2f}s")
 
         return {
             "success": True,
-            "model": "claude-sonnet-4.5",
+            "model": resolved_model,
             "analysis": result,
-            "prompt_sent": user_prompt  # Include the exact prompt sent
+            "prompt_sent": user_prompt,  # Include the exact prompt sent
+            "runtime": _build_runtime(
+                stage="job_analysis",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=resolved_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
     except Exception as e:
-        duration = time.time() - start_time
-        logger.error(f"Claude analysis failed after {duration:.2f}s: {str(e)}")
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
+        logger.error(f"Claude analysis failed after {duration_ms / 1000:.2f}s: {str(e)}")
         return {
             "success": False,
-            "model": "claude-sonnet-4.5",
-            "error": str(e)
+            "model": requested_model,
+            "error": str(e),
+            "runtime": _build_runtime(
+                stage="job_analysis",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
 
-def score_profile_with_openai(job_requirements: Dict, profile_content: str, model: str = None) -> Dict[str, Any]:
+def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_description: str = "", model: str = None) -> Dict[str, Any]:
     """
     Score profile fit using OpenAI (supports both GPT-4o and GPT-5.1)
 
@@ -643,10 +897,13 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, mode
     """
     model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
     logger.step(f"Profile scoring with OpenAI ({model_name})", step_num=1)
+    started_at = _now_iso()
+    start_ts = time.time()
 
     try:
         # Build the exact prompt that will be sent
         user_prompt = SCORING_PROMPT.format(
+            job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
             profile_content=profile_content
         )
@@ -661,24 +918,52 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, mode
 
         if not result["success"]:
             logger.error(f"Profile scoring failed: {result['error']}")
+            finished_at = _now_iso()
+            duration_ms = int((time.time() - start_ts) * 1000)
+            resolved_model = result.get("actual_model") or result.get("model", model_name)
             return {
                 "success": False,
-                "model": result.get("model", "unknown"),
-                "error": result["error"]
+                "model": f"openai-{resolved_model}",
+                "error": result["error"],
+                "runtime": _build_runtime(
+                    stage="profile_scoring",
+                    provider="openai",
+                    requested_model=model_name,
+                    resolved_model=resolved_model,
+                    api_name=result.get("api_name", ""),
+                    reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_ms=duration_ms
+                )
             }
 
-        # Log scores
-        scores_data = result["data"]
+        # Normalize and log scores
+        scores_data = _normalize_scores_payload(result["data"])
         fit_score = scores_data.get("fit_score", "N/A")
         ats_score = scores_data.get("ats_score", "N/A")
         verdict = scores_data.get("verdict", "N/A")
         logger.success(f"Scoring complete: Fit={fit_score}, ATS={ats_score}, Verdict={verdict}")
 
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
+        resolved_model = result.get("actual_model") or result["model"]
         response_data = {
             "success": True,
-            "model": f"openai-{result['model']}",
-            "scores": result["data"],
-            "prompt_sent": user_prompt
+            "model": f"openai-{resolved_model}",
+            "scores": scores_data,
+            "prompt_sent": user_prompt,
+            "runtime": _build_runtime(
+                stage="profile_scoring",
+                provider="openai",
+                requested_model=result.get("requested_model", model_name),
+                resolved_model=resolved_model,
+                api_name=result.get("api_name", ""),
+                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
         # Include reasoning token count for GPT-5.1
@@ -690,23 +975,51 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, mode
 
     except Exception as e:
         logger.error("Profile scoring exception", error=e)
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
         return {
             "success": False,
-            "model": f"openai-{model or 'default'}",
-            "error": str(e)
+            "model": f"openai-{model_name}",
+            "error": str(e),
+            "runtime": _build_runtime(
+                stage="profile_scoring",
+                provider="openai",
+                requested_model=model_name,
+                resolved_model=model_name,
+                api_name="",
+                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
 
-def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> Dict[str, Any]:
+def score_profile_with_claude(job_requirements: Dict, profile_content: str, job_description: str = "") -> Dict[str, Any]:
     """Score profile fit using Claude Sonnet 4.5"""
+    requested_model = "claude-sonnet-4-20250514"
     logger.step("Profile scoring with Claude (claude-sonnet-4.5)", step_num=1)
+    started_at = _now_iso()
+    start_ts = time.time()
 
     if not anthropic_client:
         logger.error("Claude client not initialized")
+        finished_at = _now_iso()
         return {
             "success": False,
-            "model": "claude-sonnet-4.5",
-            "error": "Claude client not initialized. Check API key."
+            "model": requested_model,
+            "error": "Claude client not initialized. Check API key.",
+            "runtime": _build_runtime(
+                stage="profile_scoring",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=int((time.time() - start_ts) * 1000)
+            )
         }
 
     logger.info(f"Profile content length: {len(profile_content)} characters")
@@ -714,16 +1027,15 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
     try:
         # Build the exact prompt that will be sent
         user_prompt = SCORING_PROMPT.format(
+            job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
             profile_content=profile_content
         )
 
-        import time
-        start_time = time.time()
         logger.info("Calling Claude Sonnet 4.5 API...")
 
         response = anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=requested_model,
             max_tokens=4096,
             messages=[
                 {"role": "user", "content": user_prompt}
@@ -740,30 +1052,56 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str) -> D
             text = '\n'.join(lines[1:-1])
 
         result = json.loads(text)
+        result = _normalize_scores_payload(result)
 
-        duration = time.time() - start_time
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
+        resolved_model = getattr(response, "model", requested_model)
         fit_score = result.get('fit_score', 'N/A')
         ats_score = result.get('ats_score', 'N/A')
         verdict = result.get('verdict', 'N/A')
-        logger.success(f"Scoring complete: Fit={fit_score}, ATS={ats_score}, Verdict={verdict} in {duration:.2f}s")
+        logger.success(f"Scoring complete: Fit={fit_score}, ATS={ats_score}, Verdict={verdict} in {duration_ms / 1000:.2f}s")
 
         return {
             "success": True,
-            "model": "claude-sonnet-4.5",
+            "model": resolved_model,
             "scores": result,
-            "prompt_sent": user_prompt  # Include the exact prompt sent
+            "prompt_sent": user_prompt,  # Include the exact prompt sent
+            "runtime": _build_runtime(
+                stage="profile_scoring",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=resolved_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
     except Exception as e:
-        duration = time.time() - start_time
-        logger.error(f"Claude scoring failed after {duration:.2f}s: {str(e)}")
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
+        logger.error(f"Claude scoring failed after {duration_ms / 1000:.2f}s: {str(e)}")
         return {
             "success": False,
-            "model": "claude-sonnet-4.5",
-            "error": str(e)
+            "model": requested_model,
+            "error": str(e),
+            "runtime": _build_runtime(
+                stage="profile_scoring",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
 
-def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict], model: str = None) -> Dict[str, Any]:
+def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict], job_description: str = "", model: str = None) -> Dict[str, Any]:
     """
     Recommend which nodes to include using OpenAI (supports both GPT-4o and GPT-5.1)
 
@@ -774,9 +1112,12 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
     """
     model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
     logger.step(f"Node selection with OpenAI ({model_name}) - {len(profile_nodes)} nodes", step_num=1)
+    started_at = _now_iso()
+    start_ts = time.time()
 
     try:
         prompt_content = NODE_SELECTION_PROMPT.format(
+            job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
             profile_nodes=json.dumps(profile_nodes, indent=2)
         )
@@ -793,21 +1134,50 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
 
         if not result["success"]:
             logger.error(f"Node selection failed: {result['error']}")
+            finished_at = _now_iso()
+            duration_ms = int((time.time() - start_ts) * 1000)
+            resolved_model = result.get("actual_model") or result.get("model", model_name)
             return {
                 "success": False,
-                "model": result.get("model", "unknown"),
-                "error": result["error"]
+                "model": f"openai-{resolved_model}",
+                "error": result["error"],
+                "runtime": _build_runtime(
+                    stage="node_selection",
+                    provider="openai",
+                    requested_model=model_name,
+                    resolved_model=resolved_model,
+                    api_name=result.get("api_name", ""),
+                    reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_ms=duration_ms
+                )
             }
 
-        node_count = len(result["data"].get('selected_nodes', []))
-        recommended_count = sum(1 for node in result["data"].get('selected_nodes', []) if node.get('include'))
+        normalized_recommendations = _normalize_recommendations_payload(result["data"])
+        node_count = len(normalized_recommendations.get('selected_nodes', []))
+        recommended_count = sum(1 for node in normalized_recommendations.get('selected_nodes', []) if node.get('include'))
         logger.success(f"Node selection complete: {recommended_count}/{node_count} nodes recommended")
 
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
+        resolved_model = result.get("actual_model") or result["model"]
         response_data = {
             "success": True,
-            "model": f"openai-{result['model']}",
-            "recommendations": result["data"],
-            "prompt_sent": prompt_content
+            "model": f"openai-{resolved_model}",
+            "recommendations": normalized_recommendations,
+            "prompt_sent": prompt_content,
+            "runtime": _build_runtime(
+                stage="node_selection",
+                provider="openai",
+                requested_model=result.get("requested_model", model_name),
+                resolved_model=resolved_model,
+                api_name=result.get("api_name", ""),
+                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
         # Include reasoning token count for GPT-5.1
@@ -825,27 +1195,56 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
         logger.error(f"Node selection exception", error=e)
         import traceback
         traceback.print_exc()
+        finished_at = _now_iso()
+        duration_ms = int((time.time() - start_ts) * 1000)
         return {
             "success": False,
-            "model": f"openai-{model or 'default'}",
-            "error": str(e)
+            "model": f"openai-{model_name}",
+            "error": str(e),
+            "runtime": _build_runtime(
+                stage="node_selection",
+                provider="openai",
+                requested_model=model_name,
+                resolved_model=model_name,
+                api_name="",
+                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms
+            )
         }
 
 
-def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict]) -> Dict[str, Any]:
+def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict], job_description: str = "") -> Dict[str, Any]:
     """Recommend which nodes to include using Claude Sonnet 4.5"""
+    requested_model = "claude-sonnet-4-20250514"
     logger.step(f"Node selection with Claude (claude-sonnet-4.5) - {len(profile_nodes)} nodes", step_num=1)
+    started_at = _now_iso()
+    start_ts = time.time()
 
     if not anthropic_client:
         logger.error("Claude client not initialized")
+        finished_at = _now_iso()
         return {
             "success": False,
-            "model": "claude-sonnet-4.5",
-            "error": "Claude client not initialized. Check API key."
+            "model": requested_model,
+            "error": "Claude client not initialized. Check API key.",
+            "runtime": _build_runtime(
+                stage="node_selection",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=int((time.time() - start_ts) * 1000)
+            )
         }
 
     try:
         prompt_content = NODE_SELECTION_PROMPT.format(
+            job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
             profile_nodes=json.dumps(profile_nodes, indent=2)
         )
@@ -853,11 +1252,8 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
         logger.info("Calling Claude Sonnet 4.5 API...")
 
-        import time
-        request_start = time.time()
-
         response = anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=requested_model,
             max_tokens=16384,  # Increased from 8192 to handle larger responses with many nodes
             system="You are an expert CV tailoring specialist. You must respond with ONLY valid JSON, no additional text or explanation before or after the JSON. Ensure your JSON is properly formatted with no trailing commas, all strings properly quoted, and all braces/brackets balanced.",
             messages=[
@@ -867,7 +1263,7 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
             timeout=180.0  # 180 second timeout (3 minutes) - Claude needs more time
         )
 
-        request_duration = time.time() - request_start
+        request_duration = time.time() - start_ts
         print(f"📥 [Claude-Recommend] Response received in {request_duration:.2f}s, parsing...")
         print(f"📊 [Claude-Recommend] Response type: {type(response)}, has content: {hasattr(response, 'content')}")
 
@@ -984,23 +1380,49 @@ def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict
 
                 raise ValueError(f"Claude returned invalid JSON that couldn't be repaired. Error: {str(json_error)}. Debug file: {debug_file}")
 
-        request_duration = time.time() - request_start
-        selected_count = len(result.get('selected_nodes', []))
+        request_duration = time.time() - start_ts
+        normalized_result = _normalize_recommendations_payload(result)
+        selected_count = len(normalized_result.get('selected_nodes', []))
         logger.success(f"Node selection complete: {selected_count} nodes recommended in {request_duration:.2f}s")
+        finished_at = _now_iso()
+        resolved_model = getattr(response, "model", requested_model)
 
         return {
             "success": True,
-            "model": "claude-sonnet-4.5",
-            "recommendations": result,
-            "prompt_sent": prompt_content  # Include the exact prompt sent
+            "model": resolved_model,
+            "recommendations": normalized_result,
+            "prompt_sent": prompt_content,  # Include the exact prompt sent
+            "runtime": _build_runtime(
+                stage="node_selection",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=resolved_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=int(request_duration * 1000)
+            )
         }
     except Exception as e:
-        request_duration = time.time() - request_start
+        request_duration = time.time() - start_ts
         logger.error(f"Claude node selection failed after {request_duration:.2f}s: {str(e)}")
+        finished_at = _now_iso()
         return {
             "success": False,
-            "model": "claude-sonnet-4.5",
-            "error": str(e)
+            "model": requested_model,
+            "error": str(e),
+            "runtime": _build_runtime(
+                stage="node_selection",
+                provider="anthropic",
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                api_name="messages.create",
+                reasoning_effort="",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=int(request_duration * 1000)
+            )
         }
 
 

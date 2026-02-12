@@ -372,7 +372,9 @@ function TailorCV() {
         },
         body: JSON.stringify({
           job_requirements: jobRequirements,
-          profile_id: profile.id
+          profile_id: profile.id,
+          job_description: jobDescription,
+          job_analysis: jobAnalysis
         })
       });
 
@@ -576,7 +578,9 @@ function TailorCV() {
         },
         body: JSON.stringify({
           job_requirements: jobRequirements,
-          profile_id: profile.id
+          profile_id: profile.id,
+          job_description: jobDescription,
+          job_analysis: jobAnalysis
         }),
         signal: controller.signal
       });
@@ -1353,107 +1357,30 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
     return analysisOrScore?.reasoning_tokens && analysisOrScore.reasoning_tokens > 0;
   };
 
-  // Convert profile nodes to readable text (same as backend does)
-  const profileToText = (nodes) => {
-    if (!nodes || nodes.length === 0) return 'No profile data';
-
-    let text = '';
-    const processNode = (node) => {
-      if (node.node_type === 'section') {
-        text += `\n## ${node.title || 'Section'}\n`;
-      } else if (node.node_type === 'entry') {
-        const title = node.title || '';
-        const subtitle = node.subtitle || '';
-        const dates = node.start_date ? `${node.start_date} - ${node.end_date || 'Present'}` : '';
-        const location = node.location || '';
-
-        text += `**${title}**`;
-        if (subtitle) text += ` | ${subtitle}`;
-        if (dates) text += ` | ${dates}`;
-        if (location) text += ` | ${location}`;
-        text += '\n';
-
-        if (node.content) text += `${node.content}\n`;
-      } else if (node.node_type === 'bullet' || node.node_type === 'item') {
-        text += `• ${node.content || node.title || ''}\n`;
-      } else if (node.node_type === 'paragraph') {
-        text += `${node.content || ''}\n`;
-      }
-
-      if (node.children && node.children.length > 0) {
-        node.children.forEach(processNode);
-      }
-    };
-
-    nodes.forEach(processNode);
-    return text;
+  const getExactModelId = (analysisOrScore) => {
+    if (!analysisOrScore) return 'pending';
+    return analysisOrScore?.runtime?.resolved_model || analysisOrScore?.model || 'unknown';
   };
 
-  const fullProfileText = profile?.nodes ? profileToText(profile.nodes) : 'Loading profile...';
+  const getRequestedModelId = (analysisOrScore) => {
+    if (!analysisOrScore) return 'pending';
+    return analysisOrScore?.runtime?.requested_model || analysisOrScore?.model || 'unknown';
+  };
 
-  // Exact prompts used by AI
-  const JOB_ANALYSIS_PROMPT = `Analyze this job description and extract key information with critical precision.
+  const formatDuration = (ms) => {
+    if (!ms && ms !== 0) return 'pending';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
 
-Job Description:
-{job_description}
-
-Return a JSON object with:
-{
-  "job_metadata": {
-    "title": "extracted job title",
-    "company": "company name if mentioned, otherwise null",
-    "seniority_level": "Entry/Mid/Senior/Lead/Principal/Executive or null",
-    "location": "location if mentioned, otherwise null",
-    "job_type": "Full-time/Part-time/Contract/etc or null"
-  },
-  "requirements": {
-    "technical_skills": ["skill1", "skill2", ...],
-    "soft_skills": ["skill1", "skill2", ...],
-    "experience_years": "X-Y years or null",
-    "education": ["requirement1", ...],
-    "certifications": ["cert1", ...],
-    "responsibilities": ["resp1", "resp2", ...],
-    "key_keywords": ["keyword1", "keyword2", ...]
-  },
-  "role_summary": "brief summary of the role",
-  "company_culture": "description of company culture hints or null",
-  "must_haves": ["critical requirement 1", ...],
-  "nice_to_haves": ["optional requirement 1", ...]
-}
-
-Be thorough and extract all relevant requirements.`;
-
-  const SCORING_PROMPT = `You are a brutally honest technical recruiter and career advisor. Analyze this candidate profile against the job requirements with critical precision. Your goal is to save the candidate's time by being factual, direct, and realistic about their chances.
-
-Job Requirements:
-{job_requirements}
-
-Candidate Profile:
-{profile_content}
-
-Provide a critical, fact-based analysis:
-
-Return JSON:
-{
-  "fit_score": 85,
-  "fit_reasoning": "Factual explanation of why this score. Be specific about what matches and what doesn't. No sugar-coating.",
-  "ats_score": 78,
-  "ats_reasoning": "Specific explanation of ATS compatibility. Mention keyword matches/misses, format issues.",
-  "verdict": "SHOULD_APPLY or SHOULD_NOT_APPLY",
-  "verdict_reasoning": "Clear, direct explanation of why the candidate should or should not apply. Focus on realistic chances and time investment value.",
-  "strengths": ["Specific strength with evidence from profile", ...],
-  "missing_skills": ["Skill required by job but absent from profile", ...],
-  "critical_gaps": ["Deal-breaker gaps that significantly hurt chances", ...],
-  "matching_skills": ["Skills the candidate has that match job requirements", ...],
-  "recommendations": ["Actionable recommendation 1", ...]
-}
-
-Be honest and critical. If the fit is poor, say so directly. If it's excellent, explain why with facts. Focus on:
-- Exact skill matches vs. missing requirements
-- Experience level alignment
-- Technical depth in required areas
-- Red flags or deal-breakers
-- Realistic probability of getting past screening`;
+  const formatRuntimeLine = (analysisOrScore) => {
+    const rt = analysisOrScore?.runtime;
+    if (!rt) return 'Awaiting runtime details...';
+    const api = rt.api || 'api';
+    const duration = formatDuration(rt.duration_ms);
+    const effort = rt.reasoning_effort ? ` | reasoning: ${rt.reasoning_effort}` : '';
+    return `${api} | ${duration}${effort}`;
+  };
 
   return (
     <div className="wizard-step step-2">
@@ -1463,6 +1390,36 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
       </div>
 
       <div className="step-body">
+        <div className="job-metadata-panel">
+          <h3>⚙️ Live Model Runtime</h3>
+          <div className="metadata-grid">
+            <div className="metadata-item">
+              <span className="metadata-label">OpenAI Job Analysis:</span>
+              <span className="metadata-value">{getExactModelId(openaiAnalysis)} ({formatRuntimeLine(openaiAnalysis)})</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">Claude Job Analysis:</span>
+              <span className="metadata-value">{getExactModelId(claudeAnalysis)} ({formatRuntimeLine(claudeAnalysis)})</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">OpenAI Scoring:</span>
+              <span className="metadata-value">{getExactModelId(scores?.openai)} ({formatRuntimeLine(scores?.openai)})</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">Claude Scoring:</span>
+              <span className="metadata-value">{getExactModelId(scores?.claude)} ({formatRuntimeLine(scores?.claude)})</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">OpenAI Node Selection:</span>
+              <span className="metadata-value">{getExactModelId(recommendations?.openai)} ({formatRuntimeLine(recommendations?.openai)})</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">Claude Node Selection:</span>
+              <span className="metadata-value">{getExactModelId(recommendations?.claude)} ({formatRuntimeLine(recommendations?.claude)})</span>
+            </div>
+          </div>
+        </div>
+
         {/* Pre-fetch recommendation button - TOP POSITION */}
         {scores && !recommendations && !isPreFetching && (
           <div className="prefetch-section">
@@ -1619,6 +1576,9 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
                     </span>
                   )}
                 </span>
+                <span className="model-provider">Model: {getExactModelId(scores?.openai || openaiAnalysis)}</span>
+                <span className="model-provider">Requested: {getRequestedModelId(scores?.openai || openaiAnalysis)}</span>
+                <span className="model-provider">{formatRuntimeLine(scores?.openai || openaiAnalysis)}</span>
               </div>
             </div>
             {scores?.openai?.scores && (
@@ -1642,6 +1602,9 @@ Be honest and critical. If the fit is poor, say so directly. If it's excellent, 
               <div className="model-name">
                 <strong>{getModelDisplayName(scores?.claude || claudeAnalysis)}</strong>
                 <span className="model-provider">Anthropic</span>
+                <span className="model-provider">Model: {getExactModelId(scores?.claude || claudeAnalysis)}</span>
+                <span className="model-provider">Requested: {getRequestedModelId(scores?.claude || claudeAnalysis)}</span>
+                <span className="model-provider">{formatRuntimeLine(scores?.claude || claudeAnalysis)}</span>
               </div>
             </div>
             {scores?.claude?.scores && (
@@ -1911,6 +1874,20 @@ function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, sc
   const selectedCount = selectedNodes.size;
   const totalCount = allNodes.length;
 
+  const getExactModelId = (payload) => payload?.runtime?.resolved_model || payload?.model || 'pending';
+  const formatDuration = (ms) => {
+    if (!ms && ms !== 0) return 'pending';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
+  const formatRuntimeLine = (payload) => {
+    const rt = payload?.runtime;
+    if (!rt) return 'Awaiting runtime details...';
+    const api = rt.api || 'api';
+    const effort = rt.reasoning_effort ? ` | reasoning: ${rt.reasoning_effort}` : '';
+    return `${api} | ${formatDuration(rt.duration_ms)}${effort}`;
+  };
+
   // Auto-apply recommendations when component first loads with valid recommendations
   useEffect(() => {
     // Only auto-apply if:
@@ -1980,122 +1957,6 @@ function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, sc
     onSave();
   };
 
-  // Clean dict - remove null, empty strings, empty arrays (same as backend)
-  const cleanDict = (d) => {
-    if (!d || typeof d !== 'object') return d;
-    if (Array.isArray(d)) return d;
-
-    const cleaned = {};
-    for (const [key, value] of Object.entries(d)) {
-      // Skip null, empty strings, and empty arrays
-      if (value === null || value === "" || (Array.isArray(value) && value.length === 0)) {
-        continue;
-      }
-
-      // Recursively clean nested objects
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        const cleanedValue = cleanDict(value);
-        if (Object.keys(cleanedValue).length > 0) {
-          cleaned[key] = cleanedValue;
-        }
-      }
-      // Clean arrays of objects
-      else if (Array.isArray(value)) {
-        if (value.every(item => typeof item === 'object' && !Array.isArray(item))) {
-          const cleanedList = value.map(item => cleanDict(item)).filter(item => Object.keys(item).length > 0);
-          if (cleanedList.length > 0) {
-            cleaned[key] = cleanedList;
-          }
-        } else {
-          cleaned[key] = value;
-        }
-      }
-      else {
-        cleaned[key] = value;
-      }
-    }
-    return cleaned;
-  };
-
-  // Convert nodes to minimal format for AI (reduce token usage by ~30-40%)
-  // Only send: id (primary key) + content fields
-  // Remove: global_id, node_type, level, context_path, is_visible
-  const nodesToAIFormat = (nodes) => {
-    if (!nodes || nodes.length === 0) return [];
-
-    const flattenForAI = (nodeList) => {
-      const result = [];
-      nodeList.forEach(node => {
-        const nodeData = {
-          id: node.id,           // Primary key - absolutely unique identifier
-          title: node.title,
-          subtitle: node.subtitle,
-          content: node.content,
-          start_date: node.start_date,
-          end_date: node.end_date,
-          location: node.location
-        };
-
-        // Clean the node data (remove null/empty values)
-        const cleanedNode = cleanDict(nodeData);
-        result.push(cleanedNode);
-
-        if (node.children && node.children.length > 0) {
-          result.push(...flattenForAI(node.children));
-        }
-      });
-      return result;
-    };
-
-    return flattenForAI(nodes);
-  };
-
-  const nodesForAI = nodesToAIFormat(profile?.nodes || []);
-
-  // Get job requirements from analysis and clean it
-  const jobRequirements = cleanDict(jobAnalysis?.[selectedModel]?.analysis || {});
-
-  // Exact prompt used by AI
-  const NODE_SELECTION_PROMPT = `Given this job description and the candidate's profile nodes, recommend which nodes should be INCLUDED in the tailored CV.
-
-Job Requirements:
-{job_requirements}
-
-Profile Nodes:
-{profile_nodes}
-
-For each node, decide if it should be INCLUDED (visible) or EXCLUDED (hidden) in the tailored CV.
-Consider:
-- Relevance to the job requirements
-- Impact on ATS score
-- Demonstrates key skills/experience for this role
-- Strengthens the candidate's story for this position
-
-Return JSON with node IDs and selection status:
-{
-  "selected_nodes": [
-    {
-      "id": 123,
-      "include": true,
-      "confidence": 0.95,
-      "reason": "Why this should be included/excluded",
-      "relevance_tags": ["tag1", "tag2"]
-    },
-    ...
-  ],
-  "selection_summary": {
-    "total_nodes": 50,
-    "recommended_include": 35,
-    "recommended_exclude": 15
-  },
-  "tailoring_strategy": "Brief explanation of the overall tailoring approach"
-}
-
-IMPORTANT:
-- Use the "id" field from each node (not node_id or global_id)
-- Return recommendations for ALL nodes provided
-- The "id" is the database primary key - use it exactly as provided`;
-
   // Get the exact prompt that was sent to the AI from the backend response
   const aiInputContent = recommendations?.openai?.prompt_sent || recommendations?.claude?.prompt_sent || 'Loading recommendations...';
 
@@ -2107,6 +1968,20 @@ IMPORTANT:
       </div>
 
       <div className="step-body">
+        <div className="job-metadata-panel">
+          <h3>⚙️ Node Selection Runtime</h3>
+          <div className="metadata-grid">
+            <div className="metadata-item">
+              <span className="metadata-label">OpenAI:</span>
+              <span className="metadata-value">{getExactModelId(recommendations?.openai)} ({formatRuntimeLine(recommendations?.openai)})</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">Claude:</span>
+              <span className="metadata-value">{getExactModelId(recommendations?.claude)} ({formatRuntimeLine(recommendations?.claude)})</span>
+            </div>
+          </div>
+        </div>
+
         {/* AI Input Display */}
         <AIInputDisplay
           title="🔍 Step 3: Node Selection Input (Sent to AI)"
@@ -2274,8 +2149,11 @@ IMPORTANT:
 function Step4SavePreview({ jobTitle, setJobTitle, companyName, setCompanyName, cvStatus, setCvStatus, profile, selectedNodes, scores, jobAnalysis, onSave, saving, onBack }) {
   const selectedCount = selectedNodes.size;
 
+  const openaiModel = scores?.openai?.runtime?.resolved_model || scores?.openai?.model || 'openai';
+  const claudeModel = scores?.claude?.runtime?.resolved_model || scores?.claude?.model || 'claude';
+
   // AI Summary for display
-  const aiSummary = `Analysis Results:\n- OpenAI GPT-5.1: Fit ${scores?.openai?.scores?.fit_score || 'N/A'}, ATS ${scores?.openai?.scores?.ats_score || 'N/A'}\n- Claude Sonnet 4.5: Fit ${scores?.claude?.scores?.fit_score || 'N/A'}, ATS ${scores?.claude?.scores?.ats_score || 'N/A'}\n\nSelected ${selectedCount} profile items optimized for this role.`;
+  const aiSummary = `Analysis Results:\n- OpenAI (${openaiModel}): Fit ${scores?.openai?.scores?.fit_score || 'N/A'}, ATS ${scores?.openai?.scores?.ats_score || 'N/A'}\n- Anthropic (${claudeModel}): Fit ${scores?.claude?.scores?.fit_score || 'N/A'}, ATS ${scores?.claude?.scores?.ats_score || 'N/A'}\n\nSelected ${selectedCount} profile items optimized for this role.`;
 
   return (
     <div className="wizard-step step-4">

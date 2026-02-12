@@ -851,10 +851,22 @@ async def score_profile_fit(
     Returns fit scores and ATS scores from both models.
     """
     job_requirements = request.get("job_requirements")
+    job_analysis_payload = request.get("job_analysis") or {}
     profile_id = request.get("profile_id")
+    job_description = request.get("job_description", "")
 
-    if not job_requirements or not profile_id:
-        raise HTTPException(status_code=400, detail="Missing job_requirements or profile_id")
+    if (not job_requirements and not job_analysis_payload) or not profile_id:
+        raise HTTPException(status_code=400, detail="Missing analysis input (job_requirements/job_analysis) or profile_id")
+
+    def get_requirements_for_provider(provider: str, fallback: dict):
+        provider_payload = job_analysis_payload.get(provider) if isinstance(job_analysis_payload, dict) else None
+        if isinstance(provider_payload, dict) and provider_payload.get("success") and isinstance(provider_payload.get("analysis"), dict):
+            return provider_payload["analysis"], f"{provider}_analysis"
+        return fallback, "fallback_job_requirements"
+
+    fallback_requirements = job_requirements if isinstance(job_requirements, dict) else {}
+    openai_requirements, openai_requirements_source = get_requirements_for_provider("openai", fallback_requirements)
+    claude_requirements, claude_requirements_source = get_requirements_for_provider("claude", fallback_requirements)
 
     # Get profile with nodes
     profile = db.query(Profile).filter(
@@ -894,14 +906,16 @@ async def score_profile_fit(
         openai_future = loop.run_in_executor(
             executor,
             ai_tailor_service.score_profile_with_openai,
-            job_requirements,
-            profile_text
+            openai_requirements,
+            profile_text,
+            job_description
         )
         claude_future = loop.run_in_executor(
             executor,
             ai_tailor_service.score_profile_with_claude,
-            job_requirements,
-            profile_text
+            claude_requirements,
+            profile_text,
+            job_description
         )
 
         # Wait for both to complete
@@ -917,7 +931,11 @@ async def score_profile_fit(
     return {
         "openai": openai_scores,
         "claude": claude_scores,
-        "profile_id": profile_id
+        "profile_id": profile_id,
+        "requirements_source": {
+            "openai": openai_requirements_source,
+            "claude": claude_requirements_source
+        }
     }
 
 
@@ -936,11 +954,13 @@ async def recommend_node_selection(
     print(f"\n🚀 [RECOMMEND-NODES] Request received from user {current_user.id}")
 
     job_requirements = request.get("job_requirements")
+    job_analysis_payload = request.get("job_analysis") or {}
     profile_id = request.get("profile_id")
+    job_description = request.get("job_description", "")
 
-    if not job_requirements or not profile_id:
+    if (not job_requirements and not job_analysis_payload) or not profile_id:
         print(f"❌ [RECOMMEND-NODES] Missing requirements or profile_id")
-        raise HTTPException(status_code=400, detail="Missing job_requirements or profile_id")
+        raise HTTPException(status_code=400, detail="Missing analysis input (job_requirements/job_analysis) or profile_id")
 
     print(f"📋 [RECOMMEND-NODES] Profile ID: {profile_id}")
 
@@ -1013,18 +1033,32 @@ async def recommend_node_selection(
 
     nodes_list = [node_to_dict(node) for node in profile.nodes if node.parent_id is None]
 
-    # Clean job_requirements too
-    job_requirements = clean_dict(job_requirements)
+    # Resolve provider-specific requirements (prefer each model's own analysis)
+    def get_requirements_for_provider(provider: str, fallback: dict):
+        provider_payload = job_analysis_payload.get(provider) if isinstance(job_analysis_payload, dict) else None
+        if isinstance(provider_payload, dict) and provider_payload.get("success") and isinstance(provider_payload.get("analysis"), dict):
+            return clean_dict(provider_payload["analysis"]), f"{provider}_analysis"
+        return clean_dict(fallback), "fallback_job_requirements"
+
+    fallback_requirements = job_requirements if isinstance(job_requirements, dict) else {}
+    openai_requirements, openai_requirements_source = get_requirements_for_provider("openai", fallback_requirements)
+    claude_requirements, claude_requirements_source = get_requirements_for_provider("claude", fallback_requirements)
 
     # Calculate original size (before flattening with cleaned structure)
     import json
-    original_size = len(json.dumps({"job_requirements": job_requirements, "profile_nodes": nodes_list}))
+    original_size = max(
+        len(json.dumps({"job_requirements": openai_requirements, "profile_nodes": nodes_list})),
+        len(json.dumps({"job_requirements": claude_requirements, "profile_nodes": nodes_list}))
+    )
 
     flat_nodes = ai_tailor_service.flatten_nodes_for_analysis(nodes_list)
     print(f"✅ [RECOMMEND-NODES] Converted to {len(flat_nodes)} flat nodes in {time.time() - convert_start:.2f}s")
 
     # Show size reduction
-    cleaned_size = len(json.dumps({"job_requirements": job_requirements, "profile_nodes": flat_nodes}))
+    cleaned_size = max(
+        len(json.dumps({"job_requirements": openai_requirements, "profile_nodes": flat_nodes})),
+        len(json.dumps({"job_requirements": claude_requirements, "profile_nodes": flat_nodes}))
+    )
     reduction = original_size - cleaned_size
     reduction_pct = (reduction / original_size * 100) if original_size > 0 else 0
     print(f"📊 [RECOMMEND-NODES] Data size: {original_size:,} → {cleaned_size:,} characters ({cleaned_size/1000:.1f}K)")
@@ -1042,13 +1076,15 @@ async def recommend_node_selection(
         # Submit both tasks
         openai_future = executor.submit(
             ai_tailor_service.recommend_nodes_with_openai,
-            job_requirements,
-            flat_nodes
+            openai_requirements,
+            flat_nodes,
+            job_description
         )
         claude_future = executor.submit(
             ai_tailor_service.recommend_nodes_with_claude,
-            job_requirements,
-            flat_nodes
+            claude_requirements,
+            flat_nodes,
+            job_description
         )
 
         # Wait for OpenAI result
@@ -1056,7 +1092,11 @@ async def recommend_node_selection(
         try:
             openai_recommendations = openai_future.result()
             openai_duration = time.time() - openai_start
-            print(f"✅ [RECOMMEND-NODES] OpenAI completed in {openai_duration:.2f}s, success: {openai_recommendations.get('success')}")
+            openai_runtime_ms = ((openai_recommendations.get("runtime") or {}).get("duration_ms"))
+            if openai_runtime_ms is not None:
+                print(f"✅ [RECOMMEND-NODES] OpenAI completed in {openai_runtime_ms/1000:.2f}s (model runtime), success: {openai_recommendations.get('success')}")
+            else:
+                print(f"✅ [RECOMMEND-NODES] OpenAI completed in {openai_duration:.2f}s (wait time), success: {openai_recommendations.get('success')}")
         except Exception as e:
             openai_duration = time.time() - openai_start
             print(f"❌ [RECOMMEND-NODES] OpenAI failed after {openai_duration:.2f}s: {str(e)}")
@@ -1067,15 +1107,22 @@ async def recommend_node_selection(
         try:
             claude_recommendations = claude_future.result()
             claude_duration = time.time() - claude_start
-            print(f"✅ [RECOMMEND-NODES] Claude completed in {claude_duration:.2f}s, success: {claude_recommendations.get('success')}")
+            claude_runtime_ms = ((claude_recommendations.get("runtime") or {}).get("duration_ms"))
+            if claude_runtime_ms is not None:
+                print(f"✅ [RECOMMEND-NODES] Claude completed in {claude_runtime_ms/1000:.2f}s (model runtime), success: {claude_recommendations.get('success')}")
+            else:
+                print(f"✅ [RECOMMEND-NODES] Claude completed in {claude_duration:.2f}s (wait time), success: {claude_recommendations.get('success')}")
         except Exception as e:
             claude_duration = time.time() - claude_start
             print(f"❌ [RECOMMEND-NODES] Claude failed after {claude_duration:.2f}s: {str(e)}")
             claude_recommendations = {"success": False, "error": str(e)}
 
     parallel_duration = time.time() - parallel_start
-    print(f"⚡ [RECOMMEND-NODES] Both models completed in parallel in {parallel_duration:.2f}s (vs {openai_duration + claude_duration:.2f}s sequential)")
-    print(f"💰 [RECOMMEND-NODES] Time saved: {(openai_duration + claude_duration - parallel_duration):.2f}s")
+    openai_runtime = ((openai_recommendations.get("runtime") or {}).get("duration_ms") or int(openai_duration * 1000)) / 1000
+    claude_runtime = ((claude_recommendations.get("runtime") or {}).get("duration_ms") or int(claude_duration * 1000)) / 1000
+    sequential_estimate = openai_runtime + claude_runtime
+    print(f"⚡ [RECOMMEND-NODES] Both models completed in parallel in {parallel_duration:.2f}s (vs {sequential_estimate:.2f}s estimated sequential)")
+    print(f"💰 [RECOMMEND-NODES] Estimated time saved: {(sequential_estimate - parallel_duration):.2f}s")
 
     # POST-PROCESS: Force include structural nodes (sections/entries)
     # Build map of node_id -> node_type for quick lookup
@@ -1157,7 +1204,11 @@ async def recommend_node_selection(
     response_data = {
         "openai": openai_recommendations,
         "claude": claude_recommendations,
-        "total_nodes": len(flat_nodes)
+        "total_nodes": len(flat_nodes),
+        "requirements_source": {
+            "openai": openai_requirements_source,
+            "claude": claude_requirements_source
+        }
     }
 
     return response_data

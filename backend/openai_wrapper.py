@@ -8,6 +8,7 @@ This wrapper provides a unified interface for calling OpenAI models regardless o
 import os
 import json
 import time
+import re
 from typing import Dict, Any, Optional, Literal
 from openai import OpenAI
 from logger_config import get_logger
@@ -25,6 +26,97 @@ DEFAULT_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "medium")  # low
 
 ModelVersion = Literal["gpt-4o", "gpt-5.1"]
 ReasoningEffort = Literal["low", "medium", "high"]
+
+
+def _extract_json_and_parse(raw_text: str) -> tuple[Dict[str, Any], str]:
+    """
+    Parse JSON with tolerant fallbacks for real-world model output.
+    Handles:
+    - Markdown fences
+    - Leading/trailing prose around JSON
+    - Trailing commas
+    - Control characters
+    """
+    if not raw_text or not raw_text.strip():
+        raise ValueError("Model returned empty text")
+
+    def _uniq_keep_order(items):
+        seen = set()
+        out = []
+        for item in items:
+            if not item:
+                continue
+            key = item.strip()
+            if key and key not in seen:
+                seen.add(key)
+                out.append(key)
+        return out
+
+    text = raw_text.strip()
+    candidates = [text]
+
+    # Strip markdown code fences if present
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 3 and lines[-1].strip().startswith("```"):
+            candidates.append("\n".join(lines[1:-1]).strip())
+
+    # Extract object bounds from each candidate
+    for candidate in list(candidates):
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            candidates.append(candidate[start:end + 1].strip())
+
+    candidates = _uniq_keep_order(candidates)
+
+    # First pass: strict parse
+    for candidate in candidates:
+        try:
+            return json.loads(candidate), candidate
+        except json.JSONDecodeError:
+            continue
+
+    # Second pass: common safe repairs
+    repaired = []
+    for candidate in candidates:
+        fixed = re.sub(r",(\s*[}\]])", r"\1", candidate)  # trailing commas
+        fixed = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", fixed)  # control chars
+        repaired.append(fixed)
+
+    repaired = _uniq_keep_order(repaired)
+    for candidate in repaired:
+        try:
+            return json.loads(candidate), candidate
+        except json.JSONDecodeError:
+            continue
+
+    preview = text[:300].replace("\n", " ")
+    raise ValueError(f"Could not parse model output as JSON. Preview: {preview}")
+
+
+def _extract_responses_text(response: Any) -> str:
+    """
+    Extract text robustly from OpenAI Responses API response.
+    Prefers output_text, falls back to traversing output/content blocks.
+    """
+    output_text = getattr(response, "output_text", None)
+    if output_text and str(output_text).strip():
+        return str(output_text).strip()
+
+    chunks = []
+    for item in getattr(response, "output", []) or []:
+        for content in getattr(item, "content", []) or []:
+            text_value = getattr(content, "text", None)
+            if text_value:
+                chunks.append(str(text_value))
+                continue
+            if isinstance(content, dict):
+                dict_text = content.get("text") or content.get("output_text")
+                if dict_text:
+                    chunks.append(str(dict_text))
+
+    return "\n".join(chunks).strip()
 
 
 def call_openai_for_json(
@@ -111,7 +203,8 @@ def call_openai_for_json(
 
     # Log the API call
     prompt_preview = system_prompt[:50] + "..." if len(system_prompt) > 50 else system_prompt
-    logger.info(f"Preparing API call: {model} (reasoning: {reasoning_effort})")
+    reasoning_label = reasoning_effort if model == "gpt-5.1" else "n/a"
+    logger.info(f"Preparing API call: {model} (reasoning: {reasoning_label})")
 
     try:
         # Route to appropriate API based on model version
@@ -170,17 +263,19 @@ def _call_gpt4o(
         timeout=timeout
     )
 
-    # Extract JSON text from response
+    # Extract + parse JSON with tolerant fallback
     json_text = response.choices[0].message.content
-
-    # Parse JSON
-    parsed_data = json.loads(json_text)
+    parsed_data, parsed_source_text = _extract_json_and_parse(json_text)
 
     return {
         "success": True,
         "data": parsed_data,
         "model": "gpt-4o",
+        "requested_model": "gpt-4o",
+        "actual_model": getattr(response, "model", "gpt-4o"),
+        "api_name": "chat.completions",
         "raw_text": json_text,
+        "parsed_text": parsed_source_text,
         "usage": {
             "prompt_tokens": response.usage.prompt_tokens if hasattr(response, 'usage') else None,
             "completion_tokens": response.usage.completion_tokens if hasattr(response, 'usage') else None,
@@ -233,11 +328,9 @@ def _call_gpt51(
         timeout=timeout
     )
 
-    # Extract JSON text from response using the output_text property
-    json_text = response.output_text
-
-    # Parse JSON
-    parsed_data = json.loads(json_text)
+    # Extract + parse JSON with tolerant fallback
+    json_text = _extract_responses_text(response)
+    parsed_data, parsed_source_text = _extract_json_and_parse(json_text)
 
     # Extract usage information
     reasoning_tokens = 0
@@ -254,7 +347,11 @@ def _call_gpt51(
         "success": True,
         "data": parsed_data,
         "model": "gpt-5.1",
+        "requested_model": "gpt-5.1",
+        "actual_model": getattr(response, "model", "gpt-5.1"),
+        "api_name": "responses.create",
         "raw_text": json_text,
+        "parsed_text": parsed_source_text,
         "reasoning_tokens": reasoning_tokens,
         "usage": {
             "prompt_tokens": input_tokens,

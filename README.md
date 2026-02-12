@@ -1,6 +1,6 @@
 # 🎯 Agentic CV Builder
 
-**Version 2.0.0** - Intelligent AI-Powered CV Platform with Dual-AI Analysis
+**Backend v4.4.5 / Frontend v4.0.2** - Intelligent AI-Powered CV Platform with Dual-AI Analysis
 
 An intelligent CV platform that transforms how you create resumes. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (GPT-4o + Claude Sonnet 4.5) analyze jobs and intelligently **select** the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
 
@@ -291,53 +291,33 @@ Track everything in one place:
 
 ## 📁 Project Structure
 
-```
+```text
 agentic_work_profile/
-│
-├── backend/                          # FastAPI Backend
-│   ├── main.py                      # Main API endpoints & routes
-│   ├── models.py                    # SQLAlchemy database models
-│   ├── schemas.py                   # Pydantic request/response schemas
-│   ├── database.py                  # Database connection & session
-│   │
-│   ├── ai_tailor_service.py         # Dual-AI CV tailoring logic
-│   ├── cv_tailoring_service.py      # CV content enrichment
-│   ├── pdf_service.py               # PDF generation service
-│   ├── format_hierarchical_cv.py    # CV formatting utilities
-│   │
-│   ├── requirements.txt             # Python dependencies
-│   ├── VERSION                      # Backend version
-│   └── CHANGELOG.md                 # Backend change history
-│
-├── frontend/                         # React Frontend
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Dashboard.jsx        # Main dashboard & routing
-│   │   │   ├── Dashboard.css        # Dashboard styles
-│   │   │   ├── Login.jsx            # Authentication
-│   │   │   ├── MasterProfile.jsx    # Profile Pool editor
-│   │   │   ├── TailorCV.jsx         # AI analysis interface
-│   │   │   ├── SavedCVs.jsx         # CV portfolio viewer
-│   │   │   ├── SavedCVDetail.jsx    # CV detail & customization
-│   │   │   ├── ApplicationTracker.jsx # Job application tracker
-│   │   │   ├── ProfilePage.jsx      # User profile settings
-│   │   │   └── GlobalAIStatusBar.jsx # AI processing status
-│   │   │
-│   │   ├── context/
-│   │   │   └── AIAnalysisContext.jsx # Global AI state
-│   │   │
-│   │   ├── App.jsx                  # Root component
-│   │   └── main.jsx                 # Entry point
-│   │
-│   ├── public/
-│   │   └── VERSION                  # Frontend version
-│   │
-│   ├── package.json                 # Node dependencies
-│   └── vite.config.js               # Vite configuration
-│
-├── README.md                         # This file
-├── INSTALLATION.md                   # Setup instructions
-└── bump_version.py                   # Version management utility
+|-- backend/
+|   |-- main.py                        # FastAPI routes and orchestration
+|   |-- models.py                      # SQLAlchemy models
+|   |-- schemas.py                     # Pydantic schemas
+|   |-- ai_tailor_service.py           # Tailor/recommend/refine AI logic
+|   |-- profile_fit_service.py         # Profile fit/ATS scoring helpers
+|   |-- pdf_service.py                 # PDF generation + template handling
+|   |-- openai_wrapper.py              # OpenAI wrapper utilities
+|   |-- weasyprint_service.py          # Creative-template PDF renderer path
+|   |-- VERSION
+|   `-- migrations/
+|
+|-- frontend/
+|   |-- src/
+|   |   |-- App.jsx                    # Route wiring
+|   |   |-- context/AIAnalysisContext.jsx
+|   |   |-- utils/api.js               # API client + token refresh behavior
+|   |   `-- components/                # TailorCV, SavedCVs, SavedCVDetail, ApplicationTracker, etc.
+|   |-- VERSION
+|   `-- public/VERSION
+|
+|-- README.md
+|-- INSTALLATION.md
+|-- instructions.txt
+`-- bump_version.py
 ```
 
 ---
@@ -406,7 +386,7 @@ agentic_work_profile/
 4. **Initialize Database**
    ```bash
    # Create tables
-   python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
+   python -c "from sqlalchemy import create_engine; from dotenv import load_dotenv; import os; from models import Base; load_dotenv(); engine=create_engine(os.getenv('DATABASE_URL')); Base.metadata.create_all(bind=engine)"
    ```
 
 5. **Start Backend**
@@ -422,7 +402,7 @@ agentic_work_profile/
    ```
 
 7. **Access Application**
-   - Frontend: http://localhost:5173
+   - Frontend: http://localhost:5174
    - Backend API: http://localhost:8000
    - API Docs: http://localhost:8000/docs
 
@@ -432,69 +412,92 @@ For detailed setup instructions, see [INSTALLATION.md](INSTALLATION.md)
 
 ## 📊 API Endpoints
 
+Current route source of truth: `backend/main.py`.
+
 ### **Authentication**
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `GET /api/auth/me` - Get current user
+- `POST /api/register` (alias: `POST /auth/register`)
+- `POST /api/login` (alias: `POST /auth/login`)
+- `POST /api/refresh-token`
+- `GET /api/me` (alias: `GET /auth/me`)
 
 ### **User Profile**
-- `GET /api/user/profile` - Get user contact info
-- `PUT /api/user/profile` - Update user contact info
+- `GET /api/user/profile-info`
+- `PUT /api/user/profile-info`
 
-### **Master Profile**
-- `GET /api/profile` - Get complete profile
-- `POST /api/profile/sections` - Create section
-- `POST /api/profile/entries` - Create entry
-- `POST /api/profile/items` - Create item
-- `PUT /api/profile/items/{id}` - Update item
-- `DELETE /api/profile/items/{id}` - Delete item
+### **Profile Pool**
+- `GET /profiles`
+- `POST /profiles`
+- `GET /profiles/{profile_id}`
+- `PUT /profiles/{profile_id}`
+- `GET /profiles/{profile_id}/nodes`
+- `POST /profiles/{profile_id}/nodes`
+- `GET /nodes/{node_id}`
+- `PUT /nodes/{node_id}`
+- `DELETE /nodes/{node_id}`
+- `POST /nodes/{node_id}/move`
+- `POST /profiles/download-pdf`
 
-### **AI Analysis**
-- `POST /api/job/analyze` - Analyze job description
-- `POST /api/job/analyze-fit` - Analyze profile fit
-- `POST /api/cv/tailor` - Get AI recommendations
+### **Tailor CV Pipeline**
+- `POST /api/tailor/analyze-job`
+- `POST /api/tailor/score-profile`
+- `POST /api/tailor/recommend-nodes`
+- `POST /api/tailor/save`
 
-### **Tailored CVs**
-- `GET /api/cv/tailored-versions` - List all CVs
-- `POST /api/cv/tailored-versions` - Save new CV
-- `GET /api/cv/tailored-versions/{id}` - Get CV details
-- `PUT /api/cv/tailored-versions/{id}` - Update CV
-- `DELETE /api/cv/tailored-versions/{id}` - Delete CV
-- `POST /api/cv/tailored-versions/{id}/pdf` - Generate PDF
+### **Tailored CV Portfolio**
+- `GET /api/tailor/list`
+- `GET /api/tailor/{cv_id}`
+- `PUT /api/tailor/{cv_id}`
+- `DELETE /api/tailor/{cv_id}`
+- `PUT /api/tailor/{cv_id}/contact-info`
+- `POST /api/tailor/{cv_id}/contact-info/reset`
+- `POST /api/tailor/{cv_id}/restore-original`
+- `POST /api/tailor/{cv_id}/recalculate-scores`
+- `POST /api/tailor/{cv_id}/refine-section`
+- `POST /api/tailor/{cv_id}/apply-refinement`
+- `POST /api/tailor/{cv_id}/preview-pdf`
+- `POST /api/tailor/{cv_id}/preview-metadata`
+- `POST /api/tailor/{cv_id}/preview-image`
 
 ### **Application Tracker**
-- `GET /api/applications` - List applications
-- `POST /api/applications` - Create application
-- `PUT /api/applications/{id}` - Update application
-- `PUT /api/applications/{id}/status` - Update status
-- `DELETE /api/applications/{id}` - Delete application
+- `POST /api/applications/create`
+- `GET /api/applications/check-duplicate/{tailored_cv_id}`
+- `GET /api/applications/list`
+- `GET /api/applications/{application_id}`
+- `PUT /api/applications/{application_id}`
+- `DELETE /api/applications/{application_id}`
+- `POST /api/applications/{application_id}/move-to-preparing`
+- `POST /api/applications/{application_id}/download-pdf`
+- `POST /api/applications/{application_id}/export-pdf`
+
+### **System**
+- `GET /health`
+- `GET /api/version`
 
 ---
 
 ## 🔄 Version Management
 
-This project uses [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH)
+This project uses [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH).
 
 ### **Current Versions**
-- **Backend**: v2.0.0
-- **Frontend**: v2.0.0
+- **Backend**: `4.4.5` (from `backend/VERSION`)
+- **Frontend**: `4.0.2` (from `frontend/VERSION` and `frontend/public/VERSION`)
 
 ### **Bump Version**
 ```bash
-# Backend patch (2.0.0 → 2.0.1)
+# Backend patch (4.4.5 -> 4.4.6)
 python bump_version.py backend patch
 
-# Frontend minor (2.0.0 → 2.1.0)
+# Frontend minor (4.0.2 -> 4.1.0)
 python bump_version.py frontend minor
 
-# Both major (2.0.0 → 3.0.0)
+# Both major
 python bump_version.py both major
 ```
 
-### **Version History**
-See individual CHANGELOG.md files:
-- Backend: `backend/CHANGELOG.md`
-- Frontend: `frontend/CHANGELOG.md`
+### **Notes**
+- Run `bump_version.py` whenever backend or frontend code changes.
+- Keep `frontend/VERSION` and `frontend/public/VERSION` aligned.
 
 ---
 
@@ -520,34 +523,58 @@ See individual CHANGELOG.md files:
 
 ---
 
-## 🐛 Known Issues & Limitations
+## 🐛 Current Constraints
 
-- ⚠️ PDF export supports single-page CVs (multi-page coming soon)
-- ⚠️ Application Tracker doesn't yet link to final CV version
-- ⚠️ Mobile UI needs optimization for smaller screens
-- ⚠️ No batch operations for profile items
+- AI recommendation generation can take several minutes on larger profile trees.
+- Some legacy files still exist and are not part of the primary product path.
+- The `creative` template uses a different renderer path (`xhtml2pdf`) than the ReportLab templates.
 
 ---
 
-## 🛣️ Roadmap
+## 🛣️ Roadmap (Near-Term)
 
-### **Version 2.1** (Q2 2025)
-- [ ] Multi-page PDF support
-- [ ] CV templates customization
-- [ ] Batch edit profile items
-- [ ] Profile import from LinkedIn
+- Consolidate/remove legacy code paths to reduce ambiguity.
+- Keep README endpoint docs synchronized with `backend/main.py`.
+- Add deeper regression coverage for snapshot integrity (`content_snapshot`, `selected_node_ids`, `original_snapshot`).
+- Improve mobile UX consistency across dashboard flows.
 
-### **Version 2.2** (Q3 2025)
-- [ ] Email integration for applications
-- [ ] Analytics dashboard
-- [ ] Interview preparation tips
-- [ ] Salary insights per application
+---
 
-### **Version 3.0** (Q4 2025)
-- [ ] Team collaboration features
-- [ ] Career coach AI agent
-- [ ] Job board integration
-- [ ] Mobile app (iOS/Android)
+## 🧠 Implementation Reference (Code-Accurate)
+
+This section is the code-level product reference for future changes.
+
+### **Scope**
+- Snapshot date: February 12, 2026
+- Frontend entry point: `frontend/src/App.jsx`
+- Backend entry point: `backend/main.py`
+- Canonical model: `profile_nodes` hierarchy + snapshot-based `tailored_cvs` + finalized `job_applications`
+
+### **Product Flow (Authoritative)**
+1. Profile Pool is the source inventory (`profiles` + `profile_nodes`).
+2. Tailor CV analyzes job description + profile pool and recommends highest-relevance nodes.
+3. Saving Tailor CV creates a draft in `tailored_cvs`.
+4. CV Portfolio is where each draft is edited/refined/finalized per target role.
+5. Application Tracker converts finalized drafts to `job_applications` and tracks pipeline progression.
+
+This means:
+- Tailor CV = AI selection/orchestration phase.
+- CV Portfolio = post-selection editing phase per role.
+
+### **Behavioral Invariants**
+- Keep `content_snapshot` and `selected_node_ids` synchronized.
+- Never lose or mutate `original_snapshot` after creation.
+- Preserve separation of states:
+  - Profile Pool = source inventory
+  - Tailored CV = editable draft snapshot
+  - Job Application = finalized tracker snapshot
+- Preserve timeline semantics on status transitions (`ready_date`, `applied_date`, `phone_screen_date`, `interview_date`, `offer_date`, `accepted_date`, `rejected_date`, `withdrawn_date`).
+
+### **Codex Briefing Checklist**
+- Specify flow segment: Profile Pool, Tailor CV, CV Portfolio, or Application Tracker.
+- Specify whether changes touch draft snapshots, finalized applications, or both.
+- Include required API request/response contract changes.
+- Call out impacts to PDF preview/export behavior and compatibility.
 
 ---
 
