@@ -2207,6 +2207,140 @@ def profile_nodes_to_text(nodes: List[Dict]) -> str:
     return "".join(text_parts)
 
 
+def generate_profile_pool_node_fix_with_openai(
+    node_text: str,
+    node_type: str,
+    node_path: str,
+    issue: Dict[str, Any],
+    profile_context: str = "",
+    user_instructions: str = None,
+    model: str = None,
+    reasoning_effort: str = None,
+    humanity_llm_enabled: bool = HUMANITY_DEEP_MODE_ENABLED,
+    humanity_llm_model: str = HUMANITY_LLM_MODEL,
+    humanity_llm_reasoning_effort: str = HUMANITY_LLM_REASONING
+) -> Dict[str, Any]:
+    """
+    Generate a human-sounding, fact-preserving rewrite for a single profile-pool node.
+    Used by Profile Pool quality "AI Fix" actions.
+    """
+    text_to_fix = (node_text or "").strip()
+    if not text_to_fix:
+        return {
+            "success": False,
+            "error": "No node text provided for AI fix."
+        }
+
+    model_to_use = model if model in {"gpt-4o", "gpt-5.1"} else "gpt-4o"
+    normalized_reasoning = _resolve_reasoning_effort(reasoning_effort)
+    issue_payload = {
+        "type": str((issue or {}).get("type", "")).strip().lower(),
+        "severity": str((issue or {}).get("severity", "")).strip().lower(),
+        "message": str((issue or {}).get("message", "")).strip(),
+        "where": _safe_list_of_strings((issue or {}).get("where"), max_items=4, max_len=220),
+        "how_to_fix": _safe_list_of_strings((issue or {}).get("how_to_fix"), max_items=4, max_len=220)
+    }
+
+    system_prompt = (
+        "You are a CV writing-quality fixer for Profile Pool nodes. "
+        "Return valid JSON only. "
+        "Never invent experience, tools, numbers, scope, titles, or impact."
+    )
+
+    prompt = f"""You will rewrite ONE profile-pool node to address a detected writing issue.
+
+Hard constraints:
+- Keep factual meaning the same.
+- Do not add new achievements, tools, percentages, money, or claims.
+- If a number is not already in the original text, do not add it.
+- Keep tone human-written, concrete, and concise.
+- Remove AI-sounding buzzwords and formulaic phrasing.
+- Prefer minimal rewrite: tighten wording first, do not over-edit.
+
+Node metadata:
+- node_type: {node_type}
+- node_path: {node_path}
+
+Detected issue JSON:
+{json.dumps(issue_payload, indent=2)}
+
+Original node text:
+{text_to_fix}
+
+Optional user instructions:
+{(user_instructions or "None").strip()}
+
+Profile context (for consistency only, not for importing new facts):
+{(profile_context or "")[:12000]}
+
+Return JSON with this exact shape:
+{{
+  "revised_text": "string",
+  "change_summary": "1-2 short sentences",
+  "confidence": 0-100
+}}
+"""
+
+    try:
+        result = call_openai_for_json(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model=model_to_use,
+            reasoning_effort=normalized_reasoning,
+            timeout=90
+        )
+        if not result.get("success"):
+            return {
+                "success": False,
+                "error": result.get("error", "AI fix failed"),
+                "model": model_to_use
+            }
+
+        data = result.get("data") or {}
+        revised_text = sanitize_unicode_for_pdf(str(data.get("revised_text", "")).strip())
+        if not revised_text:
+            return {
+                "success": False,
+                "error": "AI did not return revised_text.",
+                "model": model_to_use
+            }
+
+        change_summary = sanitize_unicode_for_pdf(str(data.get("change_summary", "")).strip())
+        confidence = _safe_score(data.get("confidence"), default=70)
+
+        humanity = evaluate_humanity_hybrid(
+            text=revised_text,
+            source_text=text_to_fix,
+            threshold=HUMANITY_DEFAULT_THRESHOLD,
+            mode="deep" if humanity_llm_enabled else "quick",
+            llm_enabled=humanity_llm_enabled,
+            llm_model=humanity_llm_model,
+            llm_reasoning_effort=humanity_llm_reasoning_effort
+        )
+        humanity["mode"] = "deep" if humanity_llm_enabled else "quick"
+
+        return {
+            "success": True,
+            "model": model_to_use,
+            "requested_model": result.get("requested_model", model_to_use),
+            "actual_model": result.get("actual_model", model_to_use),
+            "api_name": result.get("api_name", "unknown"),
+            "reasoning_tokens": result.get("reasoning_tokens"),
+            "revised_text": revised_text,
+            "change_summary": change_summary,
+            "confidence": confidence,
+            "humanity": humanity,
+            "prompt_sent": prompt
+        }
+    except Exception as e:
+        logger.error("Profile pool AI fix failed", error=e)
+        return {
+            "success": False,
+            "error": str(e),
+            "model": model_to_use
+        }
+
+
 def refine_section_content_with_openai(
     section_content: str,
     full_cv_content: str,
