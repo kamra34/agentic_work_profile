@@ -25,7 +25,7 @@ DEFAULT_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")  # Default to gpt-4o
 DEFAULT_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "medium")  # low, medium, high
 
 ModelVersion = Literal["gpt-4o", "gpt-5.1"]
-ReasoningEffort = Literal["low", "medium", "high"]
+ReasoningEffort = Literal["none", "low", "medium", "high"]
 
 
 def _extract_json_and_parse(raw_text: str) -> tuple[Dict[str, Any], str]:
@@ -138,7 +138,7 @@ def call_openai_for_json(
         system_prompt: System message defining the AI's role and behavior
         user_prompt: User message with the actual request
         model: Model to use ("gpt-4o" or "gpt-5.1"). Defaults to env var OPENAI_MODEL_VERSION or "gpt-4o"
-        reasoning_effort: For GPT-5.1 only - "low", "medium", or "high". Defaults to env var or "medium"
+        reasoning_effort: For GPT-5.1 only - "none", "low", "medium", or "high". Defaults to env var or "medium"
         temperature: Sampling temperature (only used for GPT-4o, ignored for GPT-5.1)
         timeout: Request timeout in seconds
 

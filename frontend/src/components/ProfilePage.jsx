@@ -4,8 +4,14 @@ import './ProfilePage.css';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function ProfilePage() {
+  const defaultAISettings = {
+    openai_model: 'gpt-4o',
+    openai_reasoning_effort: 'medium',
+    claude_model: 'claude-sonnet-4-20250514'
+  };
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingAISettings, setIsSavingAISettings] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [profileData, setProfileData] = useState({
     full_name: '',
@@ -22,9 +28,11 @@ function ProfilePage() {
     availability: 'available',
     preferred_work_mode: 'hybrid'
   });
+  const [aiSettings, setAiSettings] = useState(defaultAISettings);
 
   useEffect(() => {
     fetchProfileData();
+    fetchAISettings();
   }, []);
 
   const fetchProfileData = async () => {
@@ -45,6 +53,27 @@ function ProfilePage() {
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
+    }
+  };
+
+  const fetchAISettings = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/user/ai-settings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAiSettings(prev => ({
+          ...prev,
+          ...data
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching AI settings:', error);
     }
   };
 
@@ -76,6 +105,35 @@ function ProfilePage() {
     }
   };
 
+  const handleSaveAISettings = async () => {
+    setIsSavingAISettings(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/user/ai-settings`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(aiSettings)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save AI settings');
+      }
+
+      const saved = await response.json();
+      setAiSettings(saved);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (error) {
+      console.error('Error saving AI settings:', error);
+      alert('Failed to save AI settings. Please try again.');
+    } finally {
+      setIsSavingAISettings(false);
+    }
+  };
+
   const handleChange = (field, value) => {
     setProfileData(prev => ({
       ...prev,
@@ -83,8 +141,16 @@ function ProfilePage() {
     }));
   };
 
+  const handleAISettingChange = (field, value) => {
+    setAiSettings(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   const handleCancel = () => {
     fetchProfileData();
+    fetchAISettings();
     setIsEditing(false);
   };
 
@@ -101,7 +167,7 @@ function ProfilePage() {
       {showSuccess && (
         <div className="success-toast">
           <span className="success-icon">✓</span>
-          Profile saved successfully!
+          Saved successfully!
         </div>
       )}
 
@@ -506,6 +572,70 @@ function ProfilePage() {
                     {profileData.bio || 'Not provided'}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <div className="profile-card">
+          <div className="card-header">
+            <h3 className="card-title">
+              <span className="card-icon">AI</span>
+              AI Settings
+            </h3>
+          </div>
+          <div className="card-content">
+            <div className="form-grid">
+              <div className="form-field">
+                <label className="field-label">OpenAI Model</label>
+                <select
+                  className="field-input field-select"
+                  value={aiSettings.openai_model}
+                  onChange={(e) => handleAISettingChange('openai_model', e.target.value)}
+                >
+                  <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-5.1">gpt-5.1</option>
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">OpenAI Reasoning Effort</label>
+                <select
+                  className="field-input field-select"
+                  value={aiSettings.openai_reasoning_effort}
+                  onChange={(e) => handleAISettingChange('openai_reasoning_effort', e.target.value)}
+                  disabled={aiSettings.openai_model !== 'gpt-5.1'}
+                >
+                  <option value="none">none</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                </select>
+              </div>
+
+              <div className="form-field full-width">
+                <label className="field-label">Claude Model</label>
+                <select
+                  className="field-input field-select"
+                  value={aiSettings.claude_model}
+                  onChange={(e) => handleAISettingChange('claude_model', e.target.value)}
+                >
+                  <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
+                  {aiSettings.claude_model !== 'claude-sonnet-4-20250514' && (
+                    <option value={aiSettings.claude_model}>{aiSettings.claude_model}</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="form-field full-width">
+                <button
+                  className="btn-save"
+                  onClick={handleSaveAISettings}
+                  disabled={isSavingAISettings}
+                >
+                  {isSavingAISettings ? 'Saving AI Settings...' : 'Save AI Settings'}
+                </button>
               </div>
             </div>
           </div>

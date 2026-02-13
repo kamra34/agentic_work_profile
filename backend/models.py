@@ -36,6 +36,12 @@ class User(Base):
     availability = Column(String, default='available')  # available, busy, not_looking
     preferred_work_mode = Column(String, default='hybrid')  # remote, onsite, hybrid
 
+    # Per-user AI runtime settings
+    openai_model = Column(String, default='gpt-4o')
+    openai_reasoning_effort = Column(String, default='medium')  # none, low, medium, high
+    claude_model = Column(String, default='claude-sonnet-4-20250514')
+    refinement_instruction_templates = Column(JSON, nullable=True, default=list)
+
     # Relationships
     profiles = relationship("Profile", back_populates="user", cascade="all, delete-orphan")
 

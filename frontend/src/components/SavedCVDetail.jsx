@@ -60,6 +60,14 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refinementResult, setRefinementResult] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState('low'); // none, low, medium, high (default: low)
+  const [userInstructionTemplates, setUserInstructionTemplates] = useState([]);
+  const [newInstructionTemplateLabel, setNewInstructionTemplateLabel] = useState('');
+  const [newInstructionTemplate, setNewInstructionTemplate] = useState('');
+  const [savingInstructionTemplate, setSavingInstructionTemplate] = useState(false);
+  const [editingTemplateIndex, setEditingTemplateIndex] = useState(null);
+  const [editingTemplateLabel, setEditingTemplateLabel] = useState('');
+  const [editingTemplateInstruction, setEditingTemplateInstruction] = useState('');
+  const [isTemplateEditorExpanded, setIsTemplateEditorExpanded] = useState(false);
 
   // Auto-refine all sections state
   const [autoRefining, setAutoRefining] = useState(false);
@@ -80,9 +88,88 @@ function SavedCVDetail({ cvId, onBack }) {
   const [loadingPreviewMetadata, setLoadingPreviewMetadata] = useState(false);
   const [previewMetadataTimer, setPreviewMetadataTimer] = useState(null);
 
+  const baseInstructionTemplates = [
+    {
+      label: 'STRICT ROLE MATCH',
+      instruction: 'Tailor this section strictly to the job requirements and critical must-haves. Keep only the most relevant points from the currently selected content. If a point is not selected or not relevant, do not use it.'
+    },
+    {
+      label: 'HUMAN WRITING',
+      instruction: 'Write in a natural human style. Avoid generic AI buzzwords, fluffy claims, and robotic phrasing. Keep language clear, specific, and credible.'
+    },
+    {
+      label: 'CRISP & CONCISE',
+      instruction: 'Tighten this section aggressively: remove repetition, merge overlapping points, and keep concise high-impact statements. Prefer shorter sentences with strong action verbs.'
+    },
+    {
+      label: 'KEYWORD ALIGNMENT',
+      instruction: 'Align wording to the job description and ATS keywords only where truthful from selected content. Use exact terms from the role when supported by existing selected evidence.'
+    },
+    {
+      label: 'NO NEW CONTENT',
+      instruction: 'Do not invent or add any new achievements, tools, responsibilities, metrics, or scope. Use only what exists in the selected content of this section/subsection.'
+    },
+    {
+      label: 'LEADERSHIP FOCUS',
+      instruction: 'Emphasize leadership, ownership, cross-functional collaboration, and business impact from the selected content. Keep claims factual and evidence-based.'
+    },
+    {
+      label: 'TECHNICAL DEPTH',
+      instruction: 'Prioritize technical depth and implementation detail from selected content: architecture choices, tools, methods, constraints, and measurable outcomes.'
+    }
+  ];
+
+  const normalizeInstructionTemplates = (templates) => {
+    if (!Array.isArray(templates)) return [];
+
+    const normalized = [];
+    templates.forEach((item, idx) => {
+      if (typeof item === 'string') {
+        const instruction = item.trim();
+        if (!instruction) return;
+        normalized.push({
+          label: `My Template ${idx + 1}`,
+          instruction
+        });
+        return;
+      }
+
+      if (!item || typeof item !== 'object') return;
+      const instruction = String(item.instruction || '').trim();
+      if (!instruction) return;
+      const label = String(item.label || `My Template ${idx + 1}`).trim();
+      normalized.push({
+        label: label || `My Template ${idx + 1}`,
+        instruction
+      });
+    });
+
+    return normalized.slice(0, 12);
+  };
+
+  const sanitizeFilenamePart = (value, fallback) => {
+    const text = String(value || '').trim() || fallback;
+    return text
+      .replace(/[–—]/g, '-')
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
+      .trim()
+      .replace(/\.+$/g, '') || fallback;
+  };
+
+  const buildDefaultCvFilename = () => {
+    const job = sanitizeFilenamePart(cvData?.job_title, 'Job');
+    const company = sanitizeFilenamePart(cvData?.company_name, 'Company');
+    const fullName = sanitizeFilenamePart(cvData?.content_snapshot?.contact_info?.full_name, 'User');
+    return `CV_${job}_${company}_${fullName}.pdf`;
+  };
+
   useEffect(() => {
     fetchCVData();
   }, [cvId]);
+
+  useEffect(() => {
+    fetchUserInstructionTemplates();
+  }, []);
 
   const fetchCVData = async () => {
     setLoading(true);
@@ -597,6 +684,7 @@ function SavedCVDetail({ cvId, onBack }) {
     setUserInstructions('');
     setRefinementResult(null);
     setShowPrompt(false);
+    setIsTemplateEditorExpanded(false);
   };
 
   const closeRefinementModal = () => {
@@ -609,6 +697,105 @@ function SavedCVDetail({ cvId, onBack }) {
     setUserInstructions('');
     setRefinementResult(null);
     setShowPrompt(false);
+    setIsTemplateEditorExpanded(false);
+  };
+
+  const handleAddInstructionTemplate = async () => {
+    const instruction = newInstructionTemplate.trim();
+    if (!instruction) return;
+
+    const label = newInstructionTemplateLabel.trim() || `My Template ${userInstructionTemplates.length + 1}`;
+    const updated = [
+      ...userInstructionTemplates,
+      {
+        label: label.slice(0, 40),
+        instruction: instruction.slice(0, 400)
+      }
+    ].slice(0, 12);
+    setSavingInstructionTemplate(true);
+    try {
+      const success = await saveUserInstructionTemplates(updated);
+      if (success) {
+        setNewInstructionTemplateLabel('');
+        setNewInstructionTemplate('');
+        setEditingTemplateIndex(null);
+      } else {
+        alert('Failed to save personal instruction template.');
+      }
+    } catch (error) {
+      console.error('Error saving personal instruction template:', error);
+      alert('Failed to save personal instruction template.');
+    } finally {
+      setSavingInstructionTemplate(false);
+    }
+  };
+
+  const startEditInstructionTemplate = (indexToEdit) => {
+    const current = userInstructionTemplates[indexToEdit];
+    if (!current) return;
+    setIsTemplateEditorExpanded(true);
+    setEditingTemplateIndex(indexToEdit);
+    setEditingTemplateLabel(current.label || `My Template ${indexToEdit + 1}`);
+    setEditingTemplateInstruction(current.instruction || '');
+  };
+
+  const cancelEditInstructionTemplate = () => {
+    setEditingTemplateIndex(null);
+    setEditingTemplateLabel('');
+    setEditingTemplateInstruction('');
+  };
+
+  const handleSaveEditedInstructionTemplate = async () => {
+    if (editingTemplateIndex === null) return;
+
+    const cleanedInstruction = editingTemplateInstruction.trim();
+    if (!cleanedInstruction) {
+      alert('Instruction cannot be empty.');
+      return;
+    }
+
+    const cleanedLabel = editingTemplateLabel.trim() || `My Template ${editingTemplateIndex + 1}`;
+    const updated = userInstructionTemplates.map((template, idx) => {
+      if (idx !== editingTemplateIndex) return template;
+      return {
+        label: cleanedLabel.slice(0, 40),
+        instruction: cleanedInstruction.slice(0, 400)
+      };
+    });
+
+    setSavingInstructionTemplate(true);
+    try {
+      const success = await saveUserInstructionTemplates(updated);
+      if (!success) {
+        alert('Failed to edit personal instruction template.');
+        return;
+      }
+      cancelEditInstructionTemplate();
+    } catch (error) {
+      console.error('Error editing personal instruction template:', error);
+      alert('Failed to edit personal instruction template.');
+    } finally {
+      setSavingInstructionTemplate(false);
+    }
+  };
+
+  const handleRemoveInstructionTemplate = async (indexToRemove) => {
+    const updated = userInstructionTemplates.filter((_, idx) => idx !== indexToRemove);
+    if (editingTemplateIndex === indexToRemove) {
+      cancelEditInstructionTemplate();
+    }
+    setSavingInstructionTemplate(true);
+    try {
+      const success = await saveUserInstructionTemplates(updated);
+      if (!success) {
+        alert('Failed to remove personal instruction template.');
+      }
+    } catch (error) {
+      console.error('Error removing personal instruction template:', error);
+      alert('Failed to remove personal instruction template.');
+    } finally {
+      setSavingInstructionTemplate(false);
+    }
   };
 
   const handleRunRefinement = async () => {
@@ -1781,7 +1968,18 @@ function SavedCVDetail({ cvId, onBack }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `CV_Preview_${templateName}_${cvData.job_title}_${cvData.company_name || 'Draft'}.pdf`;
+
+      // Prefer backend-provided filename from Content-Disposition
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = buildDefaultCvFilename();
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+      a.download = filename;
+
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -1957,9 +2155,9 @@ function SavedCVDetail({ cvId, onBack }) {
 
       // Extract filename from Content-Disposition header or use default
       const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = 'CV_Export.pdf';
+      let filename = buildDefaultCvFilename();
       if (contentDisposition) {
-        const match = contentDisposition.match(/filename="?(.+)"?/);
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
         if (match) {
           filename = match[1];
         }
@@ -2734,6 +2932,77 @@ function SavedCVDetail({ cvId, onBack }) {
 
   if (!cvData) return null;
 
+  const latestRecalculation =
+    cvData.recalculated_scores && cvData.recalculated_scores.length > 0
+      ? cvData.recalculated_scores[cvData.recalculated_scores.length - 1]
+      : null;
+
+  const normalizeModelId = (payload, provider) => {
+    const rawModel =
+      payload?.runtime?.resolved_model ||
+      payload?.runtime?.requested_model ||
+      payload?.model ||
+      '';
+    if (!rawModel) return provider === 'openai' ? 'OpenAI' : 'Claude';
+    return String(rawModel).replace(/^openai-/, '').replace(/^anthropic-/, '');
+  };
+
+  async function fetchUserInstructionTemplates() {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch(`${API_URL}/api/user/ai-settings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) return;
+      const data = await response.json();
+      setUserInstructionTemplates(normalizeInstructionTemplates(data.refinement_instruction_templates));
+    } catch (error) {
+      console.error('Error fetching instruction templates:', error);
+    }
+  }
+
+  async function saveUserInstructionTemplates(templates) {
+    const token = localStorage.getItem('token');
+    if (!token) return false;
+
+    const response = await fetch(`${API_URL}/api/user/ai-settings`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        refinement_instruction_templates: templates
+      })
+    });
+
+    if (!response.ok) return false;
+    const data = await response.json();
+    setUserInstructionTemplates(normalizeInstructionTemplates(data.refinement_instruction_templates || templates));
+    return true;
+  }
+
+  const getModelLabel = (payload, provider) => {
+    const modelId = normalizeModelId(payload, provider);
+    const lower = modelId.toLowerCase();
+    if (lower.includes('gpt-5.1')) return 'GPT-5.1';
+    if (lower.includes('gpt-4o')) return 'GPT-4o';
+    if (lower.includes('claude-sonnet')) return 'Claude Sonnet';
+    return modelId;
+  };
+
+  const initialOpenAIModelLabel = getModelLabel(cvData.fit_scores?.openai, 'openai');
+  const initialClaudeModelLabel = getModelLabel(cvData.fit_scores?.claude, 'claude');
+  const recalcOpenAIModelLabel = getModelLabel(latestRecalculation?.fit_scores?.openai, 'openai');
+  const recalcClaudeModelLabel = getModelLabel(latestRecalculation?.fit_scores?.claude, 'claude');
+  const scoreUpdateOpenAIModelLabel = latestRecalculation ? recalcOpenAIModelLabel : initialOpenAIModelLabel;
+  const scoreUpdateClaudeModelLabel = latestRecalculation ? recalcClaudeModelLabel : initialClaudeModelLabel;
+
   return (
     <div className="saved-cv-detail">
       {/* Modern Top Navigation Bar */}
@@ -2886,13 +3155,13 @@ function SavedCVDetail({ cvId, onBack }) {
               <div className="ai-scores-grid">
                 {cvData.fit_scores?.openai?.scores?.fit_score !== null && cvData.fit_scores?.openai?.scores?.fit_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label openai">🤖 GPT-5.1</div>
+                    <div className="ai-model-label openai">🤖 {initialOpenAIModelLabel}</div>
                     <div className="ai-score-value">{cvData.fit_scores.openai.scores.fit_score}</div>
                   </div>
                 )}
                 {cvData.fit_scores?.claude?.scores?.fit_score !== null && cvData.fit_scores?.claude?.scores?.fit_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label claude">🧠 Claude</div>
+                    <div className="ai-model-label claude">🧠 {initialClaudeModelLabel}</div>
                     <div className="ai-score-value">{cvData.fit_scores.claude.scores.fit_score}</div>
                   </div>
                 )}
@@ -2904,13 +3173,13 @@ function SavedCVDetail({ cvId, onBack }) {
                 <div className="ai-scores-grid">
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores?.openai?.scores?.fit_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label openai">🤖 GPT-5.1</div>
+                      <div className="ai-model-label openai">🤖 {recalcOpenAIModelLabel}</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores.openai.scores.fit_score}</div>
                     </div>
                   )}
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores?.claude?.scores?.fit_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label claude">🧠 Claude</div>
+                      <div className="ai-model-label claude">🧠 {recalcClaudeModelLabel}</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].fit_scores.claude.scores.fit_score}</div>
                     </div>
                   )}
@@ -2931,13 +3200,13 @@ function SavedCVDetail({ cvId, onBack }) {
               <div className="ai-scores-grid">
                 {cvData.ats_scores?.openai?.scores?.ats_score !== null && cvData.ats_scores?.openai?.scores?.ats_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label openai">🤖 GPT-5.1</div>
+                    <div className="ai-model-label openai">🤖 {initialOpenAIModelLabel}</div>
                     <div className="ai-score-value">{cvData.ats_scores.openai.scores.ats_score}</div>
                   </div>
                 )}
                 {cvData.ats_scores?.claude?.scores?.ats_score !== null && cvData.ats_scores?.claude?.scores?.ats_score !== undefined && (
                   <div className="ai-score-item">
-                    <div className="ai-model-label claude">🧠 Claude</div>
+                    <div className="ai-model-label claude">🧠 {initialClaudeModelLabel}</div>
                     <div className="ai-score-value">{cvData.ats_scores.claude.scores.ats_score}</div>
                   </div>
                 )}
@@ -2949,13 +3218,13 @@ function SavedCVDetail({ cvId, onBack }) {
                 <div className="ai-scores-grid">
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores?.openai?.scores?.ats_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label openai">🤖 GPT-5.1</div>
+                      <div className="ai-model-label openai">🤖 {recalcOpenAIModelLabel}</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores.openai.scores.ats_score}</div>
                     </div>
                   )}
                   {cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores?.claude?.scores?.ats_score !== null && (
                     <div className="ai-score-item">
-                      <div className="ai-model-label claude">🧠 Claude</div>
+                      <div className="ai-model-label claude">🧠 {recalcClaudeModelLabel}</div>
                       <div className="ai-score-value">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].ats_scores.claude.scores.ats_score}</div>
                     </div>
                   )}
@@ -3041,11 +3310,11 @@ function SavedCVDetail({ cvId, onBack }) {
                   {showPromptSection && (
                     <div className="prompts-compact">
                       <div className="prompt-compact-item">
-                        <strong>🤖 OpenAI GPT-5.1 Prompt:</strong>
+                        <strong>🤖 OpenAI ({recalcOpenAIModelLabel}) Prompt:</strong>
                         <pre className="prompt-code-compact">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].prompts.openai.user_prompt}</pre>
                       </div>
                       <div className="prompt-compact-item">
-                        <strong>🧠 Claude Prompt:</strong>
+                        <strong>🧠 Claude ({recalcClaudeModelLabel}) Prompt:</strong>
                         <pre className="prompt-code-compact">{cvData.recalculated_scores[cvData.recalculated_scores.length - 1].prompts.claude.user_prompt}</pre>
                       </div>
                     </div>
@@ -3053,7 +3322,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 </>
               )}
             </div>
-            <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses OpenAI GPT-5.1 & Claude</div>
+            <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses {scoreUpdateOpenAIModelLabel} & {scoreUpdateClaudeModelLabel}</div>
           </div>
         </div>
       </div>
@@ -3291,40 +3560,170 @@ function SavedCVDetail({ cvId, onBack }) {
                 </label>
 
                 {/* Quick Suggestion Chips - Targeted Instructions */}
-                <div className="instruction-chips">
-                  {[
-                    {
-                      label: "SUMMARY INTRO",
-                      instruction: "Given the job requirements, consider the selected paragraphs and make them compact into a single paragraph without redundancy and crisp and tailored to the role. Create a 4 to 5 line intro for the very beginning of summary (we will add bullets separately later)."
-                    },
-                    {
-                      label: "SUMMARY BULLETS",
-                      instruction: "Given the summary intro and the job requirements, provide maximum 3 bullets to complement the intro paragraph. Make them crisp, avoid redundancy, and tailor for the role. Don't change the paragraph, just create/refine the bullets."
-                    },
-                    {
-                      label: "WORK EXPERIENCE",
-                      instruction: "Given the summary and the job description, create up to 5 or 6 bullet points per each entry of my current work experience. Current entry can have multiple sub-entries - keep them if required but feel free to change naming or anything to be more aligned with the job description. Make crisp and tailored bullets."
-                    },
-                    {
-                      label: "CORE SKILLS",
-                      instruction: "Given the job requirements, summary, and work experience, now try to optimize and avoid redundancy or non-relevant points in core skills. Keep it focused and aligned with the target role."
-                    }
-                  ].map((chip, idx) => (
-                    <button
-                      key={idx}
-                      className="instruction-chip"
-                      onClick={() => setUserInstructions(prev => prev ? `${prev}\n\n${chip.instruction}` : chip.instruction)}
-                      disabled={refining}
-                      title={chip.instruction}
-                    >
-                      + {chip.label}
-                    </button>
-                  ))}
+                <div className="template-library">
+                  <div className="template-library-header">
+                    <h5>Quick Templates</h5>
+                    <span>Click to append</span>
+                  </div>
+                  <div className="instruction-chips template-chip-grid">
+                    {baseInstructionTemplates.map((chip, idx) => (
+                      <button
+                        key={`base-${idx}`}
+                        className="instruction-chip"
+                        onClick={() => setUserInstructions(prev => prev ? `${prev}\n\n${chip.instruction}` : chip.instruction)}
+                        disabled={refining}
+                        title={chip.instruction}
+                      >
+                        + {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="template-library">
+                  <div className="template-library-header">
+                    <h5>My Templates</h5>
+                    <span>{userInstructionTemplates.length}/12</span>
+                  </div>
+
+                  {userInstructionTemplates.length === 0 ? (
+                    <div className="template-empty-state">
+                      No personal templates yet. Add one below to reuse your style quickly.
+                    </div>
+                  ) : (
+                    <div className="template-card-list">
+                      {userInstructionTemplates.map((template, idx) => (
+                        <div key={`user-${idx}`} className="template-card">
+                          <div className="template-card-header">
+                            <button
+                              className="template-card-label"
+                              onClick={() =>
+                                setUserInstructions((prev) =>
+                                  prev ? `${prev}\n\n${template.instruction}` : template.instruction
+                                )
+                              }
+                              disabled={refining}
+                              title={template.instruction}
+                            >
+                              + {template.label}
+                            </button>
+                            <div className="template-card-actions">
+                              <button
+                                className="template-icon-btn"
+                                onClick={() => startEditInstructionTemplate(idx)}
+                                disabled={refining || savingInstructionTemplate}
+                                title={`Edit: ${template.label}`}
+                                aria-label={`Edit ${template.label}`}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                className="template-icon-btn danger"
+                                onClick={() => handleRemoveInstructionTemplate(idx)}
+                                disabled={refining || savingInstructionTemplate}
+                                title={`Delete: ${template.label}`}
+                                aria-label={`Delete ${template.label}`}
+                              >
+                                🗑
+                              </button>
+                            </div>
+                          </div>
+                          <p className="template-card-text">{template.instruction}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="template-editor">
+                  <button
+                    type="button"
+                    className="template-editor-toggle"
+                    onClick={() => {
+                      if (isTemplateEditorExpanded && editingTemplateIndex !== null) {
+                        cancelEditInstructionTemplate();
+                      }
+                      setIsTemplateEditorExpanded((prev) => !prev);
+                    }}
+                  >
+                    <span>{isTemplateEditorExpanded ? 'Hide Personal Template Editor' : 'Add Personal Template'}</span>
+                    <span>{isTemplateEditorExpanded ? '▴' : '▾'}</span>
+                  </button>
+
+                  {isTemplateEditorExpanded && (
+                    <>
+                      <div className="template-library-header">
+                        <h5>{editingTemplateIndex === null ? 'Add Personal Template' : 'Edit Personal Template'}</h5>
+                        <span>Stored in your account</span>
+                      </div>
+
+                      <input
+                        type="text"
+                        className="template-editor-input"
+                        placeholder="Template label (e.g., Leadership Heavy)"
+                        value={editingTemplateIndex === null ? newInstructionTemplateLabel : editingTemplateLabel}
+                        onChange={(e) =>
+                          editingTemplateIndex === null
+                            ? setNewInstructionTemplateLabel(e.target.value)
+                            : setEditingTemplateLabel(e.target.value)
+                        }
+                        disabled={refining || savingInstructionTemplate}
+                        maxLength={40}
+                      />
+
+                      <textarea
+                        className="template-editor-textarea"
+                        placeholder="Write your reusable instruction template..."
+                        value={editingTemplateIndex === null ? newInstructionTemplate : editingTemplateInstruction}
+                        onChange={(e) =>
+                          editingTemplateIndex === null
+                            ? setNewInstructionTemplate(e.target.value)
+                            : setEditingTemplateInstruction(e.target.value)
+                        }
+                        disabled={refining || savingInstructionTemplate}
+                        maxLength={400}
+                        rows={4}
+                      />
+
+                      <div className="template-editor-actions">
+                        {editingTemplateIndex !== null && (
+                          <button
+                            type="button"
+                            className="template-secondary-btn"
+                            onClick={cancelEditInstructionTemplate}
+                            disabled={refining || savingInstructionTemplate}
+                          >
+                            Cancel Edit
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="template-primary-btn"
+                          onClick={editingTemplateIndex === null ? handleAddInstructionTemplate : handleSaveEditedInstructionTemplate}
+                          disabled={
+                            refining ||
+                            savingInstructionTemplate ||
+                            (
+                              editingTemplateIndex === null
+                                ? !newInstructionTemplate.trim()
+                                : !editingTemplateInstruction.trim()
+                            )
+                          }
+                        >
+                          {savingInstructionTemplate
+                            ? 'Saving...'
+                            : editingTemplateIndex === null
+                              ? 'Save Template'
+                              : 'Save Changes'}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <textarea
                   id="user-instructions"
-                  placeholder="E.g., 'Focus on leadership impact', 'Emphasize ML/AI work', 'Keep it under 200 words'"
+                  placeholder="E.g., 'Strictly match critical requirements, use only selected content, make it concise and human-written.'"
                   value={userInstructions}
                   onChange={(e) => setUserInstructions(e.target.value)}
                   rows={3}

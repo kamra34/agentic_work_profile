@@ -89,6 +89,22 @@ class UserProfileInfoUpdate(BaseModel):
     preferred_work_mode: Optional[str] = None
 
 
+class UserAISettings(BaseModel):
+    """User-level AI model settings used by Tailor CV pipeline"""
+    openai_model: str = "gpt-4o"
+    openai_reasoning_effort: str = "medium"
+    claude_model: str = "claude-sonnet-4-20250514"
+    refinement_instruction_templates: List[Dict[str, str]] = []
+
+
+class UserAISettingsUpdate(BaseModel):
+    """Update user-level AI model settings"""
+    openai_model: Optional[str] = None
+    openai_reasoning_effort: Optional[str] = None
+    claude_model: Optional[str] = None
+    refinement_instruction_templates: Optional[List[Dict[str, str]]] = None
+
+
 # ============================================================================
 # ProfileNode Schemas (Universal - handles ALL content types)
 # ============================================================================

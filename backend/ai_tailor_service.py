@@ -65,6 +65,15 @@ if not ANTHROPIC_API_KEY:
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 
+VALID_REASONING_EFFORT = {"none", "low", "medium", "high"}
+
+
+def _resolve_reasoning_effort(reasoning_effort: str = None) -> str:
+    value = (reasoning_effort or os.getenv("OPENAI_REASONING_EFFORT", "medium")).strip().lower()
+    if value not in VALID_REASONING_EFFORT:
+        return "medium"
+    return value
+
 
 def _safe_score(value: Any, default: int = 0) -> int:
     """Normalize score-like values to int in [0, 100]."""
@@ -676,15 +685,17 @@ Return JSON with node IDs and selection status:
 """
 
 
-def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str, Any]:
+def analyze_job_with_openai(job_description: str, model: str = None, reasoning_effort: str = None) -> Dict[str, Any]:
     """
     Analyze job description using OpenAI (supports both GPT-4o and GPT-5.1)
 
     Args:
         job_description: The job description text to analyze
         model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+        reasoning_effort: Optional reasoning effort override for GPT-5.1.
     """
     model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    resolved_reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
     logger.step(f"Job analysis with OpenAI ({model_name})", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
@@ -698,7 +709,8 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
         result = call_openai_for_json(
             system_prompt="You are an expert job requirement analyst. Always respond with valid JSON.",
             user_prompt=user_prompt,
-            model=model
+            model=model_name,
+            reasoning_effort=resolved_reasoning_effort
         )
 
         if not result["success"]:
@@ -716,7 +728,7 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
                     requested_model=model_name,
                     resolved_model=resolved_model,
                     api_name=result.get("api_name", ""),
-                    reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                    reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_ms=duration_ms
@@ -739,7 +751,7 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
                 requested_model=result.get("requested_model", model_name),
                 resolved_model=resolved_model,
                 api_name=result.get("api_name", ""),
-                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -767,7 +779,7 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
                 requested_model=model_name,
                 resolved_model=model_name,
                 api_name="",
-                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -775,10 +787,10 @@ def analyze_job_with_openai(job_description: str, model: str = None) -> Dict[str
         }
 
 
-def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
+def analyze_job_with_claude(job_description: str, model: str = None) -> Dict[str, Any]:
     """Analyze job description using Claude Sonnet 4.5"""
-    requested_model = "claude-sonnet-4-20250514"
-    logger.step("Job analysis with Claude (claude-sonnet-4.5)", step_num=1)
+    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+    logger.step(f"Job analysis with Claude ({requested_model})", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
 
@@ -886,7 +898,13 @@ def analyze_job_with_claude(job_description: str) -> Dict[str, Any]:
         }
 
 
-def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_description: str = "", model: str = None) -> Dict[str, Any]:
+def score_profile_with_openai(
+    job_requirements: Dict,
+    profile_content: str,
+    job_description: str = "",
+    model: str = None,
+    reasoning_effort: str = None
+) -> Dict[str, Any]:
     """
     Score profile fit using OpenAI (supports both GPT-4o and GPT-5.1)
 
@@ -896,6 +914,7 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_
         model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
     """
     model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    resolved_reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
     logger.step(f"Profile scoring with OpenAI ({model_name})", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
@@ -913,7 +932,8 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_
         result = call_openai_for_json(
             system_prompt="You are an expert recruiter and ATS specialist. Always respond with valid JSON.",
             user_prompt=user_prompt,
-            model=model
+            model=model_name,
+            reasoning_effort=resolved_reasoning_effort
         )
 
         if not result["success"]:
@@ -931,7 +951,7 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_
                     requested_model=model_name,
                     resolved_model=resolved_model,
                     api_name=result.get("api_name", ""),
-                    reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                    reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_ms=duration_ms
@@ -959,7 +979,7 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_
                 requested_model=result.get("requested_model", model_name),
                 resolved_model=resolved_model,
                 api_name=result.get("api_name", ""),
-                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -987,7 +1007,7 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_
                 requested_model=model_name,
                 resolved_model=model_name,
                 api_name="",
-                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -995,10 +1015,15 @@ def score_profile_with_openai(job_requirements: Dict, profile_content: str, job_
         }
 
 
-def score_profile_with_claude(job_requirements: Dict, profile_content: str, job_description: str = "") -> Dict[str, Any]:
+def score_profile_with_claude(
+    job_requirements: Dict,
+    profile_content: str,
+    job_description: str = "",
+    model: str = None
+) -> Dict[str, Any]:
     """Score profile fit using Claude Sonnet 4.5"""
-    requested_model = "claude-sonnet-4-20250514"
-    logger.step("Profile scoring with Claude (claude-sonnet-4.5)", step_num=1)
+    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+    logger.step(f"Profile scoring with Claude ({requested_model})", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
 
@@ -1101,7 +1126,13 @@ def score_profile_with_claude(job_requirements: Dict, profile_content: str, job_
         }
 
 
-def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict], job_description: str = "", model: str = None) -> Dict[str, Any]:
+def recommend_nodes_with_openai(
+    job_requirements: Dict,
+    profile_nodes: List[Dict],
+    job_description: str = "",
+    model: str = None,
+    reasoning_effort: str = None
+) -> Dict[str, Any]:
     """
     Recommend which nodes to include using OpenAI (supports both GPT-4o and GPT-5.1)
 
@@ -1111,6 +1142,7 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
         model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
     """
     model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    resolved_reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
     logger.step(f"Node selection with OpenAI ({model_name}) - {len(profile_nodes)} nodes", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
@@ -1128,7 +1160,8 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
         result = call_openai_for_json(
             system_prompt="You are an expert CV tailoring specialist. Always respond with valid JSON.",
             user_prompt=prompt_content,
-            model=model,
+            model=model_name,
+            reasoning_effort=resolved_reasoning_effort,
             timeout=180  # 180 second timeout (3 minutes)
         )
 
@@ -1147,7 +1180,7 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
                     requested_model=model_name,
                     resolved_model=resolved_model,
                     api_name=result.get("api_name", ""),
-                    reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                    reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_ms=duration_ms
@@ -1173,7 +1206,7 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
                 requested_model=result.get("requested_model", model_name),
                 resolved_model=resolved_model,
                 api_name=result.get("api_name", ""),
-                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1207,7 +1240,7 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
                 requested_model=model_name,
                 resolved_model=model_name,
                 api_name="",
-                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium") if "gpt-5.1" in model_name else "",
+                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1215,10 +1248,15 @@ def recommend_nodes_with_openai(job_requirements: Dict, profile_nodes: List[Dict
         }
 
 
-def recommend_nodes_with_claude(job_requirements: Dict, profile_nodes: List[Dict], job_description: str = "") -> Dict[str, Any]:
+def recommend_nodes_with_claude(
+    job_requirements: Dict,
+    profile_nodes: List[Dict],
+    job_description: str = "",
+    model: str = None
+) -> Dict[str, Any]:
     """Recommend which nodes to include using Claude Sonnet 4.5"""
-    requested_model = "claude-sonnet-4-20250514"
-    logger.step(f"Node selection with Claude (claude-sonnet-4.5) - {len(profile_nodes)} nodes", step_num=1)
+    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+    logger.step(f"Node selection with Claude ({requested_model}) - {len(profile_nodes)} nodes", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
 

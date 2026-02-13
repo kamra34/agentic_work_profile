@@ -7,14 +7,15 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.orm.attributes import flag_modified
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
+import re
 from dotenv import load_dotenv
 import uuid
 from pathlib import Path
@@ -29,7 +30,7 @@ load_dotenv(dotenv_path=env_path)
 from models import User, Profile, ProfileNode, TailoredCV, JobApplication
 from schemas import (
     UserRegister, UserLogin, Token, UserResponse,
-    UserProfileInfo, UserProfileInfoUpdate,
+    UserProfileInfo, UserProfileInfoUpdate, UserAISettings, UserAISettingsUpdate,
     ProfileResponse, ProfileCreate, ProfileUpdate,
     ProfileNodeResponse, ProfileNodeCreate, ProfileNodeUpdate,
     JobApplicationCreate, JobApplicationUpdate, JobApplicationResponse
@@ -182,6 +183,33 @@ def transform_nodes_to_sections(nodes):
 
     return sections
 
+
+def _sanitize_filename_part(value: Optional[str], fallback: str) -> str:
+    """Keep original text style; only remove filesystem-invalid filename chars."""
+    text = (value or "").strip()
+    if not text:
+        text = fallback
+
+    text = (
+        text
+        .replace("â€“", "-")
+        .replace("â€”", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+    )
+    # Windows-invalid filename chars: <>:"/\|?* and control chars
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "-", text)
+    # Trim trailing spaces/dots (Windows restriction)
+    text = text.strip().strip(".")
+    return text or fallback
+
+
+def _build_cv_export_filename(job_title: Optional[str], company_name: Optional[str], full_name: Optional[str]) -> str:
+    safe_job_title = _sanitize_filename_part(job_title, "Job")
+    safe_company = _sanitize_filename_part(company_name, "Company")
+    safe_full_name = _sanitize_filename_part(full_name, "User")
+    return f"CV_{safe_job_title}_{safe_company}_{safe_full_name}.pdf"
+
 # ============================================================================
 # DATABASE & SECURITY SETUP
 # ============================================================================
@@ -193,6 +221,124 @@ if not DATABASE_URL:
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# AI model settings defaults (used to initialize user settings and as safety fallback)
+VALID_OPENAI_MODELS = {"gpt-4o", "gpt-5.1"}
+VALID_REASONING_EFFORT = {"none", "low", "medium", "high"}
+DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+if DEFAULT_OPENAI_MODEL not in VALID_OPENAI_MODELS:
+    DEFAULT_OPENAI_MODEL = "gpt-4o"
+
+DEFAULT_OPENAI_REASONING = os.getenv("OPENAI_REASONING_EFFORT", "medium").lower()
+if DEFAULT_OPENAI_REASONING not in VALID_REASONING_EFFORT:
+    DEFAULT_OPENAI_REASONING = "medium"
+
+DEFAULT_CLAUDE_MODEL = os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+
+
+def _normalize_openai_model(model: Optional[str]) -> str:
+    value = (model or "").strip()
+    if value in VALID_OPENAI_MODELS:
+        return value
+    return DEFAULT_OPENAI_MODEL
+
+
+def _normalize_reasoning_effort(effort: Optional[str]) -> str:
+    value = (effort or "").strip().lower()
+    if value in VALID_REASONING_EFFORT:
+        return value
+    return DEFAULT_OPENAI_REASONING
+
+
+def _normalize_claude_model(model: Optional[str]) -> str:
+    value = (model or "").strip()
+    if value and value.startswith("claude-"):
+        return value
+    return DEFAULT_CLAUDE_MODEL
+
+
+def _normalize_instruction_templates(templates: Optional[list]) -> List[Dict[str, str]]:
+    if not isinstance(templates, list):
+        return []
+
+    cleaned: List[Dict[str, str]] = []
+    for idx, item in enumerate(templates):
+        label_value = ""
+        instruction_value = ""
+
+        # Backward compatibility: old payload may be a plain string
+        if isinstance(item, str):
+            instruction_value = item.strip()
+            label_value = f"My Template {idx + 1}"
+        elif isinstance(item, dict):
+            label_value = str(item.get("label", "")).strip()
+            instruction_value = str(item.get("instruction", "")).strip()
+        else:
+            continue
+
+        if not instruction_value:
+            continue
+        if not label_value:
+            label_value = f"My Template {len(cleaned) + 1}"
+
+        cleaned.append({
+            "label": label_value[:40],
+            "instruction": instruction_value[:400]
+        })
+        if len(cleaned) >= 12:
+            break
+    return cleaned
+
+
+def get_user_ai_settings(user: User) -> Dict[str, Any]:
+    """Return sanitized per-user AI settings."""
+    return {
+        "openai_model": _normalize_openai_model(getattr(user, "openai_model", None)),
+        "openai_reasoning_effort": _normalize_reasoning_effort(getattr(user, "openai_reasoning_effort", None)),
+        "claude_model": _normalize_claude_model(getattr(user, "claude_model", None)),
+        "refinement_instruction_templates": _normalize_instruction_templates(
+            getattr(user, "refinement_instruction_templates", None)
+        ),
+    }
+
+
+def _ensure_user_ai_settings_columns():
+    """Best-effort schema bootstrap so local/prod both have AI settings columns."""
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_model VARCHAR(50)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_reasoning_effort VARCHAR(20)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS claude_model VARCHAR(80)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refinement_instruction_templates JSON"))
+        conn.execute(
+            text(
+                "UPDATE users SET openai_model = :model "
+                "WHERE openai_model IS NULL OR TRIM(openai_model) = ''"
+            ),
+            {"model": DEFAULT_OPENAI_MODEL},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET openai_reasoning_effort = :effort "
+                "WHERE openai_reasoning_effort IS NULL OR TRIM(openai_reasoning_effort) = ''"
+            ),
+            {"effort": DEFAULT_OPENAI_REASONING},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET claude_model = :model "
+                "WHERE claude_model IS NULL OR TRIM(claude_model) = ''"
+            ),
+            {"model": DEFAULT_CLAUDE_MODEL},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET refinement_instruction_templates = '[]' "
+                "WHERE refinement_instruction_templates IS NULL"
+            )
+        )
+
+
+_ensure_user_ai_settings_columns()
 
 # Security
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -215,6 +361,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -345,6 +492,40 @@ def update_user_profile_info(
     db.refresh(current_user)
 
     return current_user
+
+
+@app.get("/api/user/ai-settings", response_model=UserAISettings)
+def get_user_ai_settings_endpoint(
+    current_user: User = Depends(get_current_user)
+):
+    """Get current user's AI model settings."""
+    return get_user_ai_settings(current_user)
+
+
+@app.put("/api/user/ai-settings", response_model=UserAISettings)
+def update_user_ai_settings_endpoint(
+    settings_data: UserAISettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update current user's AI model settings used by Tailor CV."""
+    updates = settings_data.model_dump(exclude_unset=True)
+
+    if "openai_model" in updates:
+        current_user.openai_model = _normalize_openai_model(updates.get("openai_model"))
+    if "openai_reasoning_effort" in updates:
+        current_user.openai_reasoning_effort = _normalize_reasoning_effort(updates.get("openai_reasoning_effort"))
+    if "claude_model" in updates:
+        current_user.claude_model = _normalize_claude_model(updates.get("claude_model"))
+    if "refinement_instruction_templates" in updates:
+        current_user.refinement_instruction_templates = _normalize_instruction_templates(
+            updates.get("refinement_instruction_templates")
+        )
+
+    db.commit()
+    db.refresh(current_user)
+
+    return get_user_ai_settings(current_user)
 
 
 # ============================================================================
@@ -806,6 +987,8 @@ async def analyze_job_description(
     if not job_description or len(job_description.strip()) < 50:
         raise HTTPException(status_code=400, detail="Job description too short (minimum 50 characters)")
 
+    ai_settings = get_user_ai_settings(current_user)
+
     api_logger.step("Starting job description analysis with dual models", step_num=1)
     api_logger.parallel_execution_start(["OpenAI", "Claude"])
 
@@ -815,12 +998,15 @@ async def analyze_job_description(
         openai_future = loop.run_in_executor(
             executor,
             ai_tailor_service.analyze_job_with_openai,
-            job_description
+            job_description,
+            ai_settings["openai_model"],
+            ai_settings["openai_reasoning_effort"]
         )
         claude_future = loop.run_in_executor(
             executor,
             ai_tailor_service.analyze_job_with_claude,
-            job_description
+            job_description,
+            ai_settings["claude_model"]
         )
 
         # Wait for both to complete
@@ -857,6 +1043,8 @@ async def score_profile_fit(
 
     if (not job_requirements and not job_analysis_payload) or not profile_id:
         raise HTTPException(status_code=400, detail="Missing analysis input (job_requirements/job_analysis) or profile_id")
+
+    ai_settings = get_user_ai_settings(current_user)
 
     def get_requirements_for_provider(provider: str, fallback: dict):
         provider_payload = job_analysis_payload.get(provider) if isinstance(job_analysis_payload, dict) else None
@@ -908,14 +1096,17 @@ async def score_profile_fit(
             ai_tailor_service.score_profile_with_openai,
             openai_requirements,
             profile_text,
-            job_description
+            job_description,
+            ai_settings["openai_model"],
+            ai_settings["openai_reasoning_effort"]
         )
         claude_future = loop.run_in_executor(
             executor,
             ai_tailor_service.score_profile_with_claude,
             claude_requirements,
             profile_text,
-            job_description
+            job_description,
+            ai_settings["claude_model"]
         )
 
         # Wait for both to complete
@@ -961,6 +1152,8 @@ async def recommend_node_selection(
     if (not job_requirements and not job_analysis_payload) or not profile_id:
         print(f"❌ [RECOMMEND-NODES] Missing requirements or profile_id")
         raise HTTPException(status_code=400, detail="Missing analysis input (job_requirements/job_analysis) or profile_id")
+
+    ai_settings = get_user_ai_settings(current_user)
 
     print(f"📋 [RECOMMEND-NODES] Profile ID: {profile_id}")
 
@@ -1078,13 +1271,16 @@ async def recommend_node_selection(
             ai_tailor_service.recommend_nodes_with_openai,
             openai_requirements,
             flat_nodes,
-            job_description
+            job_description,
+            ai_settings["openai_model"],
+            ai_settings["openai_reasoning_effort"]
         )
         claude_future = executor.submit(
             ai_tailor_service.recommend_nodes_with_claude,
             claude_requirements,
             flat_nodes,
-            job_description
+            job_description,
+            ai_settings["claude_model"]
         )
 
         # Wait for OpenAI result
@@ -1858,7 +2054,6 @@ async def recalculate_ats_scores(
     Sends the formatted CV content to AI models for fresh scoring.
     """
     from format_hierarchical_cv import format_hierarchical_cv_for_ai
-    from profile_fit_service import analyze_profile_fit_with_openai, analyze_profile_fit_with_claude
 
     tailored_cv = db.query(TailoredCV).filter(
         TailoredCV.id == cv_id,
@@ -1906,60 +2101,47 @@ async def recalculate_ats_scores(
     if not job_analysis:
         raise HTTPException(status_code=400, detail="Job analysis not found for this CV")
 
-    results = {
-        "formatted_cv_preview": formatted_cv,  # Include preview for user to see
-        "openai": {"success": False},
-        "claude": {"success": False}
-    }
+    ai_settings = get_user_ai_settings(current_user)
 
-    # Run both AI analyses in parallel
-    async def run_openai():
-        try:
-            openai_result = analyze_profile_fit_with_openai(
-                job_analysis.get('openai', {}).get('analysis', {}),
-                formatted_cv
-            )
-            results["openai"] = {
-                "success": True,
-                "model": openai_result.get("model"),
-                "scores": {
-                    "fit_score": openai_result.get("fit_analysis", {}).get("fit_percentage", 0),
-                    "ats_score": openai_result.get("fit_analysis", {}).get("ats_compatibility", {}).get("overall_ats_score", 0),
-                    "technical_skills_match": openai_result.get("fit_analysis", {}).get("technical_skills_match", 0)
-                },
-                "analysis": openai_result.get("fit_analysis", {})
-            }
-        except Exception as e:
-            results["openai"] = {
-                "success": False,
-                "error": str(e)
-            }
+    def get_analysis_for_provider(provider: str):
+        provider_data = job_analysis.get(provider) if isinstance(job_analysis, dict) else None
+        if isinstance(provider_data, dict) and provider_data.get("success") and isinstance(provider_data.get("analysis"), dict):
+            return provider_data["analysis"], f"{provider}_analysis"
 
-    async def run_claude():
-        try:
-            claude_result = analyze_profile_fit_with_claude(
-                job_analysis.get('claude', {}).get('analysis', {}) or
-                job_analysis.get('openai', {}).get('analysis', {}),  # Fallback to OpenAI if Claude analysis missing
-                formatted_cv
-            )
-            results["claude"] = {
-                "success": True,
-                "model": claude_result.get("model"),
-                "scores": {
-                    "fit_score": claude_result.get("fit_analysis", {}).get("fit_percentage", 0),
-                    "ats_score": claude_result.get("fit_analysis", {}).get("ats_compatibility", {}).get("overall_ats_score", 0),
-                    "technical_skills_match": claude_result.get("fit_analysis", {}).get("technical_skills_match", 0)
-                },
-                "analysis": claude_result.get("fit_analysis", {})
-            }
-        except Exception as e:
-            results["claude"] = {
-                "success": False,
-                "error": str(e)
-            }
+        # Fallback to the other provider's analysis if available
+        other_provider = "claude" if provider == "openai" else "openai"
+        other_data = job_analysis.get(other_provider) if isinstance(job_analysis, dict) else None
+        if isinstance(other_data, dict) and other_data.get("success") and isinstance(other_data.get("analysis"), dict):
+            return other_data["analysis"], f"fallback_{other_provider}_analysis"
 
-    # Run both in parallel
-    await asyncio.gather(run_openai(), run_claude())
+        return {}, "no_analysis_available"
+
+    openai_requirements, openai_requirements_source = get_analysis_for_provider("openai")
+    claude_requirements, claude_requirements_source = get_analysis_for_provider("claude")
+    job_description = tailored_cv.job_description or ""
+
+    # Use the exact same scoring services/prompts as Tailor CV step
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        openai_future = loop.run_in_executor(
+            executor,
+            ai_tailor_service.score_profile_with_openai,
+            openai_requirements,
+            formatted_cv,
+            job_description,
+            ai_settings["openai_model"],
+            ai_settings["openai_reasoning_effort"]
+        )
+        claude_future = loop.run_in_executor(
+            executor,
+            ai_tailor_service.score_profile_with_claude,
+            claude_requirements,
+            formatted_cv,
+            job_description,
+            ai_settings["claude_model"]
+        )
+
+        openai_result, claude_result = await asyncio.gather(openai_future, claude_future)
 
     # Store recalculated scores separately (don't override original scores)
     # Keep original scores from initial tailoring
@@ -1970,68 +2152,28 @@ async def recalculate_ats_scores(
     # Get existing recalculated scores or initialize empty list
     recalc_history = tailored_cv.recalculated_scores if tailored_cv.recalculated_scores else []
 
-    # Add new recalculation to history
+    # Add new recalculation to history (same scoring payload shape as Tailor CV step)
     recalc_history.append({
         "timestamp": datetime.utcnow().isoformat(),
         "formatted_cv": formatted_cv,
         "fit_scores": {
-            "openai": results["openai"],
-            "claude": results["claude"]
+            "openai": openai_result,
+            "claude": claude_result
         },
         "ats_scores": {
-            "openai": results["openai"],
-            "claude": results["claude"]
+            "openai": openai_result,
+            "claude": claude_result
+        },
+        "requirements_source": {
+            "openai": openai_requirements_source,
+            "claude": claude_requirements_source
         },
         "prompts": {
             "openai": {
-                "system_prompt": """You are a brutally honest and unbiased career fit analyst. Your job is to evaluate how well a candidate's profile matches a job description.
-
-CRITICAL INSTRUCTIONS:
-- Be FAIR and HONEST, not nice or encouraging
-- Do NOT show positive bias or try to be encouraging
-- Evaluate based on ACTUAL match, not potential
-- If there are gaps, state them clearly
-- If the candidate is not qualified, say so directly
-- A bad match is a waste of time for both the candidate and company
-- Consider that applying to poorly matched jobs damages the candidate's reputation
-
-Your analysis must include:
-1. **Fit Percentage**: A number from 0-100 representing actual match quality
-   - 90-100: Exceptional match, candidate exceeds requirements
-   - 75-89: Strong match, candidate meets all key requirements
-   - 60-74: Moderate match, candidate meets most requirements with some gaps
-   - 40-59: Weak match, significant gaps in key requirements
-   - 0-39: Poor match, candidate should not apply
-
-2. **Fit Summary**: 2-3 sentences on overall match quality
-3. **Strengths**: Specific areas where candidate's profile aligns well with job requirements
-4. **Critical Gaps**: Requirements the candidate does NOT meet or areas where they fall short
-5. **Experience Match**: How well candidate's experience level matches the job level
-6. **Technical Skills Match**: Percentage of required technical skills the candidate has
-7. **ATS Compatibility Score**: Score from 0-100 for Applicant Tracking System compatibility""",
-                "user_prompt": f"Job Requirements Analysis:\n{json.dumps(job_analysis.get('openai', {}).get('analysis', {}), indent=2)}\n\nCandidate Profile:\n{formatted_cv}\n\nAnalyze how well this candidate's profile matches the job requirements. Be honest and unbiased."
+                "user_prompt": openai_result.get("prompt_sent", "")
             },
             "claude": {
-                "system_prompt": """You are a brutally honest and unbiased career fit analyst. Your job is to evaluate how well a candidate's profile matches a job description.
-
-CRITICAL INSTRUCTIONS:
-- Be FAIR and HONEST, not nice or encouraging
-- Do NOT show positive bias or try to be encouraging
-- Evaluate based on ACTUAL match, not potential
-- If there are gaps, state them clearly
-- If the candidate is not qualified, say so directly
-- A bad match is a waste of time for both the candidate and company
-- Consider that applying to poorly matched jobs damages the candidate's reputation
-
-Your analysis must include:
-1. **Fit Percentage**: A number from 0-100 representing actual match quality
-2. **Fit Summary**: 2-3 sentences on overall match quality
-3. **Strengths**: Specific areas where candidate's profile aligns well
-4. **Critical Gaps**: Requirements the candidate does NOT meet
-5. **Experience Match**: How well candidate's experience level matches the job level
-6. **Technical Skills Match**: Percentage of required technical skills the candidate has
-7. **ATS Compatibility Score**: Score from 0-100 for Applicant Tracking System compatibility""",
-                "user_prompt": f"Job Requirements Analysis:\n{json.dumps(job_analysis.get('claude', {}).get('analysis', {}) or job_analysis.get('openai', {}).get('analysis', {}), indent=2)}\n\nCandidate Profile:\n{formatted_cv}\n\nAnalyze how well this candidate's profile matches the job requirements. Be honest and unbiased."
+                "user_prompt": claude_result.get("prompt_sent", "")
             }
         }
     })
@@ -2668,18 +2810,17 @@ async def download_application_pdf(
         )
         pdf_buffer = generator.generate_pdf(cv_data, hidden_items=[])
 
-        # Sanitize filename to remove Unicode characters
-        safe_job_title = job_app.job_title.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if job_app.job_title else "CV"
-        safe_company = job_app.company_name.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if job_app.company_name else "Application"
-        # Remove any remaining non-ASCII characters from filename
-        safe_job_title = ''.join(c for c in safe_job_title if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
-        safe_company = ''.join(c for c in safe_company if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
+        filename = _build_cv_export_filename(
+            job_title=job_app.job_title,
+            company_name=job_app.company_name,
+            full_name=current_user.full_name
+        )
 
         return StreamingResponse(
             pdf_buffer,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f'attachment; filename="CV_{safe_job_title}_{safe_company}.pdf"'
+                "Content-Disposition": f'attachment; filename="{filename}"'
             }
         )
 
@@ -2935,14 +3076,11 @@ async def preview_tailored_cv_pdf(
             template_name=cv_format,
             customizations=customizations
         )
-
-        # Create filename with job title and company name - sanitize Unicode characters
-        safe_job_title = tailored_cv.job_title.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if tailored_cv.job_title else "CV"
-        safe_company = tailored_cv.company_name.replace('–', '-').replace('—', '-').replace('"', '').replace("'", '') if tailored_cv.company_name else "Preview"
-        # Remove all non-ASCII characters except alphanumeric and common separators
-        safe_job_title = ''.join(c for c in safe_job_title if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
-        safe_company = ''.join(c for c in safe_company if ord(c) < 128 or c.isalnum() or c in (' ', '_', '-'))
-        filename = f"CV_Preview_{safe_job_title}_{safe_company}.pdf"
+        filename = _build_cv_export_filename(
+            job_title=tailored_cv.job_title,
+            company_name=tailored_cv.company_name,
+            full_name=current_user.full_name
+        )
 
         # Return PDF as downloadable file
         return StreamingResponse(
@@ -3359,10 +3497,11 @@ async def export_application_pdf(
             template_name=cv_format
         )
 
-        # Create filename with job title and company name
-        job_title = application.job_title.replace(" ", "_")
-        company_name = application.company_name.replace(" ", "_") if application.company_name else "Application"
-        filename = f"CV_{job_title}_{company_name}.pdf"
+        filename = _build_cv_export_filename(
+            job_title=application.job_title,
+            company_name=application.company_name,
+            full_name=current_user.full_name
+        )
 
         # Return PDF as downloadable file
         return StreamingResponse(
