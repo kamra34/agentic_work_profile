@@ -7,6 +7,9 @@ using both OpenAI and Claude models.
 import os
 import json
 import time
+import re
+from collections import Counter
+from statistics import mean, pstdev
 from openai import OpenAI
 from anthropic import Anthropic
 from typing import Dict, Any, List
@@ -205,6 +208,527 @@ def _normalize_recommendations_payload(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+try:
+    HUMANITY_DEFAULT_THRESHOLD = int(os.getenv("HUMANITY_SCORE_BLOCK_THRESHOLD", "70"))
+except (TypeError, ValueError):
+    HUMANITY_DEFAULT_THRESHOLD = 70
+HUMANITY_DEFAULT_THRESHOLD = max(0, min(100, HUMANITY_DEFAULT_THRESHOLD))
+HUMANITY_LLM_MODEL = os.getenv("HUMANITY_LLM_MODEL", "gpt-4o")
+HUMANITY_LLM_REASONING = os.getenv("HUMANITY_LLM_REASONING_EFFORT", "low")
+HUMANITY_DEEP_MODE_ENABLED = os.getenv("HUMANITY_DEEP_MODE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+# Phrases that strongly correlate with synthetic/AI-heavy CV phrasing.
+AI_VOICE_PHRASES = [
+    "dynamic professional",
+    "results-driven",
+    "proven track record",
+    "highly motivated",
+    "fast-paced environment",
+    "passionate about",
+    "thought leader",
+    "synergy",
+    "cutting-edge",
+    "innovative solutions",
+    "leveraged",
+    "spearheaded initiatives",
+]
+
+GENERIC_FLUFF_PHRASES = [
+    "responsible for",
+    "worked on",
+    "involved in",
+    "various projects",
+    "excellent communication skills",
+    "team player",
+    "hardworking",
+]
+
+WEAK_BULLET_STARTERS = {
+    "responsible for",
+    "worked on",
+    "helped with",
+    "assisted with",
+    "involved in",
+}
+
+
+def _extract_numeric_tokens(text: str) -> set:
+    if not text:
+        return set()
+    tokens = re.findall(r"\b\d+(?:\.\d+)?%?\b", text)
+    return {t.strip() for t in tokens if t.strip()}
+
+
+def _evaluate_humanity_heuristics(
+    text: str,
+    source_text: str = "",
+    threshold: int = HUMANITY_DEFAULT_THRESHOLD
+) -> Dict[str, Any]:
+    """
+    Heuristic guard for human-written tone and grounded claims.
+    Returns a stable report for UI + export/refinement enforcement.
+    """
+    content = (text or "").strip()
+    if not content:
+        return {
+            "score": 0,
+            "risk_level": "high",
+            "requires_confirmation": True,
+            "passes_guard": False,
+            "threshold": threshold,
+            "critical_violations": 1,
+            "total_violations": 1,
+            "violations": [{
+                "type": "empty_content",
+                "severity": "critical",
+                "message": "Refined content is empty."
+            }],
+            "stats": {
+                "bullet_count": 0,
+                "bullets_with_metrics": 0,
+                "metric_ratio": 0.0
+            }
+        }
+
+    lower = content.lower()
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    bullet_lines = [ln for ln in lines if ln.startswith("- ")]
+    bullet_bodies = [ln[2:].strip().lower() for ln in bullet_lines]
+
+    violations = []
+    risk_points = 0
+
+    # 1) AI-voice and fluff phrase checks
+    ai_hits = []
+    for phrase in AI_VOICE_PHRASES:
+        count = len(re.findall(rf"\b{re.escape(phrase)}\b", lower))
+        if count > 0:
+            ai_hits.append({"phrase": phrase, "count": count})
+            risk_points += min(5 * count, 15)
+    if ai_hits:
+        violations.append({
+            "type": "ai_voice_phrases",
+            "severity": "high",
+            "message": "Detected phrases often associated with AI-generated or generic writing.",
+            "evidence": ai_hits
+        })
+
+    generic_hits = []
+    for phrase in GENERIC_FLUFF_PHRASES:
+        count = len(re.findall(rf"\b{re.escape(phrase)}\b", lower))
+        if count > 0:
+            generic_hits.append({"phrase": phrase, "count": count})
+            risk_points += min(3 * count, 12)
+    if generic_hits:
+        violations.append({
+            "type": "generic_filler",
+            "severity": "medium",
+            "message": "Detected generic phrasing that weakens credibility.",
+            "evidence": generic_hits
+        })
+
+    # 2) Weak bullet openings
+    weak_opening_hits = []
+    for body in bullet_bodies:
+        for starter in WEAK_BULLET_STARTERS:
+            if body.startswith(starter):
+                weak_opening_hits.append(starter)
+                risk_points += 3
+                break
+    if weak_opening_hits:
+        counts = Counter(weak_opening_hits)
+        violations.append({
+            "type": "weak_bullet_openings",
+            "severity": "medium",
+            "message": "Bullets start with weak/generic phrasing. Prefer concrete action verbs.",
+            "evidence": [{"starter": k, "count": v} for k, v in counts.items()]
+        })
+
+    # 3) Repetition checks
+    normalized_lines = [re.sub(r"\s+", " ", ln.lower()) for ln in lines]
+    repeated_lines = [ln for ln, cnt in Counter(normalized_lines).items() if cnt > 1 and len(ln) > 20]
+    if repeated_lines:
+        risk_points += min(4 * len(repeated_lines), 16)
+        violations.append({
+            "type": "repetition",
+            "severity": "medium",
+            "message": "Detected repeated or near-identical lines.",
+            "evidence": repeated_lines[:5]
+        })
+
+    # 4) Metrics specificity (advisory; not every section requires metrics)
+    bullets_with_metrics = sum(
+        1 for ln in bullet_lines
+        if re.search(r"\b\d+(?:\.\d+)?%?\b", ln) is not None
+    )
+    metric_ratio = (bullets_with_metrics / len(bullet_lines)) if bullet_lines else 0.0
+    if bullet_lines and len(bullet_lines) >= 4 and metric_ratio < 0.20:
+        risk_points += 6
+        violations.append({
+            "type": "low_specificity",
+            "severity": "low",
+            "message": "Low proportion of concrete metrics in bullet-heavy content.",
+            "evidence": {
+                "bullet_count": len(bullet_lines),
+                "bullets_with_metrics": bullets_with_metrics
+            }
+        })
+
+    # 5) Grounding check: newly introduced numeric claims
+    source_tokens = _extract_numeric_tokens(source_text)
+    refined_tokens = _extract_numeric_tokens(content)
+    introduced_tokens = sorted(list(refined_tokens - source_tokens))
+    if source_text and introduced_tokens:
+        risk_points += min(8 + (2 * len(introduced_tokens)), 20)
+        violations.append({
+            "type": "new_numeric_claims",
+            "severity": "critical",
+            "message": "Detected numeric claims not present in source content.",
+            "evidence": introduced_tokens[:20]
+        })
+
+    score = max(0, 100 - risk_points)
+    critical_violations = sum(1 for v in violations if v.get("severity") == "critical")
+    requires_confirmation = score < threshold or critical_violations > 0
+
+    if score >= 85 and critical_violations == 0:
+        risk_level = "low"
+    elif score >= threshold and critical_violations == 0:
+        risk_level = "medium"
+    else:
+        risk_level = "high"
+
+    return {
+        "score": score,
+        "risk_level": risk_level,
+        "requires_confirmation": requires_confirmation,
+        "passes_guard": not requires_confirmation,
+        "threshold": threshold,
+        "critical_violations": critical_violations,
+        "total_violations": len(violations),
+        "violations": violations,
+        "stats": {
+            "bullet_count": len(bullet_lines),
+            "bullets_with_metrics": bullets_with_metrics,
+            "metric_ratio": round(metric_ratio, 3)
+        }
+    }
+
+
+def _tokenize_words(text: str) -> List[str]:
+    if not text:
+        return []
+    return re.findall(r"[A-Za-z][A-Za-z0-9\-']*", text.lower())
+
+
+def _evaluate_stylometric_signals(text: str) -> Dict[str, Any]:
+    """
+    Lightweight stylometric checks to supplement phrase heuristics.
+    These are not detector-equivalent but help catch overly uniform synthetic style.
+    """
+    content = (text or "").strip()
+    if not content:
+        return {
+            "score": 0,
+            "violations": [{
+                "type": "empty_content",
+                "severity": "critical",
+                "message": "Content is empty."
+            }],
+            "stats": {
+                "sentence_count": 0,
+                "avg_sentence_len": 0,
+                "sentence_len_std": 0,
+                "lexical_diversity": 0
+            }
+        }
+
+    # Sentence parsing
+    sentence_parts = re.split(r"(?<=[.!?])\s+|\n+", content)
+    sentences = [s.strip() for s in sentence_parts if s and len(s.strip()) > 0]
+    words = _tokenize_words(content)
+
+    sentence_word_counts = []
+    sentence_openers = []
+    for sentence in sentences:
+        sentence_words = _tokenize_words(sentence)
+        if sentence_words:
+            sentence_word_counts.append(len(sentence_words))
+            sentence_openers.append(sentence_words[0])
+
+    avg_len = round(mean(sentence_word_counts), 2) if sentence_word_counts else 0
+    std_len = round(pstdev(sentence_word_counts), 2) if len(sentence_word_counts) > 1 else 0
+    lexical_diversity = round((len(set(words)) / len(words)), 3) if words else 0
+
+    opener_counts = Counter(sentence_openers)
+    repeated_openers = {k: v for k, v in opener_counts.items() if v >= 3}
+
+    risk_points = 0
+    violations = []
+
+    if len(sentences) >= 4 and std_len < 4:
+        risk_points += 10
+        violations.append({
+            "type": "uniform_sentence_structure",
+            "severity": "medium",
+            "message": "Sentence lengths are unusually uniform.",
+            "evidence": {"sentence_len_std": std_len}
+        })
+
+    if len(words) >= 120 and lexical_diversity < 0.36:
+        risk_points += 10
+        violations.append({
+            "type": "low_lexical_diversity",
+            "severity": "medium",
+            "message": "Vocabulary diversity is low for the text length.",
+            "evidence": {"lexical_diversity": lexical_diversity}
+        })
+
+    if repeated_openers:
+        risk_points += min(8, len(repeated_openers) * 2)
+        violations.append({
+            "type": "repetitive_sentence_openers",
+            "severity": "low",
+            "message": "Many sentences begin with the same words.",
+            "evidence": repeated_openers
+        })
+
+    bullet_lines = [ln.strip() for ln in content.splitlines() if ln.strip().startswith("- ")]
+    if len(bullet_lines) >= 6:
+        normalized_bullets = [re.sub(r"\s+", " ", ln[2:].strip().lower()) for ln in bullet_lines]
+        dup_bullets = [b for b, cnt in Counter(normalized_bullets).items() if cnt > 1 and len(b) > 18]
+        if dup_bullets:
+            risk_points += min(10, len(dup_bullets) * 3)
+            violations.append({
+                "type": "repetitive_bullets",
+                "severity": "medium",
+                "message": "Bullets contain repeated templates or near duplicates.",
+                "evidence": dup_bullets[:5]
+            })
+
+    score = max(0, 100 - risk_points)
+    return {
+        "score": score,
+        "violations": violations,
+        "stats": {
+            "sentence_count": len(sentences),
+            "avg_sentence_len": avg_len,
+            "sentence_len_std": std_len,
+            "lexical_diversity": lexical_diversity
+        }
+    }
+
+
+def _evaluate_humanity_with_llm(
+    text: str,
+    source_text: str = "",
+    model: str = HUMANITY_LLM_MODEL,
+    reasoning_effort: str = HUMANITY_LLM_REASONING,
+    enabled: bool = HUMANITY_DEEP_MODE_ENABLED
+) -> Dict[str, Any]:
+    """
+    LLM critic layer for deep humanity review.
+    Returns normalized risk payload, or a non-fatal error object.
+    """
+    if not text.strip():
+        return {
+            "used": False,
+            "error": "No text to evaluate"
+        }
+
+    if not enabled:
+        return {
+            "used": False,
+            "error": "Deep mode disabled by configuration"
+        }
+
+    review_prompt = f"""You are a strict CV writing quality auditor.
+Assess whether the TARGET TEXT reads naturally human-written, specific, and grounded.
+
+Return ONLY valid JSON:
+{{
+  "ai_voice_risk": <integer 0-100, where 100 = very likely AI-sounding>,
+  "humanity_confidence": <integer 0-100>,
+  "grounding_risk": "low|medium|high",
+  "summary": "one short paragraph",
+  "issues": [
+    {{
+      "type": "short_machine_name",
+      "severity": "low|medium|high|critical",
+      "message": "clear issue description",
+      "evidence": "short quote or pattern description"
+    }}
+  ],
+  "recommended_actions": ["short actionable fix", "..."]
+}}
+
+Judgment rules:
+- Penalize generic buzzwords, vague claims, repetitive wording, and inflated marketing tone.
+- Penalize any numeric claims in TARGET TEXT not supported by SOURCE TEXT.
+- Reward concrete verbs, specific scope, and grounded claims.
+- Be conservative and strict.
+
+SOURCE TEXT (for grounding):
+{source_text or "(not provided)"}
+
+TARGET TEXT:
+{text}
+"""
+    result = call_openai_for_json(
+        system_prompt="You are a rigorous writing evaluator. Respond with JSON only.",
+        user_prompt=review_prompt,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        timeout=90
+    )
+
+    if not result.get("success"):
+        return {
+            "used": False,
+            "error": result.get("error", "LLM evaluation failed")
+        }
+
+    data = result.get("data", {}) or {}
+    try:
+        ai_voice_risk = max(0, min(100, int(data.get("ai_voice_risk", 50))))
+    except (TypeError, ValueError):
+        ai_voice_risk = 50
+    try:
+        humanity_confidence = max(0, min(100, int(data.get("humanity_confidence", 50))))
+    except (TypeError, ValueError):
+        humanity_confidence = 50
+
+    issues_raw = data.get("issues", [])
+    issues = []
+    if isinstance(issues_raw, list):
+        for issue in issues_raw[:12]:
+            if not isinstance(issue, dict):
+                continue
+            sev = str(issue.get("severity", "medium")).lower()
+            if sev not in {"low", "medium", "high", "critical"}:
+                sev = "medium"
+            issues.append({
+                "type": str(issue.get("type", "llm_issue")).strip() or "llm_issue",
+                "severity": sev,
+                "message": str(issue.get("message", "Potential AI-like writing pattern detected.")).strip(),
+                "evidence": str(issue.get("evidence", "")).strip()
+            })
+
+    return {
+        "used": True,
+        "model": result.get("actual_model", model),
+        "api": result.get("api_name", ""),
+        "ai_voice_risk": ai_voice_risk,
+        "score": max(0, 100 - ai_voice_risk),
+        "humanity_confidence": humanity_confidence,
+        "grounding_risk": str(data.get("grounding_risk", "medium")).lower(),
+        "summary": str(data.get("summary", "")).strip(),
+        "issues": issues,
+        "recommended_actions": _safe_list_of_strings(data.get("recommended_actions"), max_items=8, max_len=180),
+    }
+
+
+def evaluate_humanity_hybrid(
+    text: str,
+    source_text: str = "",
+    threshold: int = HUMANITY_DEFAULT_THRESHOLD,
+    mode: str = "quick",
+    llm_enabled: bool = HUMANITY_DEEP_MODE_ENABLED,
+    llm_model: str = HUMANITY_LLM_MODEL,
+    llm_reasoning_effort: str = HUMANITY_LLM_REASONING
+) -> Dict[str, Any]:
+    """
+    Hybrid humanity scoring:
+    - quick: heuristics + stylometric signals
+    - deep: quick + LLM critic layer (when available)
+    """
+    normalized_mode = (mode or "quick").strip().lower()
+    if normalized_mode not in {"quick", "deep"}:
+        normalized_mode = "quick"
+
+    heuristic = _evaluate_humanity_heuristics(text=text, source_text=source_text, threshold=threshold)
+    stylometric = _evaluate_stylometric_signals(text=text)
+
+    llm_review = {"used": False}
+    if normalized_mode == "deep":
+        llm_review = _evaluate_humanity_with_llm(
+            text=text,
+            source_text=source_text,
+            model=llm_model,
+            reasoning_effort=llm_reasoning_effort,
+            enabled=llm_enabled
+        )
+
+    heuristic_score = heuristic.get("score", 0)
+    stylometric_score = stylometric.get("score", 0)
+
+    if llm_review.get("used"):
+        llm_score = llm_review.get("score", 0)
+        final_score = round((heuristic_score * 0.45) + (stylometric_score * 0.20) + (llm_score * 0.35))
+    else:
+        llm_score = None
+        final_score = round((heuristic_score * 0.70) + (stylometric_score * 0.30))
+
+    violations = list(heuristic.get("violations", [])) + list(stylometric.get("violations", []))
+    if llm_review.get("used"):
+        for issue in llm_review.get("issues", []):
+            violations.append({
+                "type": issue.get("type", "llm_issue"),
+                "severity": issue.get("severity", "medium"),
+                "message": issue.get("message", "Potential AI-like writing issue"),
+                "evidence": issue.get("evidence", "")
+            })
+
+    critical_violations = sum(1 for v in violations if str(v.get("severity", "")).lower() == "critical")
+    requires_confirmation = final_score < threshold or critical_violations > 0
+
+    if final_score >= 85 and critical_violations == 0:
+        risk_level = "low"
+    elif final_score >= threshold and critical_violations == 0:
+        risk_level = "medium"
+    else:
+        risk_level = "high"
+
+    return {
+        "score": max(0, min(100, int(final_score))),
+        "risk_level": risk_level,
+        "requires_confirmation": requires_confirmation,
+        "passes_guard": not requires_confirmation,
+        "threshold": threshold,
+        "critical_violations": critical_violations,
+        "total_violations": len(violations),
+        "violations": violations[:30],
+        "mode": normalized_mode,
+        "components": {
+            "heuristic_score": heuristic_score,
+            "stylometric_score": stylometric_score,
+            "llm_score": llm_score
+        },
+        "llm_review": llm_review,
+        "stats": {
+            **heuristic.get("stats", {}),
+            "stylometric": stylometric.get("stats", {})
+        }
+    }
+
+
+def evaluate_humanity_text(
+    text: str,
+    source_text: str = "",
+    threshold: int = HUMANITY_DEFAULT_THRESHOLD
+) -> Dict[str, Any]:
+    """
+    Backward-compatible default humanity evaluator.
+    Defaults to quick hybrid mode.
+    """
+    return evaluate_humanity_hybrid(
+        text=text,
+        source_text=source_text,
+        threshold=threshold,
+        mode="quick"
+    )
 
 
 def _build_runtime(
@@ -1542,7 +2066,21 @@ def profile_nodes_to_text(nodes: List[Dict]) -> str:
     return "".join(text_parts)
 
 
-def refine_section_content_with_openai(section_content: str, full_cv_content: str, job_description: str, user_instructions: str = None, node_type: str = "section", node_title: str = "", reasoning_effort: str = None) -> Dict[str, Any]:
+def refine_section_content_with_openai(
+    section_content: str,
+    full_cv_content: str,
+    job_description: str,
+    user_instructions: str = None,
+    node_type: str = "section",
+    node_title: str = "",
+    reasoning_effort: str = None,
+    rewrite_mode: str = "minimal",
+    human_strict: bool = True,
+    target_pages: int = None,
+    humanity_llm_enabled: bool = HUMANITY_DEEP_MODE_ENABLED,
+    humanity_llm_model: str = HUMANITY_LLM_MODEL,
+    humanity_llm_reasoning_effort: str = HUMANITY_LLM_REASONING
+) -> Dict[str, Any]:
     """
     Refine a section or entry's content using OpenAI GPT-5.1.
 
@@ -1553,6 +2091,12 @@ def refine_section_content_with_openai(section_content: str, full_cv_content: st
         user_instructions: Optional user instructions for refinement
         node_type: Type of node being refined ("section" or "entry")
         node_title: Title of the section/entry being refined (for summary detection)
+        rewrite_mode: "minimal" (default) or "standard"
+        human_strict: apply stronger human-writing guard constraints
+        target_pages: optional final CV page target hint (1 or 2)
+        humanity_llm_enabled: whether LLM critic is enabled for humanity scoring
+        humanity_llm_model: model used for LLM critic
+        humanity_llm_reasoning_effort: reasoning effort for LLM critic
 
     Returns:
         Dict with refined_content, changes_summary, stats, and prompt_sent
@@ -1571,6 +2115,25 @@ def refine_section_content_with_openai(section_content: str, full_cv_content: st
     # Detect if this is a summary-type section
     summary_keywords = ['summary', 'profile', 'overview', 'objective', 'about', 'introduction', 'executive summary', 'professional summary', 'professional profile', 'career summary']
     is_summary = any(keyword in node_title.lower() for keyword in summary_keywords)
+
+    normalized_rewrite_mode = (rewrite_mode or "minimal").strip().lower()
+    if normalized_rewrite_mode not in {"minimal", "standard"}:
+        normalized_rewrite_mode = "minimal"
+
+    rewrite_mode_instruction = (
+        "Rewrite mode is MINIMAL (default): prefer tightening, merging, and reordering existing wording. "
+        "Only make substantive wording changes when clarity or job-fit meaningfully improves."
+        if normalized_rewrite_mode == "minimal"
+        else "Rewrite mode is STANDARD: you may do broader rephrasing while preserving factual grounding."
+    )
+
+    target_pages_instruction = ""
+    if target_pages in (1, 2):
+        target_pages_instruction = (
+            f"Final CV target length is {target_pages} page(s). "
+            f"Adjust compression/detail in this {refinement_target_lower} so the full CV can realistically fit {target_pages} page(s). "
+            "Do not pad with generic filler."
+        )
 
     # Build summary-specific instructions
     summary_instructions = ""
@@ -1653,6 +2216,16 @@ QUALITY RULES (apply to all formats):
 ═══════════════════════════════════════════════════════════════════════════
 """
 
+    human_strict_instruction = ""
+    if human_strict:
+        human_strict_instruction = """
+Human-writing guardrails (strict):
+- Do NOT use generic AI-style phrases such as: results-driven, dynamic professional, proven track record, fast-paced environment, cutting-edge, synergy.
+- Prefer concrete, factual language with specific action verbs.
+- Do NOT introduce new numeric claims/percentages unless they already exist in the target section.
+- Keep tone natural and direct. Avoid inflated marketing language.
+"""
+
     refinement_prompt = f"""I will paste:
 1) The full tailored CV content (all selected sections and their children)
 2) A job description
@@ -1661,7 +2234,8 @@ QUALITY RULES (apply to all formats):
 You are a senior hiring manager and CV editor.
 
 Your job:
-Apply VERY light-touch editing to the {refinement_target} ONLY to make it as strong a fit as possible for THIS specific role, while strictly respecting the constraints below AND reducing length by merging/removing redundancies.
+{rewrite_mode_instruction}
+Apply editing to the {refinement_target} ONLY to make it as strong a fit as possible for THIS specific role, while strictly respecting the constraints below AND reducing length by merging/removing redundancies.
 
 Important context rules:
 - The FULL CV content is provided for CONTEXT ONLY - to help you understand what information might be redundant or covered elsewhere in the CV.
@@ -1692,6 +2266,7 @@ Length & compression rules:
 - Merge bullets wherever two or more bullets express related ideas that can be combined without losing important information.
 - It is encouraged to drop or heavily compress bullets that are clearly low-relevance for this role or duplicative of stronger bullets already in this {refinement_target_lower} or elsewhere in the CV.
 - Aim for a noticeable reduction in total characters and bullet count in this {refinement_target_lower}, but do NOT remove unique, high-value content that clearly matches the job description or is important to my profile.
+{target_pages_instruction}
 
 ATS / job-fit optimization rules:
 - Prioritize and, if needed, slightly rephrase bullets so they align with the MUST-HAVE parts of the job description.
@@ -1699,6 +2274,7 @@ ATS / job-fit optimization rules:
 - Preserve tense consistency and a clean, readable Markdown format.
 
 {summary_instructions}
+{human_strict_instruction}
 
 {f"Additional user instructions: {user_instructions}" if user_instructions else ""}
 
@@ -1739,6 +2315,9 @@ Remember: Return ONLY the JSON object, no other text."""
     # Log the refinement operation
     logger.step(f"Refining {refinement_target_lower} with GPT-5.1", step_num=1)
     logger.info(f"Content length: {len(section_content)} chars | Type: {node_type}")
+    logger.info(f"Rewrite mode: {normalized_rewrite_mode} | Human strict: {human_strict}")
+    if target_pages in (1, 2):
+        logger.info(f"Target CV pages: {target_pages}")
     if reasoning_effort:
         logger.info(f"Reasoning effort: {reasoning_effort}")
 
@@ -1779,7 +2358,21 @@ Remember: Return ONLY the JSON object, no other text."""
         logger.success(f"Refinement complete: {chars_before} → {chars_after} chars ({chars_saved} saved)")
 
         if "reasoning_tokens" in result:
-            logger.info(f"🧠 Reasoning tokens: {result['reasoning_tokens']}")
+            logger.info(f"Reasoning tokens: {result['reasoning_tokens']}")
+
+        humanity = evaluate_humanity_hybrid(
+            text=data.get("refined_content", ""),
+            source_text=section_content if human_strict else "",
+            threshold=HUMANITY_DEFAULT_THRESHOLD,
+            mode="deep" if human_strict else "quick",
+            llm_enabled=humanity_llm_enabled,
+            llm_model=humanity_llm_model,
+            llm_reasoning_effort=humanity_llm_reasoning_effort
+        )
+        humanity["mode"] = "strict" if human_strict else "advisory"
+        humanity["rewrite_mode"] = normalized_rewrite_mode
+        if target_pages in (1, 2):
+            humanity["target_pages"] = target_pages
 
         return {
             "success": True,
@@ -1788,7 +2381,8 @@ Remember: Return ONLY the JSON object, no other text."""
             "changes_summary": data.get("changes_summary", ""),
             "stats": stats,
             "prompt_sent": refinement_prompt,
-            "reasoning_tokens": result.get("reasoning_tokens")
+            "reasoning_tokens": result.get("reasoning_tokens"),
+            "humanity": humanity
         }
 
     except Exception as e:

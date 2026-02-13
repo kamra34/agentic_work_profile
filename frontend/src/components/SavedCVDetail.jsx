@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import ContactInfoSection from './ContactInfoSection';
 import PDFTemplateSelector from './PDFTemplateSelector';
 import './SavedCVDetail.css';
@@ -60,6 +60,9 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refinementResult, setRefinementResult] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState('low'); // none, low, medium, high (default: low)
+  const [rewriteMode, setRewriteMode] = useState('minimal'); // minimal | standard
+  const [humanStrictMode, setHumanStrictMode] = useState(true);
+  const [targetPages, setTargetPages] = useState('auto'); // auto | 1 | 2
   const [userInstructionTemplates, setUserInstructionTemplates] = useState([]);
   const [newInstructionTemplateLabel, setNewInstructionTemplateLabel] = useState('');
   const [newInstructionTemplate, setNewInstructionTemplate] = useState('');
@@ -74,8 +77,37 @@ function SavedCVDetail({ cvId, onBack }) {
   const [autoRefineProgress, setAutoRefineProgress] = useState({ current: 0, total: 0, currentSection: '' });
   const [autoRefineLog, setAutoRefineLog] = useState([]);
   const [autoRefineReasoningEffort, setAutoRefineReasoningEffort] = useState('low'); // none, low, medium, high (default: low for auto-refine)
+  const [autoRefineRewriteMode, setAutoRefineRewriteMode] = useState('minimal');
+  const [autoRefineHumanStrict, setAutoRefineHumanStrict] = useState(true);
+  const [autoRefineTargetPages, setAutoRefineTargetPages] = useState('auto');
   const [showAutoRefineModal, setShowAutoRefineModal] = useState(false); // Modal for auto-refine settings
   const [autoRefineInstructions, setAutoRefineInstructions] = useState(''); // Optional instructions for auto-refine
+  const [humanityReport, setHumanityReport] = useState(null);
+  const [checkingHumanity, setCheckingHumanity] = useState(false);
+  const [showHumanityDetails, setShowHumanityDetails] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState({
+    mode: 'idle', // idle | running | success | error
+    title: '',
+    steps: [],
+    error: ''
+  });
+
+  const resetUpdateStatus = () => {
+    setUpdateStatus({
+      mode: 'idle',
+      title: '',
+      steps: [],
+      error: ''
+    });
+  };
+
+  useEffect(() => {
+    if (updateStatus.mode !== 'success') return;
+    const timer = setTimeout(() => {
+      resetUpdateStatus();
+    }, 2800);
+    return () => clearTimeout(timer);
+  }, [updateStatus.mode]);
 
   // Live Preview PDF Customization State
   const [livePreviewTemplate, setLivePreviewTemplate] = useState('ats_optimized');
@@ -87,6 +119,7 @@ function SavedCVDetail({ cvId, onBack }) {
   const [livePreviewMetadata, setLivePreviewMetadata] = useState(null);
   const [loadingPreviewMetadata, setLoadingPreviewMetadata] = useState(false);
   const [previewMetadataTimer, setPreviewMetadataTimer] = useState(null);
+  const skipAutoHumanityCheckRef = useRef(true);
 
   const baseInstructionTemplates = [
     {
@@ -171,6 +204,23 @@ function SavedCVDetail({ cvId, onBack }) {
     fetchUserInstructionTemplates();
   }, []);
 
+  useEffect(() => {
+    if (!cvData?.content_snapshot?.nodes) return;
+    if (skipAutoHumanityCheckRef.current) {
+      skipAutoHumanityCheckRef.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      const snapshot = buildCurrentSnapshot();
+      if (snapshot) {
+        runHumanityCheck(snapshot);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [nodeSelections]);
+
   const fetchCVData = async () => {
     setLoading(true);
     setError(null);
@@ -189,12 +239,17 @@ function SavedCVDetail({ cvId, onBack }) {
 
       const data = await response.json();
       setCvData(data);
+      setHumanityReport(data.humanity || null);
 
       // Initialize node selections from snapshot
       initializeNodeSelections(data.content_snapshot);
 
       // Start with all nodes collapsed by default
       setExpandedNodes(new Set());
+
+      if (!data.humanity) {
+        await runHumanityCheck(data.content_snapshot);
+      }
     } catch (err) {
       console.error('Error fetching CV:', err);
       setError(err.message);
@@ -205,6 +260,7 @@ function SavedCVDetail({ cvId, onBack }) {
 
   const initializeNodeSelections = (snapshot) => {
     if (!snapshot || !snapshot.nodes) return;
+    skipAutoHumanityCheckRef.current = true;
 
     const selections = {};
 
@@ -813,7 +869,10 @@ function SavedCVDetail({ cvId, onBack }) {
           node_id: refinementModal.sectionId,
           node_type: refinementModal.nodeType,
           user_instructions: userInstructions || null,
-          reasoning_effort: reasoningEffort  // Send "none", "low", "medium", or "high" directly
+          reasoning_effort: reasoningEffort,  // Send "none", "low", "medium", or "high" directly
+          rewrite_mode: rewriteMode,
+          human_strict: humanStrictMode,
+          target_pages: targetPages === 'auto' ? null : Number(targetPages)
         })
       });
 
@@ -1027,6 +1086,15 @@ function SavedCVDetail({ cvId, onBack }) {
       return;
     }
 
+    if (refinementResult?.humanity?.requires_confirmation) {
+      const proceed = window.confirm(
+        `Humanity Guard Warning (score: ${refinementResult.humanity.score}).\n\n` +
+        `This refinement may sound AI-generated or include risky phrasing.\n` +
+        `Do you still want to include it?`
+      );
+      if (!proceed) return;
+    }
+
     try {
       // Convert markdown to node structure with AI-refined markers
       const refinedNodes = convertMarkdownToNodes(
@@ -1157,6 +1225,7 @@ function SavedCVDetail({ cvId, onBack }) {
 
       // Trigger autosave with the new selections to persist them
       triggerAutoSave(newSelections, true);
+      await runHumanityCheck(content_snapshot);
 
       // Expand the parent node to show refined children
       setExpandedNodes(prev => {
@@ -1290,7 +1359,10 @@ function SavedCVDetail({ cvId, onBack }) {
               node_id: section.id,
               node_type: 'section',
               user_instructions: autoRefineInstructions || null,
-              reasoning_effort: autoRefineReasoningEffort  // Use auto-refine reasoning effort
+              reasoning_effort: autoRefineReasoningEffort,  // Use auto-refine reasoning effort
+              rewrite_mode: autoRefineRewriteMode,
+              human_strict: autoRefineHumanStrict,
+              target_pages: autoRefineTargetPages === 'auto' ? null : Number(autoRefineTargetPages)
             })
           });
 
@@ -1299,6 +1371,16 @@ function SavedCVDetail({ cvId, onBack }) {
           }
 
           const refinementData = await response.json();
+
+          if (autoRefineHumanStrict && refinementData?.humanity?.requires_confirmation) {
+            log.push({
+              status: 'error',
+              message: `✗ ${sectionTitle}: skipped by Humanity Guard (score ${refinementData.humanity.score})`
+            });
+            errorCount++;
+            setAutoRefineLog([...log]);
+            continue;
+          }
 
           // Step 2: Auto-include refined content (mimic handleIncludeRefinedContent)
           if (refinementData?.refined_content) {
@@ -1373,6 +1455,10 @@ function SavedCVDetail({ cvId, onBack }) {
       // After all sections, apply the final accumulated selections
       setNodeSelections(accumulatedSelections);
       triggerAutoSave(accumulatedSelections, true);
+      await runHumanityCheck({
+        ...(cvData?.content_snapshot || {}),
+        nodes: updateNodesWithSelections(cvData?.content_snapshot?.nodes || [], accumulatedSelections)
+      });
 
       // Final summary
       log.push({
@@ -1823,15 +1909,129 @@ function SavedCVDetail({ cvId, onBack }) {
     }));
   };
 
-  const recalculateScores = async () => {
+  const buildCurrentSnapshot = () => {
+    if (!cvData?.content_snapshot) return null;
+    return {
+      ...cvData.content_snapshot,
+      nodes: updateNodesWithSelections(cvData.content_snapshot.nodes || [], nodeSelections)
+    };
+  };
+
+  const startUpdateStatus = (title, steps) => {
+    setUpdateStatus({
+      mode: 'running',
+      title,
+      steps,
+      error: ''
+    });
+  };
+
+  const setUpdateStepStatus = (stepId, status, detail = null) => {
+    setUpdateStatus(prev => ({
+      ...prev,
+      steps: prev.steps.map(step => (
+        step.id === stepId
+          ? {
+              ...step,
+              status,
+              detail: detail !== null ? detail : step.detail
+            }
+          : step
+      ))
+    }));
+  };
+
+  const completeUpdateStatus = (success, errorMessage = '') => {
+    setUpdateStatus(prev => ({
+      ...prev,
+      mode: success ? 'success' : 'error',
+      error: errorMessage
+    }));
+  };
+
+  const waitForAutoSaveIfNeeded = async () => {
+    if (autoSaveStatus !== 'saving') return;
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  };
+
+  const runHumanityCheck = async (snapshotOverride = null, mode = 'quick') => {
+    if (!cvId) return null;
+    setCheckingHumanity(true);
+    try {
+      const token = localStorage.getItem('token');
+      const payload = snapshotOverride ? { content_snapshot: snapshotOverride, mode } : { mode };
+      const response = await fetch(`${API_URL}/api/tailor/${cvId}/humanity-check`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to run humanity check');
+      }
+
+      const data = await response.json();
+      setHumanityReport(data.humanity || null);
+      return data.humanity || null;
+    } catch (error) {
+      console.error('Humanity check failed:', error);
+      return null;
+    } finally {
+      setCheckingHumanity(false);
+    }
+  };
+
+  const buildScoreStatusDetail = (recalculation) => {
+    const openai = recalculation?.fit_scores?.openai;
+    const claude = recalculation?.fit_scores?.claude;
+    const openaiModel = normalizeModelId(openai, 'openai');
+    const claudeModel = normalizeModelId(claude, 'claude');
+    const openaiFit = openai?.scores?.fit_score ?? '-';
+    const openaiAts = openai?.scores?.ats_score ?? '-';
+    const claudeFit = claude?.scores?.fit_score ?? '-';
+    const claudeAts = claude?.scores?.ats_score ?? '-';
+    return `OpenAI (${openaiModel}) Fit ${openaiFit} / ATS ${openaiAts} • Claude (${claudeModel}) Fit ${claudeFit} / ATS ${claudeAts}`;
+  };
+
+  const recalculateScores = async (mode = 'all') => {
+    const includeHumanity = mode === 'all';
+    const actionLabel = includeHumanity ? 'Updating all AI scores' : 'Updating ATS + Profile Fit scores';
+
     setRecalculating(true);
+    startUpdateStatus(actionLabel, [
+      {
+        id: 'sync',
+        label: 'Sync selected content',
+        detail: 'Making sure latest node selections are saved.',
+        status: 'running'
+      },
+      {
+        id: 'scores',
+        label: 'ATS + Profile Fit',
+        detail: 'Running OpenAI and Claude scoring in parallel.',
+        status: 'pending'
+      },
+      ...(includeHumanity ? [{
+        id: 'humanity',
+        label: 'Humanity Guard',
+        detail: 'Running deep humanity evaluation.',
+        status: 'pending'
+      }] : []),
+      {
+        id: 'done',
+        label: 'Finalize',
+        detail: 'Preparing updated dashboard values.',
+        status: 'pending'
+      }
+    ]);
 
     try {
-      // Ensure latest autosave is complete before recalculating
-      if (autoSaveStatus === 'saving') {
-        // Wait for autosave to finish
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      await waitForAutoSaveIfNeeded();
+      setUpdateStepStatus('sync', 'done', 'Selections synced.');
+      setUpdateStepStatus('scores', 'running');
 
       const updatedSnapshot = {
         ...cvData.content_snapshot,
@@ -1846,7 +2046,8 @@ function SavedCVDetail({ cvId, onBack }) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          content_snapshot: updatedSnapshot
+          content_snapshot: updatedSnapshot,
+          include_humanity: includeHumanity
         })
       });
 
@@ -1856,7 +2057,6 @@ function SavedCVDetail({ cvId, onBack }) {
 
       const result = await response.json();
 
-      // Update CV data with recalculated scores (keep original scores intact)
       setCvData(prev => ({
         ...prev,
         recalculated_scores: [
@@ -1864,14 +2064,105 @@ function SavedCVDetail({ cvId, onBack }) {
           result.recalculation
         ]
       }));
+      setUpdateStepStatus('scores', 'done', buildScoreStatusDetail(result.recalculation));
 
-      // Keep prompt section collapsed by default
-      // User can expand it manually if needed
+      if (includeHumanity) {
+        setUpdateStepStatus('humanity', 'running');
+        if (result.humanity) {
+          setHumanityReport(result.humanity);
+          const llmModel = result.humanity?.llm_review?.model
+            ? ` • LLM ${result.humanity.llm_review.model}`
+            : '';
+          setUpdateStepStatus(
+            'humanity',
+            'done',
+            `Score ${result.humanity?.score ?? '-'} (${result.humanity?.risk_level || 'unknown'})${llmModel}`
+          );
+        } else {
+          const fallbackHumanity = await runHumanityCheck(updatedSnapshot, 'deep');
+          if (!fallbackHumanity) {
+            throw new Error('Humanity check failed after score update');
+          }
+          setUpdateStepStatus(
+            'humanity',
+            'done',
+            `Score ${fallbackHumanity.score ?? '-'} (${fallbackHumanity.risk_level || 'unknown'})`
+          );
+        }
+      }
+
+      setUpdateStepStatus('done', 'done', 'All requested updates completed.');
+      completeUpdateStatus(true);
     } catch (err) {
       console.error('Error recalculating scores:', err);
+      setUpdateStatus(prev => ({
+        ...prev,
+        steps: prev.steps.map(step => (
+          step.status === 'running'
+            ? { ...step, status: 'error', detail: err.message || 'Failed' }
+            : step
+        ))
+      }));
+      completeUpdateStatus(false, err.message || 'Update failed');
       alert('Failed to recalculate scores: ' + err.message);
     } finally {
       setRecalculating(false);
+    }
+  };
+
+  const refreshHumanityOnly = async () => {
+    startUpdateStatus('Updating Humanity Guard only', [
+      {
+        id: 'sync',
+        label: 'Sync selected content',
+        detail: 'Making sure latest node selections are saved.',
+        status: 'running'
+      },
+      {
+        id: 'humanity',
+        label: 'Humanity Guard',
+        detail: 'Running deep humanity evaluation.',
+        status: 'pending'
+      },
+      {
+        id: 'done',
+        label: 'Finalize',
+        detail: 'Refreshing humanity card.',
+        status: 'pending'
+      }
+    ]);
+
+    try {
+      await waitForAutoSaveIfNeeded();
+      setUpdateStepStatus('sync', 'done', 'Selections synced.');
+      setUpdateStepStatus('humanity', 'running');
+
+      const snapshot = buildCurrentSnapshot();
+      const humanity = await runHumanityCheck(snapshot, 'deep');
+      if (!humanity) {
+        throw new Error('Failed to update humanity guard');
+      }
+
+      const llmModel = humanity?.llm_review?.model ? ` • LLM ${humanity.llm_review.model}` : '';
+      setUpdateStepStatus(
+        'humanity',
+        'done',
+        `Score ${humanity.score ?? '-'} (${humanity.risk_level || 'unknown'})${llmModel}`
+      );
+      setUpdateStepStatus('done', 'done', 'Humanity guard updated.');
+      completeUpdateStatus(true);
+    } catch (err) {
+      console.error('Error updating humanity guard:', err);
+      setUpdateStatus(prev => ({
+        ...prev,
+        steps: prev.steps.map(step => (
+          step.status === 'running'
+            ? { ...step, status: 'error', detail: err.message || 'Failed' }
+            : step
+        ))
+      }));
+      completeUpdateStatus(false, err.message || 'Humanity update failed');
+      alert('Failed to update humanity guard: ' + err.message);
     }
   };
 
@@ -1925,6 +2216,7 @@ function SavedCVDetail({ cvId, onBack }) {
       };
       buildSelections(result.content_snapshot.nodes);
       setNodeSelections(restoredSelections);
+      await runHumanityCheck(result.content_snapshot);
 
       alert('✅ CV restored to original state successfully!');
     } catch (err) {
@@ -1941,11 +2233,45 @@ function SavedCVDetail({ cvId, onBack }) {
     setShowPreviewTemplateModal(true);
   };
 
+  const confirmHumanityOverride = (humanity) => {
+    if (!humanity?.requires_confirmation) return true;
+
+    const topViolations = (humanity.violations || [])
+      .slice(0, 3)
+      .map(v => `??? ${v.message}`)
+      .join('\n');
+    const llmSummary = humanity?.llm_review?.summary
+      ? `\nLLM critic: ${humanity.llm_review.summary}\n`
+      : '\n';
+
+    return window.confirm(
+      `Humanity Guard warning (score: ${humanity.score}/${humanity.threshold}).\n\n` +
+      `${topViolations || 'Content may sound AI-generated or include risky claims.'}${llmSummary}\n` +
+      `Do you want to export anyway?`
+    );
+  };
+
+  const getExportDecision = async () => {
+    const snapshot = buildCurrentSnapshot();
+    const humanity = await runHumanityCheck(snapshot, 'deep');
+    if (humanity?.requires_confirmation) {
+      const confirmed = confirmHumanityOverride(humanity);
+      if (!confirmed) {
+        return { allow: false, forceExport: false };
+      }
+      return { allow: true, forceExport: true };
+    }
+    return { allow: true, forceExport: false };
+  };
+
   // Generate PDF with selected template
   const previewPDF = async (templateName, customizations = {}) => {
     try {
       setPreviewingPDF(true);
       setShowPreviewTemplateModal(false); // Close modal
+
+      const exportDecision = await getExportDecision();
+      if (!exportDecision.allow) return;
 
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/tailor/${cvId}/preview-pdf`, {
@@ -1956,12 +2282,28 @@ function SavedCVDetail({ cvId, onBack }) {
         },
         body: JSON.stringify({
           cv_format: templateName,
-          customizations: customizations
+          customizations: customizations,
+          force_export: exportDecision.forceExport
         })
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate PDF preview');
+        let detail = 'Failed to generate PDF preview';
+        try {
+          const errorData = await response.json();
+          const guardDetail = errorData?.detail;
+          if (guardDetail?.humanity?.requires_confirmation) {
+            detail = 'Export blocked by Humanity Guard. Confirm override and try again.';
+          }
+          if (typeof guardDetail === 'string') {
+            detail = guardDetail;
+          } else {
+            detail = guardDetail?.message || detail;
+          }
+        } catch {
+          // keep fallback
+        }
+        throw new Error(detail);
       }
 
       const blob = await response.blob();
@@ -2131,6 +2473,9 @@ function SavedCVDetail({ cvId, onBack }) {
     }
 
     try {
+      const exportDecision = await getExportDecision();
+      if (!exportDecision.allow) return;
+
       const token = localStorage.getItem('token');
 
       // Call backend endpoint to generate and download PDF
@@ -2139,12 +2484,29 @@ function SavedCVDetail({ cvId, onBack }) {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          force_export: exportDecision.forceExport
+        })
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to export PDF');
+        let detail = 'Failed to export PDF';
+        try {
+          const error = await response.json();
+          const guardDetail = error?.detail;
+          if (guardDetail?.humanity?.requires_confirmation) {
+            detail = 'Export blocked by Humanity Guard. Confirm override and try again.';
+          }
+          if (typeof guardDetail === 'string') {
+            detail = guardDetail;
+          } else {
+            detail = guardDetail?.message || detail;
+          }
+        } catch {
+          // keep default detail
+        }
+        throw new Error(detail);
       }
 
       // Download the PDF file
@@ -3002,6 +3364,21 @@ function SavedCVDetail({ cvId, onBack }) {
   const recalcClaudeModelLabel = getModelLabel(latestRecalculation?.fit_scores?.claude, 'claude');
   const scoreUpdateOpenAIModelLabel = latestRecalculation ? recalcOpenAIModelLabel : initialOpenAIModelLabel;
   const scoreUpdateClaudeModelLabel = latestRecalculation ? recalcClaudeModelLabel : initialClaudeModelLabel;
+  const humanityScore = humanityReport?.score;
+  const humanityRisk = humanityReport?.risk_level || 'unknown';
+  const humanityNeedsConfirm = Boolean(humanityReport?.requires_confirmation);
+  const humanityHasLLM = humanityReport?.components?.llm_score !== null && humanityReport?.components?.llm_score !== undefined;
+  const humanityTopIssues = Array.isArray(humanityReport?.violations) ? humanityReport.violations.slice(0, 5) : [];
+  const humanitySeverityCounts = (Array.isArray(humanityReport?.violations) ? humanityReport.violations : []).reduce((acc, issue) => {
+    const severity = String(issue?.severity || 'medium').toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(acc, severity)) {
+      acc[severity] += 1;
+    }
+    return acc;
+  }, { critical: 0, high: 0, medium: 0, low: 0 });
+  const humanityScoreFormula = humanityHasLLM
+    ? 'Score = 45% heuristic + 20% stylometric + 35% LLM critic'
+    : 'Score = 70% heuristic + 30% stylometric';
 
   return (
     <div className="saved-cv-detail">
@@ -3144,6 +3521,111 @@ function SavedCVDetail({ cvId, onBack }) {
             <div className="metric-subtitle">Updates as you edit • AI-weighted scoring</div>
           </div>
 
+          <div className="metric-card">
+            <div className="metric-header">
+              <div className="metric-title">Humanity Guard</div>
+              <span className="metric-icon">🧠</span>
+            </div>
+            <div className="metric-body">
+              <div className={`metric-score-badge ${
+                humanityScore >= 85 ? 'excellent' :
+                humanityScore >= 70 ? 'good' :
+                humanityScore >= 50 ? 'fair' : 'poor'
+              }`}>
+                {checkingHumanity ? '...' : (humanityScore !== undefined && humanityScore !== null ? `${humanityScore}%` : '-')}
+              </div>
+              <div className="metric-label">
+                {humanityRisk === 'low' ? 'Low risk' :
+                 humanityRisk === 'medium' ? 'Medium risk' :
+                 humanityRisk === 'high' ? 'High risk' : 'Awaiting check'}
+              </div>
+            </div>
+            <div className="metric-breakdown">
+              <div className="breakdown-item">
+                <span className="breakdown-label">Violations</span>
+                <span className="breakdown-value">{humanityReport?.total_violations ?? '-'}</span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">Critical</span>
+                <span className="breakdown-value">{humanityReport?.critical_violations ?? '-'}</span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">Mode</span>
+                <span className="breakdown-value">{humanityReport?.mode || '-'}</span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">Heuristic</span>
+                <span className="breakdown-value">{humanityReport?.components?.heuristic_score ?? '-'}</span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">Style</span>
+                <span className="breakdown-value">{humanityReport?.components?.stylometric_score ?? '-'}</span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">LLM</span>
+                <span className="breakdown-value">{humanityReport?.components?.llm_score ?? '-'}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="humanity-toggle-btn"
+              onClick={() => setShowHumanityDetails(prev => !prev)}
+            >
+              {showHumanityDetails ? 'Hide score details' : 'Show score details'}
+            </button>
+            {showHumanityDetails && (
+              <div className="humanity-details">
+                <div className="humanity-meta-row">
+                  <span className="humanity-meta-label">How calculated</span>
+                  <span className="humanity-meta-value">{humanityScoreFormula}</span>
+                </div>
+                <div className="humanity-meta-row">
+                  <span className="humanity-meta-label">Runtime</span>
+                  <span className="humanity-meta-value">
+                    Mode: {humanityReport?.mode || '-'} | Threshold: {humanityReport?.threshold ?? '-'} | Chars: {humanityReport?.character_count ?? '-'}
+                  </span>
+                </div>
+                <div className="humanity-meta-row">
+                  <span className="humanity-meta-label">Severities</span>
+                  <span className="humanity-meta-value">
+                    Critical: {humanitySeverityCounts.critical} | High: {humanitySeverityCounts.high} | Medium: {humanitySeverityCounts.medium} | Low: {humanitySeverityCounts.low}
+                  </span>
+                </div>
+                {humanityReport?.llm_review?.model && (
+                  <div className="humanity-meta-row">
+                    <span className="humanity-meta-label">LLM critic</span>
+                    <span className="humanity-meta-value">{humanityReport.llm_review.model}</span>
+                  </div>
+                )}
+                <div className="humanity-issues">
+                  <div className="humanity-issues-title">Top reasons</div>
+                  {humanityTopIssues.length > 0 ? (
+                    humanityTopIssues.map((issue, idx) => (
+                      <div className="humanity-issue-item" key={`humanity-issue-${idx}`}>
+                        <div className="humanity-issue-header">
+                          <span className={`humanity-issue-severity ${String(issue?.severity || 'medium').toLowerCase()}`}>
+                            {String(issue?.severity || 'medium').toUpperCase()}
+                          </span>
+                          {issue?.type && (
+                            <span className="humanity-issue-type">{String(issue.type)}</span>
+                          )}
+                        </div>
+                        <div className="humanity-issue-message">{issue.message}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="humanity-issue-item muted">No major flags detected.</div>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="metric-subtitle">
+              {humanityNeedsConfirm
+                ? 'Export requires confirmation due to high-risk wording.'
+                : 'Human-written tone check passed or low risk.'}
+            </div>
+          </div>
+
           {/* AI Profile Fit Scores */}
           <div className="metric-card">
             <div className="metric-header">
@@ -3248,14 +3730,13 @@ function SavedCVDetail({ cvId, onBack }) {
             </div>
             <div className="metric-body">
               <p className="reevaluate-description">
-                Re-run AI evaluation to get updated scores, or restore to the original version.
+                Re-run all scores, just ATS/Profile Fit, or Humanity Guard only.
               </p>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div className="reevaluate-actions-grid">
                 <button
-                  onClick={recalculateScores}
+                  onClick={() => recalculateScores('all')}
                   className="btn-reevaluate-full"
-                  disabled={recalculating || restoring}
-                  style={{ flex: 1 }}
+                  disabled={recalculating || checkingHumanity || restoring}
                 >
                   {recalculating ? (
                     <>
@@ -3269,16 +3750,38 @@ function SavedCVDetail({ cvId, onBack }) {
                         <polyline points="1 20 1 14 7 14"></polyline>
                         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                       </svg>
-                      Update Scores
+                      Update All Scores
                     </>
                   )}
                 </button>
+
+                <button
+                  onClick={() => recalculateScores('scores')}
+                  className="btn-reevaluate-secondary"
+                  disabled={recalculating || checkingHumanity || restoring}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="20" x2="12" y2="10"></line>
+                    <line x1="18" y1="20" x2="18" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="16"></line>
+                  </svg>
+                  Update ATS + Fit
+                </button>
+
+                <button
+                  onClick={refreshHumanityOnly}
+                  className="btn-reevaluate-secondary"
+                  disabled={recalculating || checkingHumanity || restoring}
+                >
+                  {checkingHumanity ? <span className="spinner-medium"></span> : <span>🧠</span>}
+                  Update Humanity Guard
+                </button>
+
                 {cvData.original_snapshot && (
                   <button
                     onClick={restoreOriginal}
                     className="btn-restore-original"
-                    disabled={restoring || recalculating}
-                    style={{ flex: 1 }}
+                    disabled={restoring || recalculating || checkingHumanity}
                   >
                     {restoring ? (
                       <>
@@ -3297,6 +3800,36 @@ function SavedCVDetail({ cvId, onBack }) {
                   </button>
                 )}
               </div>
+
+              {updateStatus.mode !== 'idle' && (
+                <div className={`update-status-card ${updateStatus.mode}`}>
+                  <div className="update-status-header">
+                    <span className="update-status-title">{updateStatus.title}</span>
+                    <span className={`update-status-pill ${updateStatus.mode}`}>
+                      {updateStatus.mode === 'running' ? 'Running' : updateStatus.mode === 'success' ? 'Completed' : 'Failed'}
+                    </span>
+                  </div>
+                  <div className="update-status-steps">
+                    {updateStatus.steps.map((step) => (
+                      <div key={step.id} className={`update-step ${step.status}`}>
+                        <span className="update-step-icon">
+                          {step.status === 'done' && '✓'}
+                          {step.status === 'running' && <span className="status-spinner"></span>}
+                          {step.status === 'error' && '!'}
+                          {step.status === 'pending' && '•'}
+                        </span>
+                        <div className="update-step-content">
+                          <div className="update-step-label">{step.label}</div>
+                          {step.detail && <div className="update-step-detail">{step.detail}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {updateStatus.mode === 'error' && updateStatus.error && (
+                    <div className="update-status-error">{updateStatus.error}</div>
+                  )}
+                </div>
+              )}
 
               {/* AI Input Section - Only show after recalculation */}
               {cvData.recalculated_scores && cvData.recalculated_scores.length > 0 && (
@@ -3322,7 +3855,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 </>
               )}
             </div>
-            <div className="metric-subtitle">⏱️ Takes 10-15 seconds • Uses {scoreUpdateOpenAIModelLabel} & {scoreUpdateClaudeModelLabel}</div>
+            <div className="metric-subtitle">⏱️ Score updates use {scoreUpdateOpenAIModelLabel} + {scoreUpdateClaudeModelLabel}. Humanity uses your AI Settings runtime.</div>
           </div>
         </div>
       </div>
@@ -3551,6 +4084,51 @@ function SavedCVDetail({ cvId, onBack }) {
                   <option value="medium">⭐ Medium - Balanced (Recommended)</option>
                   <option value="high">💎 High - Deep thinking</option>
                 </select>
+              </div>
+
+              <div className="reasoning-effort-selector">
+                <label htmlFor="rewrite-mode">
+                  <strong>Rewrite Mode</strong>
+                </label>
+                <div className="reasoning-help-text">
+                  Minimal keeps original voice and tightens wording; Standard allows broader rewrites.
+                </div>
+                <select
+                  id="rewrite-mode"
+                  value={rewriteMode}
+                  onChange={(e) => setRewriteMode(e.target.value)}
+                  disabled={refining}
+                  className="reasoning-effort-dropdown"
+                >
+                  <option value="minimal">Minimal (Recommended)</option>
+                  <option value="standard">Standard</option>
+                </select>
+              </div>
+
+              <div className="reasoning-effort-selector">
+                <label htmlFor="target-pages">
+                  <strong>Target CV Length</strong>
+                </label>
+                <select
+                  id="target-pages"
+                  value={targetPages}
+                  onChange={(e) => setTargetPages(e.target.value)}
+                  disabled={refining}
+                  className="reasoning-effort-dropdown"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="1">1 Page</option>
+                  <option value="2">2 Pages</option>
+                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={humanStrictMode}
+                    onChange={(e) => setHumanStrictMode(e.target.checked)}
+                    disabled={refining}
+                  />
+                  <span>Strict Human-Written Guard</span>
+                </label>
               </div>
 
               {/* Instructions Input */}
@@ -3834,6 +4412,23 @@ function SavedCVDetail({ cvId, onBack }) {
                     </div>
                   )}
 
+                  {refinementResult.humanity && (
+                    <div className="ai-model-info" style={{ borderColor: refinementResult.humanity.requires_confirmation ? '#f59e0b' : '#22c55e' }}>
+                      <div className="ai-info-details" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <span className="ai-detail">
+                          <strong>Humanity Score:</strong> {refinementResult.humanity.score}/{refinementResult.humanity.threshold}
+                        </span>
+                        <span className="ai-detail">
+                          <strong>Risk:</strong> {refinementResult.humanity.risk_level}
+                          {refinementResult.humanity.requires_confirmation ? ' (confirmation required to include)' : ''}
+                        </span>
+                        {refinementResult.humanity.violations?.slice(0, 2).map((v, idx) => (
+                          <span key={idx} className="ai-detail">• {v.message}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Refined Content Display with Individual Copy Buttons */}
                   <div className="refined-content-display">
                     <div className="refined-header">
@@ -4019,7 +4614,7 @@ function SavedCVDetail({ cvId, onBack }) {
 
             <div className="modal-body">
               <p className="modal-description">
-                Automatically refine all selected sections in your CV using GPT-5.1. Configure the AI reasoning mode and add optional instructions below.
+                Automatically refine all selected sections in your CV using GPT-5.1 with human-writing guardrails. Configure mode and targets below.
               </p>
 
               {/* Reasoning Effort Selector */}
@@ -4042,6 +4637,45 @@ function SavedCVDetail({ cvId, onBack }) {
                   <option value="medium">⭐ Medium - Balanced</option>
                   <option value="high">💎 High - Deep thinking (Slower)</option>
                 </select>
+              </div>
+
+              <div className="reasoning-effort-selector">
+                <label htmlFor="auto-refine-rewrite-mode">
+                  <strong>Rewrite Mode</strong>
+                </label>
+                <select
+                  id="auto-refine-rewrite-mode"
+                  value={autoRefineRewriteMode}
+                  onChange={(e) => setAutoRefineRewriteMode(e.target.value)}
+                  className="reasoning-effort-dropdown"
+                >
+                  <option value="minimal">Minimal (Recommended)</option>
+                  <option value="standard">Standard</option>
+                </select>
+              </div>
+
+              <div className="reasoning-effort-selector">
+                <label htmlFor="auto-refine-target-pages">
+                  <strong>Target CV Length</strong>
+                </label>
+                <select
+                  id="auto-refine-target-pages"
+                  value={autoRefineTargetPages}
+                  onChange={(e) => setAutoRefineTargetPages(e.target.value)}
+                  className="reasoning-effort-dropdown"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="1">1 Page</option>
+                  <option value="2">2 Pages</option>
+                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={autoRefineHumanStrict}
+                    onChange={(e) => setAutoRefineHumanStrict(e.target.checked)}
+                  />
+                  <span>Strict Human-Written Guard (skip risky refinements)</span>
+                </label>
               </div>
 
               {/* Additional Instructions */}

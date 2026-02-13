@@ -40,6 +40,9 @@ class User(Base):
     openai_model = Column(String, default='gpt-4o')
     openai_reasoning_effort = Column(String, default='medium')  # none, low, medium, high
     claude_model = Column(String, default='claude-sonnet-4-20250514')
+    humanity_deep_mode_enabled = Column(Boolean, default=True)
+    humanity_llm_model = Column(String, default='gpt-4o')
+    humanity_llm_reasoning_effort = Column(String, default='low')  # none, low, medium, high
     refinement_instruction_templates = Column(JSON, nullable=True, default=list)
 
     # Relationships
@@ -146,6 +149,7 @@ class TailoredCV(Base):
     # Recalculated scores history (after user edits CV content)
     # Array of recalculation objects with timestamp, scores, and prompts
     recalculated_scores = Column(JSON, nullable=True, default=[])
+    latest_humanity_report = Column(JSON, nullable=True)
 
     # Selected nodes - store BOTH id (for exact table reference) and global_id (for flexibility)
     selected_node_ids = Column(JSON, nullable=False)

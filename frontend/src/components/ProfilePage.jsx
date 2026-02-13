@@ -7,7 +7,10 @@ function ProfilePage() {
   const defaultAISettings = {
     openai_model: 'gpt-4o',
     openai_reasoning_effort: 'medium',
-    claude_model: 'claude-sonnet-4-20250514'
+    claude_model: 'claude-sonnet-4-20250514',
+    humanity_deep_mode_enabled: true,
+    humanity_llm_model: 'gpt-4o',
+    humanity_llm_reasoning_effort: 'low'
   };
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -578,65 +581,132 @@ function ProfilePage() {
         </div>
 
 
-        <div className="profile-card">
-          <div className="card-header">
-            <h3 className="card-title">
-              <span className="card-icon">AI</span>
-              AI Settings
-            </h3>
+        <div className="profile-card ai-settings-card">
+          <div className="card-header ai-settings-header">
+            <div className="ai-settings-title-wrap">
+              <h3 className="card-title ai-settings-title">
+                <span className="card-icon ai-card-icon">⚙</span>
+                AI Settings
+              </h3>
+              <p className="ai-settings-subtitle">
+                Configure the runtime models used by Tailor CV and Humanity Guard.
+              </p>
+            </div>
           </div>
-          <div className="card-content">
-            <div className="form-grid">
-              <div className="form-field">
-                <label className="field-label">OpenAI Model</label>
-                <select
-                  className="field-input field-select"
-                  value={aiSettings.openai_model}
-                  onChange={(e) => handleAISettingChange('openai_model', e.target.value)}
-                >
-                  <option value="gpt-4o">gpt-4o</option>
-                  <option value="gpt-5.1">gpt-5.1</option>
-                </select>
-              </div>
+          <div className="card-content ai-settings-content">
+            <div className="ai-setting-group">
+              <h4 className="ai-group-title">Tailor CV Runtime</h4>
+              <div className="ai-settings-grid">
+                <div className="ai-setting-field">
+                  <label className="ai-setting-label">OpenAI Model</label>
+                  <p className="ai-setting-help">Used for OpenAI job analysis, scoring, and node selection.</p>
+                  <select
+                    className="field-input field-select ai-setting-select"
+                    value={aiSettings.openai_model}
+                    onChange={(e) => handleAISettingChange('openai_model', e.target.value)}
+                  >
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-5.1">gpt-5.1</option>
+                  </select>
+                </div>
 
-              <div className="form-field">
-                <label className="field-label">OpenAI Reasoning Effort</label>
-                <select
-                  className="field-input field-select"
-                  value={aiSettings.openai_reasoning_effort}
-                  onChange={(e) => handleAISettingChange('openai_reasoning_effort', e.target.value)}
-                  disabled={aiSettings.openai_model !== 'gpt-5.1'}
-                >
-                  <option value="none">none</option>
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
-                </select>
-              </div>
+                <div className="ai-setting-field">
+                  <label className="ai-setting-label">OpenAI Reasoning Effort</label>
+                  <p className="ai-setting-help">Only applied when OpenAI model is set to gpt-5.1.</p>
+                  <select
+                    className="field-input field-select ai-setting-select"
+                    value={aiSettings.openai_reasoning_effort}
+                    onChange={(e) => handleAISettingChange('openai_reasoning_effort', e.target.value)}
+                    disabled={aiSettings.openai_model !== 'gpt-5.1'}
+                  >
+                    <option value="none">none</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </div>
 
-              <div className="form-field full-width">
-                <label className="field-label">Claude Model</label>
-                <select
-                  className="field-input field-select"
-                  value={aiSettings.claude_model}
-                  onChange={(e) => handleAISettingChange('claude_model', e.target.value)}
-                >
-                  <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
-                  {aiSettings.claude_model !== 'claude-sonnet-4-20250514' && (
-                    <option value={aiSettings.claude_model}>{aiSettings.claude_model}</option>
-                  )}
-                </select>
+                <div className="ai-setting-field ai-setting-field-wide">
+                  <label className="ai-setting-label">Claude Model</label>
+                  <p className="ai-setting-help">Used for parallel Claude analysis, scoring, and node recommendations.</p>
+                  <select
+                    className="field-input field-select ai-setting-select"
+                    value={aiSettings.claude_model}
+                    onChange={(e) => handleAISettingChange('claude_model', e.target.value)}
+                  >
+                    <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
+                    {aiSettings.claude_model !== 'claude-sonnet-4-20250514' && (
+                      <option value={aiSettings.claude_model}>{aiSettings.claude_model}</option>
+                    )}
+                  </select>
+                </div>
               </div>
+            </div>
 
-              <div className="form-field full-width">
-                <button
-                  className="btn-save"
-                  onClick={handleSaveAISettings}
-                  disabled={isSavingAISettings}
-                >
-                  {isSavingAISettings ? 'Saving AI Settings...' : 'Save AI Settings'}
-                </button>
+            <div className="ai-setting-group">
+              <h4 className="ai-group-title">Humanity Guard Runtime</h4>
+              <div className="ai-settings-grid">
+                <div className="ai-setting-field ai-setting-field-wide">
+                  <label className="ai-setting-label">Humanity Deep Mode</label>
+                  <p className="ai-setting-help">Enable/disable LLM critic layer in deep humanity checks and export guard.</p>
+                  <div className="ai-segmented">
+                    <button
+                      type="button"
+                      className={`ai-segment-btn ${aiSettings.humanity_deep_mode_enabled ? 'active' : ''}`}
+                      onClick={() => handleAISettingChange('humanity_deep_mode_enabled', true)}
+                    >
+                      Enabled
+                    </button>
+                    <button
+                      type="button"
+                      className={`ai-segment-btn ${!aiSettings.humanity_deep_mode_enabled ? 'active' : ''}`}
+                      onClick={() => handleAISettingChange('humanity_deep_mode_enabled', false)}
+                    >
+                      Disabled
+                    </button>
+                  </div>
+                </div>
+
+                <div className="ai-setting-field">
+                  <label className="ai-setting-label">Humanity LLM Model</label>
+                  <p className="ai-setting-help">Model used by Humanity Guard when deep mode is enabled.</p>
+                  <select
+                    className="field-input field-select ai-setting-select"
+                    value={aiSettings.humanity_llm_model}
+                    onChange={(e) => handleAISettingChange('humanity_llm_model', e.target.value)}
+                    disabled={!aiSettings.humanity_deep_mode_enabled}
+                  >
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-5.1">gpt-5.1</option>
+                  </select>
+                </div>
+
+                <div className="ai-setting-field">
+                  <label className="ai-setting-label">Humanity LLM Reasoning</label>
+                  <p className="ai-setting-help">Reasoning effort for the deep-mode LLM critic (gpt-5.1 only).</p>
+                  <select
+                    className="field-input field-select ai-setting-select"
+                    value={aiSettings.humanity_llm_reasoning_effort}
+                    onChange={(e) => handleAISettingChange('humanity_llm_reasoning_effort', e.target.value)}
+                    disabled={!aiSettings.humanity_deep_mode_enabled || aiSettings.humanity_llm_model !== 'gpt-5.1'}
+                  >
+                    <option value="none">none</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </div>
               </div>
+            </div>
+
+            <div className="ai-save-row">
+              <button
+                className="btn-save ai-settings-save"
+                onClick={handleSaveAISettings}
+                disabled={isSavingAISettings}
+              >
+                {isSavingAISettings ? 'Saving AI Settings...' : 'Save AI Settings'}
+              </button>
             </div>
           </div>
         </div>

@@ -94,6 +94,9 @@ class UserAISettings(BaseModel):
     openai_model: str = "gpt-4o"
     openai_reasoning_effort: str = "medium"
     claude_model: str = "claude-sonnet-4-20250514"
+    humanity_deep_mode_enabled: bool = True
+    humanity_llm_model: str = "gpt-4o"
+    humanity_llm_reasoning_effort: str = "low"
     refinement_instruction_templates: List[Dict[str, str]] = []
 
 
@@ -102,6 +105,9 @@ class UserAISettingsUpdate(BaseModel):
     openai_model: Optional[str] = None
     openai_reasoning_effort: Optional[str] = None
     claude_model: Optional[str] = None
+    humanity_deep_mode_enabled: Optional[bool] = None
+    humanity_llm_model: Optional[str] = None
+    humanity_llm_reasoning_effort: Optional[str] = None
     refinement_instruction_templates: Optional[List[Dict[str, str]]] = None
 
 

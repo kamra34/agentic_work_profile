@@ -3,7 +3,7 @@ FastAPI backend with universal hierarchical node structure.
 Generic endpoints handle all profile content through ProfileNode model.
 """
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Body
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,7 @@ from jose import JWTError, jwt
 from typing import List, Optional, Dict, Any
 import os
 import re
+import hashlib
 from dotenv import load_dotenv
 import uuid
 from pathlib import Path
@@ -210,6 +211,80 @@ def _build_cv_export_filename(job_title: Optional[str], company_name: Optional[s
     safe_full_name = _sanitize_filename_part(full_name, "User")
     return f"CV_{safe_job_title}_{safe_company}_{safe_full_name}.pdf"
 
+
+def _humanity_threshold() -> int:
+    raw = os.getenv("HUMANITY_SCORE_BLOCK_THRESHOLD", "70")
+    try:
+        return max(0, min(100, int(raw)))
+    except (TypeError, ValueError):
+        return 70
+
+
+def _evaluate_humanity_for_nodes(
+    nodes: Optional[list],
+    source_text: str = "",
+    mode: str = "quick",
+    ai_settings: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    markdown_text = extract_full_cv_content_as_markdown(nodes or [])
+    settings = ai_settings or {}
+    report = ai_tailor_service.evaluate_humanity_hybrid(
+        text=markdown_text,
+        source_text=source_text or "",
+        threshold=_humanity_threshold(),
+        mode=mode,
+        llm_enabled=bool(settings.get("humanity_deep_mode_enabled", DEFAULT_HUMANITY_DEEP_MODE_ENABLED)),
+        llm_model=str(settings.get("humanity_llm_model", DEFAULT_HUMANITY_LLM_MODEL)),
+        llm_reasoning_effort=str(settings.get("humanity_llm_reasoning_effort", DEFAULT_HUMANITY_LLM_REASONING))
+    )
+    report["character_count"] = len(markdown_text)
+    return report
+
+
+def _humanity_nodes_fingerprint(nodes: Optional[list]) -> str:
+    serialized = json.dumps(nodes or [], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _pack_humanity_cache(report: Dict[str, Any], nodes: Optional[list], mode: str) -> Dict[str, Any]:
+    return {
+        "report": report,
+        "nodes_fingerprint": _humanity_nodes_fingerprint(nodes),
+        "mode": mode,
+        "updated_at": datetime.utcnow().isoformat()
+    }
+
+
+def _get_cached_humanity_report(tailored_cv: TailoredCV, nodes: Optional[list]) -> Optional[Dict[str, Any]]:
+    cache = getattr(tailored_cv, "latest_humanity_report", None)
+    if not isinstance(cache, dict):
+        return None
+
+    # Backward compatibility if report was previously stored without wrapper metadata.
+    if "report" not in cache and "score" in cache and "risk_level" in cache:
+        return cache
+
+    cached_report = cache.get("report")
+    cached_fingerprint = cache.get("nodes_fingerprint")
+    if not isinstance(cached_report, dict) or not isinstance(cached_fingerprint, str):
+        return None
+
+    if cached_fingerprint != _humanity_nodes_fingerprint(nodes):
+        return None
+    return cached_report
+
+
+def _raise_if_humanity_blocked(report: Dict[str, Any], force_export: bool = False):
+    if report.get("requires_confirmation") and not force_export:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Humanity guard requires confirmation before export.",
+                "requires_confirmation": True,
+                "humanity": report
+            }
+        )
+
 # ============================================================================
 # DATABASE & SECURITY SETUP
 # ============================================================================
@@ -234,6 +309,13 @@ if DEFAULT_OPENAI_REASONING not in VALID_REASONING_EFFORT:
     DEFAULT_OPENAI_REASONING = "medium"
 
 DEFAULT_CLAUDE_MODEL = os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+DEFAULT_HUMANITY_DEEP_MODE_ENABLED = os.getenv("HUMANITY_DEEP_MODE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+DEFAULT_HUMANITY_LLM_MODEL = os.getenv("HUMANITY_LLM_MODEL", "gpt-4o")
+if DEFAULT_HUMANITY_LLM_MODEL not in VALID_OPENAI_MODELS:
+    DEFAULT_HUMANITY_LLM_MODEL = "gpt-4o"
+DEFAULT_HUMANITY_LLM_REASONING = os.getenv("HUMANITY_LLM_REASONING_EFFORT", "low").lower()
+if DEFAULT_HUMANITY_LLM_REASONING not in VALID_REASONING_EFFORT:
+    DEFAULT_HUMANITY_LLM_REASONING = "low"
 
 
 def _normalize_openai_model(model: Optional[str]) -> str:
@@ -255,6 +337,35 @@ def _normalize_claude_model(model: Optional[str]) -> str:
     if value and value.startswith("claude-"):
         return value
     return DEFAULT_CLAUDE_MODEL
+
+
+def _normalize_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _normalize_humanity_llm_model(model: Optional[str]) -> str:
+    value = (model or "").strip()
+    if value in VALID_OPENAI_MODELS:
+        return value
+    return DEFAULT_HUMANITY_LLM_MODEL
+
+
+def _normalize_humanity_reasoning_effort(effort: Optional[str]) -> str:
+    value = (effort or "").strip().lower()
+    if value in VALID_REASONING_EFFORT:
+        return value
+    return DEFAULT_HUMANITY_LLM_REASONING
 
 
 def _normalize_instruction_templates(templates: Optional[list]) -> List[Dict[str, str]]:
@@ -296,6 +407,14 @@ def get_user_ai_settings(user: User) -> Dict[str, Any]:
         "openai_model": _normalize_openai_model(getattr(user, "openai_model", None)),
         "openai_reasoning_effort": _normalize_reasoning_effort(getattr(user, "openai_reasoning_effort", None)),
         "claude_model": _normalize_claude_model(getattr(user, "claude_model", None)),
+        "humanity_deep_mode_enabled": _normalize_bool(
+            getattr(user, "humanity_deep_mode_enabled", None),
+            DEFAULT_HUMANITY_DEEP_MODE_ENABLED
+        ),
+        "humanity_llm_model": _normalize_humanity_llm_model(getattr(user, "humanity_llm_model", None)),
+        "humanity_llm_reasoning_effort": _normalize_humanity_reasoning_effort(
+            getattr(user, "humanity_llm_reasoning_effort", None)
+        ),
         "refinement_instruction_templates": _normalize_instruction_templates(
             getattr(user, "refinement_instruction_templates", None)
         ),
@@ -308,6 +427,9 @@ def _ensure_user_ai_settings_columns():
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_model VARCHAR(50)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_reasoning_effort VARCHAR(20)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS claude_model VARCHAR(80)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS humanity_deep_mode_enabled BOOLEAN"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS humanity_llm_model VARCHAR(50)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS humanity_llm_reasoning_effort VARCHAR(20)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS refinement_instruction_templates JSON"))
         conn.execute(
             text(
@@ -332,6 +454,27 @@ def _ensure_user_ai_settings_columns():
         )
         conn.execute(
             text(
+                "UPDATE users SET humanity_deep_mode_enabled = :enabled "
+                "WHERE humanity_deep_mode_enabled IS NULL"
+            ),
+            {"enabled": DEFAULT_HUMANITY_DEEP_MODE_ENABLED},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET humanity_llm_model = :model "
+                "WHERE humanity_llm_model IS NULL OR TRIM(humanity_llm_model) = ''"
+            ),
+            {"model": DEFAULT_HUMANITY_LLM_MODEL},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET humanity_llm_reasoning_effort = :effort "
+                "WHERE humanity_llm_reasoning_effort IS NULL OR TRIM(humanity_llm_reasoning_effort) = ''"
+            ),
+            {"effort": DEFAULT_HUMANITY_LLM_REASONING},
+        )
+        conn.execute(
+            text(
                 "UPDATE users SET refinement_instruction_templates = '[]' "
                 "WHERE refinement_instruction_templates IS NULL"
             )
@@ -339,6 +482,15 @@ def _ensure_user_ai_settings_columns():
 
 
 _ensure_user_ai_settings_columns()
+
+
+def _ensure_tailored_cv_runtime_columns():
+    """Best-effort schema bootstrap for Tailored CV runtime metadata columns."""
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE tailored_cvs ADD COLUMN IF NOT EXISTS latest_humanity_report JSON"))
+
+
+_ensure_tailored_cv_runtime_columns()
 
 # Security
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -517,6 +669,17 @@ def update_user_ai_settings_endpoint(
         current_user.openai_reasoning_effort = _normalize_reasoning_effort(updates.get("openai_reasoning_effort"))
     if "claude_model" in updates:
         current_user.claude_model = _normalize_claude_model(updates.get("claude_model"))
+    if "humanity_deep_mode_enabled" in updates:
+        current_user.humanity_deep_mode_enabled = _normalize_bool(
+            updates.get("humanity_deep_mode_enabled"),
+            DEFAULT_HUMANITY_DEEP_MODE_ENABLED
+        )
+    if "humanity_llm_model" in updates:
+        current_user.humanity_llm_model = _normalize_humanity_llm_model(updates.get("humanity_llm_model"))
+    if "humanity_llm_reasoning_effort" in updates:
+        current_user.humanity_llm_reasoning_effort = _normalize_humanity_reasoning_effort(
+            updates.get("humanity_llm_reasoning_effort")
+        )
     if "refinement_instruction_templates" in updates:
         current_user.refinement_instruction_templates = _normalize_instruction_templates(
             updates.get("refinement_instruction_templates")
@@ -1777,6 +1940,15 @@ async def get_tailored_cv(
     total_versions = len(matching_cvs)
     version_number = matching_cvs.index(tailored_cv) + 1 if tailored_cv in matching_cvs else 1
     is_latest = version_number == total_versions
+    nodes = (tailored_cv.content_snapshot or {}).get("nodes", [])
+    humanity_report = _get_cached_humanity_report(tailored_cv, nodes)
+    if not humanity_report:
+        ai_settings = get_user_ai_settings(current_user)
+        humanity_report = _evaluate_humanity_for_nodes(
+            nodes,
+            mode="quick",
+            ai_settings=ai_settings
+        )
 
     return {
         "id": tailored_cv.id,
@@ -1795,9 +1967,53 @@ async def get_tailored_cv(
         "total_versions": total_versions,
         "is_latest": is_latest,
         "job_analysis": tailored_cv.job_analysis,
+        "humanity": humanity_report,
         "status": tailored_cv.status,
         "created_at": tailored_cv.created_at.isoformat(),
         "updated_at": tailored_cv.updated_at.isoformat()
+    }
+
+
+@app.post("/api/tailor/{cv_id}/humanity-check")
+async def check_tailored_cv_humanity(
+    cv_id: int,
+    request_data: Optional[dict] = Body(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Run humanity guard checks on current (or provided) CV snapshot content."""
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    incoming_snapshot = (request_data or {}).get("content_snapshot")
+    snapshot = incoming_snapshot if isinstance(incoming_snapshot, dict) else (tailored_cv.content_snapshot or {})
+    nodes = snapshot.get("nodes", [])
+
+    requested_mode = str((request_data or {}).get("mode", "quick")).strip().lower()
+    if requested_mode not in {"quick", "deep"}:
+        requested_mode = "quick"
+    persist_result = bool((request_data or {}).get("persist", requested_mode == "deep"))
+
+    ai_settings = get_user_ai_settings(current_user)
+    humanity = _evaluate_humanity_for_nodes(nodes, mode=requested_mode, ai_settings=ai_settings)
+
+    if persist_result and isinstance(incoming_snapshot, dict):
+        tailored_cv.content_snapshot = incoming_snapshot
+        flag_modified(tailored_cv, "content_snapshot")
+
+    if persist_result:
+        tailored_cv.latest_humanity_report = _pack_humanity_cache(humanity, nodes, requested_mode)
+        flag_modified(tailored_cv, "latest_humanity_report")
+        db.commit()
+
+    return {
+        "success": True,
+        "humanity": humanity
     }
 
 
@@ -2067,6 +2283,7 @@ async def recalculate_ats_scores(
     content_snapshot = request_data.get('content_snapshot')
     if not content_snapshot:
         raise HTTPException(status_code=400, detail="content_snapshot required")
+    include_humanity = bool(request_data.get("include_humanity", True))
 
     print(f"[RecalculateScores] Received content_snapshot from frontend")
     print(f"  - Number of nodes: {len(content_snapshot.get('nodes', []))}")
@@ -2095,13 +2312,23 @@ async def recalculate_ats_scores(
         job_title=tailored_cv.job_title or "",
         company_name=tailored_cv.company_name or ""
     )
+    ai_settings = get_user_ai_settings(current_user)
+
+    humanity_report = None
+    if include_humanity:
+        humanity_report = ai_tailor_service.evaluate_humanity_hybrid(
+            text=formatted_cv,
+            threshold=_humanity_threshold(),
+            mode="deep",
+            llm_enabled=ai_settings["humanity_deep_mode_enabled"],
+            llm_model=ai_settings["humanity_llm_model"],
+            llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"]
+        )
 
     # Get job analysis (reuse existing one)
     job_analysis = tailored_cv.job_analysis
     if not job_analysis:
         raise HTTPException(status_code=400, detail="Job analysis not found for this CV")
-
-    ai_settings = get_user_ai_settings(current_user)
 
     def get_analysis_for_provider(provider: str):
         provider_data = job_analysis.get(provider) if isinstance(job_analysis, dict) else None
@@ -2175,13 +2402,22 @@ async def recalculate_ats_scores(
             "claude": {
                 "user_prompt": claude_result.get("prompt_sent", "")
             }
-        }
+        },
+        "humanity": humanity_report
     })
 
     tailored_cv.recalculated_scores = recalc_history
+    if include_humanity and humanity_report:
+        tailored_cv.latest_humanity_report = _pack_humanity_cache(
+            humanity_report,
+            content_snapshot.get("nodes", []),
+            "deep"
+        )
     # CRITICAL: Mark JSONB columns as modified so SQLAlchemy detects the change
     flag_modified(tailored_cv, "recalculated_scores")
     flag_modified(tailored_cv, "content_snapshot")
+    if include_humanity and humanity_report:
+        flag_modified(tailored_cv, "latest_humanity_report")
     tailored_cv.updated_at = datetime.utcnow()
 
     db.commit()
@@ -2202,6 +2438,7 @@ async def recalculate_ats_scores(
         "recalculation": recalc_history[-1],  # Return the latest recalculation
         "original_fit_scores": tailored_cv.fit_scores,  # Keep original scores visible
         "original_ats_scores": tailored_cv.ats_scores,
+        "humanity": humanity_report,
         "updated_at": tailored_cv.updated_at.isoformat()
     }
 
@@ -2373,6 +2610,15 @@ async def refine_section(
     requested_node_type = request_data.get('node_type')
     user_instructions = request_data.get('user_instructions', None)
     reasoning_effort = request_data.get('reasoning_effort', None)  # User's choice: none, low, medium, high
+    rewrite_mode = request_data.get('rewrite_mode', 'minimal')
+    human_strict = bool(request_data.get('human_strict', True))
+    target_pages_raw = request_data.get('target_pages', None)
+    try:
+        target_pages = int(target_pages_raw) if target_pages_raw is not None else None
+    except (TypeError, ValueError):
+        target_pages = None
+    if target_pages not in (1, 2):
+        target_pages = None
 
     # Find the node in content_snapshot
     content_snapshot = tailored_cv.content_snapshot
@@ -2430,6 +2676,7 @@ async def refine_section(
 
     # Get node title for summary detection
     node_title = target_node.get('title', '')
+    ai_settings = get_user_ai_settings(current_user)
 
     # Call AI service with full CV context, node type, title, and reasoning effort
     result = refine_section_content_with_openai(
@@ -2439,7 +2686,13 @@ async def refine_section(
         user_instructions=user_instructions,
         node_type=node_type,
         node_title=node_title,
-        reasoning_effort=reasoning_effort
+        reasoning_effort=reasoning_effort,
+        rewrite_mode=rewrite_mode,
+        human_strict=human_strict,
+        target_pages=target_pages,
+        humanity_llm_enabled=ai_settings["humanity_deep_mode_enabled"],
+        humanity_llm_model=ai_settings["humanity_llm_model"],
+        humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"]
     )
 
     # Add metadata to response for comparison and tracking
@@ -2464,7 +2717,10 @@ async def refine_section(
     result['ai_info'] = {
         'model': model_name,
         'reasoning_effort': actual_reasoning.title() if actual_reasoning else 'Medium',
-        'reasoning_tokens': result.get('reasoning_tokens', 0)
+        'reasoning_tokens': result.get('reasoning_tokens', 0),
+        'rewrite_mode': rewrite_mode,
+        'human_strict': human_strict,
+        'target_pages': target_pages
     }
 
     return result
@@ -3040,9 +3296,18 @@ async def preview_tailored_cv_pdf(
 
     # Get customizations from request (fontSize, spacing, colorIntensity)
     customizations = request_data.get('customizations', {})
+    force_export = bool(request_data.get('force_export', False))
 
     # Use the shared transformation function to ensure consistency
     sections = transform_nodes_to_sections(snapshot.get('nodes', []))
+
+    ai_settings = get_user_ai_settings(current_user)
+    humanity_report = _evaluate_humanity_for_nodes(
+        snapshot.get('nodes', []),
+        mode="deep",
+        ai_settings=ai_settings
+    )
+    _raise_if_humanity_blocked(humanity_report, force_export=force_export)
 
     # Apply section reordering if specified in customizations
     section_order = customizations.get('sectionOrder', [])
@@ -3328,6 +3593,7 @@ async def get_cv_preview_image(
 @app.post("/api/applications/{application_id}/export-pdf")
 async def export_application_pdf(
     application_id: int,
+    request_data: Optional[dict] = Body(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -3346,6 +3612,14 @@ async def export_application_pdf(
 
     # Get the finalized content snapshot and transform it for PDF service
     snapshot = application.final_content_snapshot
+    force_export = bool((request_data or {}).get("force_export", False))
+    ai_settings = get_user_ai_settings(current_user)
+    humanity_report = _evaluate_humanity_for_nodes(
+        (snapshot or {}).get("nodes", []),
+        mode="deep",
+        ai_settings=ai_settings
+    )
+    _raise_if_humanity_blocked(humanity_report, force_export=force_export)
 
     # Transform hierarchical nodes to flat sections for PDF service
     def transform_nodes_to_sections(nodes):
