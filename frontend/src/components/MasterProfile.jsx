@@ -21,6 +21,12 @@ function MasterProfile() {
   const [qualityError, setQualityError] = useState('');
   const [qualityExplorerExpanded, setQualityExplorerExpanded] = useState(false);
   const [qualityTab, setQualityTab] = useState('cross');
+  const [qualityFixModalOpen, setQualityFixModalOpen] = useState(false);
+  const [qualityFixLoading, setQualityFixLoading] = useState(false);
+  const [qualityFixApplying, setQualityFixApplying] = useState(false);
+  const [qualityFixError, setQualityFixError] = useState('');
+  const [qualityFixPreview, setQualityFixPreview] = useState(null);
+  const [qualityFixEditedText, setQualityFixEditedText] = useState('');
 
   useEffect(() => {
     fetchProfile();
@@ -73,6 +79,102 @@ function MasterProfile() {
       console.error('Error fetching profile:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const closeQualityFixModal = () => {
+    setQualityFixModalOpen(false);
+    setQualityFixLoading(false);
+    setQualityFixApplying(false);
+    setQualityFixError('');
+    setQualityFixPreview(null);
+    setQualityFixEditedText('');
+  };
+
+  const handlePreviewAiFix = async (issue) => {
+    if (!profile?.id || !issue?.node_id) return;
+
+    setQualityFixLoading(true);
+    setQualityFixError('');
+    setQualityFixPreview(null);
+    setQualityFixEditedText('');
+    setQualityFixModalOpen(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/profiles/${profile.id}/quality/ai-fix-preview`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          node_id: issue.node_id,
+          issue: {
+            type: issue.type,
+            severity: issue.severity,
+            message: issue.message,
+            where: issue.where,
+            how_to_fix: issue.how_to_fix
+          }
+        })
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.detail || result?.error || 'Failed to generate AI fix preview');
+      }
+
+      setQualityFixPreview(result);
+      setQualityFixEditedText(result?.revised_text || '');
+    } catch (error) {
+      console.error('Error generating AI fix preview:', error);
+      setQualityFixError(error.message || 'Failed to generate AI fix preview');
+    } finally {
+      setQualityFixLoading(false);
+    }
+  };
+
+  const handleApplyAiFix = async () => {
+    if (!profile?.id || !qualityFixPreview?.node_id) return;
+    const revisedText = (qualityFixEditedText || '').trim();
+    if (!revisedText) {
+      setQualityFixError('Revised text cannot be empty.');
+      return;
+    }
+
+    setQualityFixApplying(true);
+    setQualityFixError('');
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/profiles/${profile.id}/quality/ai-fix-apply`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          node_id: qualityFixPreview.node_id,
+          revised_text: revisedText,
+          issue: qualityFixPreview.issue,
+          runtime: qualityFixPreview.runtime
+        })
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.detail || result?.error || 'Failed to apply AI fix');
+      }
+
+      const updatedNodeId = qualityFixPreview.node_id;
+      closeQualityFixModal();
+      await fetchProfile(true);
+      handlePreviewNodeClick(updatedNodeId);
+    } catch (error) {
+      console.error('Error applying AI fix:', error);
+      setQualityFixError(error.message || 'Failed to apply AI fix');
+    } finally {
+      setQualityFixApplying(false);
     }
   };
 
@@ -876,13 +978,23 @@ function MasterProfile() {
                           <div className="quality-list-fix">Fix: {issue.how_to_fix[0]}</div>
                         )}
                       </div>
-                      <button
-                        className="quality-node-box"
-                        onClick={() => handlePreviewNodeClick(issue.node_id)}
-                        title={`Go to node ${issue.node_id}`}
-                      >
-                        {issue.node_id}
-                      </button>
+                      <div className="quality-list-actions">
+                        <button
+                          className="quality-ai-fix-btn"
+                          onClick={() => handlePreviewAiFix(issue)}
+                          disabled={qualityFixLoading || qualityFixApplying}
+                          title="Generate AI rewrite for this node"
+                        >
+                          AI Fix
+                        </button>
+                        <button
+                          className="quality-node-box"
+                          onClick={() => handlePreviewNodeClick(issue.node_id)}
+                          title={`Go to node ${issue.node_id}`}
+                        >
+                          {issue.node_id}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -971,6 +1083,7 @@ function MasterProfile() {
                   node={node}
                   selectedNode={selectedNode}
                   onSelect={setSelectedNode}
+                  onAiFix={handlePreviewAiFix}
                   onAdd={handleAddNode}
                   onEdit={handleEditNode}
                   onUpdate={handleUpdateNode}
@@ -1052,6 +1165,76 @@ function MasterProfile() {
         </div>
       </div>
 
+      {qualityFixModalOpen && (
+        <div className="modal-overlay" onClick={closeQualityFixModal}>
+          <div className="modal-content quality-fix-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>AI Fix Node</h2>
+              <button className="modal-close" onClick={closeQualityFixModal}>×</button>
+            </div>
+
+            <div className="quality-fix-body">
+              {qualityFixLoading && <div className="quality-fix-loading">Generating AI fix...</div>}
+              {qualityFixError && <div className="quality-error">{qualityFixError}</div>}
+
+              {!qualityFixLoading && qualityFixPreview && (
+                <>
+                  <div className="quality-fix-meta">
+                    <span>Node {qualityFixPreview.node_id}</span>
+                    <span>{qualityFixPreview.issue?.type || 'issue'}</span>
+                    <span>{qualityFixPreview.runtime?.actual_model || qualityFixPreview.runtime?.requested_model || 'AI'}</span>
+                  </div>
+                  <div className="quality-fix-path">{qualityFixPreview.node_path}</div>
+
+                  <div className="quality-fix-grid">
+                    <div className="quality-fix-panel">
+                      <div className="quality-fix-label">Original</div>
+                      <textarea value={qualityFixPreview.original_text || ''} readOnly />
+                    </div>
+                    <div className="quality-fix-panel">
+                      <div className="quality-fix-label">AI Suggestion (Editable)</div>
+                      <textarea
+                        value={qualityFixEditedText}
+                        onChange={(e) => setQualityFixEditedText(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {qualityFixPreview.change_summary && (
+                    <div className="quality-fix-summary">{qualityFixPreview.change_summary}</div>
+                  )}
+
+                  {qualityFixPreview.humanity && (
+                    <div className="quality-fix-humanity">
+                      Humanity {qualityFixPreview.humanity.score}% | {qualityFixPreview.humanity.risk_level} risk
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={closeQualityFixModal}
+                disabled={qualityFixApplying}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleApplyAiFix}
+                disabled={qualityFixLoading || qualityFixApplying || !qualityFixPreview}
+              >
+                {qualityFixApplying ? 'Applying...' : 'Apply AI Fix'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Modal */}
       {showAddModal && (
         <NodeModal
@@ -1085,12 +1268,15 @@ function MasterProfile() {
 }
 
 // Tree Node Component - Recursive
-function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDelete, onReorder, draggedNode, setDraggedNode, expandedNodes, setExpandedNodes, qualityByNode, level }) {
+function TreeNode({ node, selectedNode, onSelect, onAiFix, onAdd, onEdit, onUpdate, onDelete, onReorder, draggedNode, setDraggedNode, expandedNodes, setExpandedNodes, qualityByNode, level }) {
   const [dragOver, setDragOver] = useState(null); // 'before', 'after', or null
   const isSelected = selectedNode?.id === node.id;
   const isDragging = draggedNode?.id === node.id;
   const isExpanded = expandedNodes.has(node.id) || !node.children || node.children.length === 0;
   const nodeQuality = qualityByNode?.[String(node.id)] || qualityByNode?.[node.id] || null;
+  const nodePrimaryViolation = Array.isArray(nodeQuality?.violations) && nodeQuality.violations.length > 0
+    ? nodeQuality.violations[0]
+    : null;
   const qualityBadgeHint = (() => {
     if (!nodeQuality) return '';
     const score = nodeQuality.score ?? '-';
@@ -1229,6 +1415,29 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDel
         </div>
 
         <div className="node-actions">
+          {nodePrimaryViolation && (
+            <button
+              className="btn-icon btn-icon-ai-fix"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAiFix?.({
+                  ...nodePrimaryViolation,
+                  node_id: node.id,
+                  node_score: nodeQuality?.score,
+                  path: nodeQuality?.path || node.title || node.node_type || `node-${node.id}`
+                });
+              }}
+              title="AI Fix"
+              aria-label="AI Fix"
+            >
+              <svg className="ai-fix-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 14L4 20L10 17L17 10L14 7L7 14Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M13 8L16 5C16.8 4.2 18.2 4.2 19 5L19 5C19.8 5.8 19.8 7.2 19 8L16 11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                <path d="M5 5H5.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M9 3H9.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
           <button
             className="btn-icon"
             onClick={(e) => {
@@ -1284,6 +1493,7 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDel
               node={child}
               selectedNode={selectedNode}
               onSelect={onSelect}
+              onAiFix={onAiFix}
               onAdd={onAdd}
               onEdit={onEdit}
               onUpdate={onUpdate}

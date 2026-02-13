@@ -307,6 +307,21 @@ QUALITY_BUZZWORDS = (
     "highly motivated",
 )
 
+QUALITY_AI_TEMPLATE_PHRASES = (
+    "to drive",
+    "to deliver",
+    "to enhance",
+    "to optimize",
+    "to improve outcomes",
+    "cross-functional teams",
+    "fast-paced environment",
+    "end-to-end",
+    "strategic impact",
+    "transformative",
+    "industry-leading",
+    "best-in-class",
+)
+
 QUALITY_SPECIFICITY_HINTS = (
     "using", "with", "via", "through", "across", "for", "to", "by", "in",
     "python", "sql", "aws", "gcp", "azure", "spark", "airflow", "kubernetes",
@@ -319,6 +334,42 @@ QUALITY_METRIC_CONTEXT_HINTS = (
 )
 
 QUALITY_STOP_OPENERS = {"the", "a", "an", "and", "with", "for", "to", "in", "on", "at"}
+
+QUALITY_ACTION_VERBS = {
+    "built", "designed", "implemented", "developed", "shipped", "delivered",
+    "launched", "migrated", "automated", "deployed", "configured", "integrated",
+    "optimized", "debugged", "refactored", "analyzed", "modeled", "trained",
+    "validated", "orchestrated", "led", "managed", "owned", "defined", "improved",
+    "reduced", "increased", "scaled", "supported", "mentored", "collaborated",
+    "created", "established", "resolved", "instrumented"
+}
+
+QUALITY_VARIANT_FRIENDLY_PATH_HINTS = (
+    "summary",
+    "profile",
+    "overview",
+    "objective",
+    "about",
+    "headline"
+)
+
+QUALITY_BASE_VOCAB = {
+    "i", "we", "you", "they", "he", "she", "my", "our", "their", "the", "a", "an",
+    "and", "or", "but", "for", "to", "with", "without", "across", "through", "via",
+    "in", "on", "at", "from", "into", "during", "while", "before", "after", "over",
+    "under", "within", "between", "as", "is", "are", "was", "were", "be", "been",
+    "this", "that", "these", "those", "it", "its", "who", "which",
+    "team", "teams", "project", "projects", "product", "products", "platform", "platforms",
+    "service", "services", "system", "systems", "application", "applications", "feature", "features",
+    "data", "dataset", "datasets", "model", "models", "pipeline", "pipelines", "workflow", "workflows",
+    "analysis", "analytics", "report", "reports", "customer", "customers", "client", "clients",
+    "user", "users", "stakeholder", "stakeholders", "roadmap", "delivery", "quality",
+    "performance", "latency", "throughput", "availability", "uptime", "cost", "revenue",
+    "testing", "monitoring", "automation", "deployment", "integration", "migration",
+    "python", "sql", "aws", "gcp", "azure", "spark", "airflow", "kubernetes", "docker",
+    "terraform", "pytorch", "tensorflow", "pandas", "numpy", "scikit", "fastapi",
+    "api", "apis", "backend", "frontend", "ml", "llm", "nlp", "etl", "ci", "cd"
+}
 
 QUALITY_SEVERITY_WEIGHT = {
     "low": 6,
@@ -333,6 +384,72 @@ def _quality_truncate(text: str, max_len: int = 160) -> str:
     if len(value) <= max_len:
         return value
     return value[: max_len - 3].rstrip() + "..."
+
+
+def _quality_find_phrase_hits(lower_text: str, phrases: tuple, limit: int = 6) -> List[str]:
+    hits: List[str] = []
+    for phrase in phrases:
+        if phrase in lower_text:
+            hits.append(phrase)
+            if len(hits) >= limit:
+                break
+    return hits
+
+
+def _quality_path_is_variant_friendly(path: str) -> bool:
+    lower_path = (path or "").lower()
+    return any(hint in lower_path for hint in QUALITY_VARIANT_FRIENDLY_PATH_HINTS)
+
+
+def _quality_contains_action_verb(words: List[str]) -> bool:
+    return any(word in QUALITY_ACTION_VERBS for word in words[:6])
+
+
+def _quality_metric_has_unit_context(text: str) -> bool:
+    return bool(re.search(
+        r"\b\d+(?:\.\d+)?\s*(%|ms|s|sec|seconds?|minutes?|hours?|days?|weeks?|months?|years?|"
+        r"k|m|b|users?|requests?|transactions?|records?|pipelines?|models?|projects?|"
+        r"teams?|engineers?|clients?|customers?|usd|\$|€)\b",
+        text.lower()
+    ))
+
+
+def _quality_repeated_ngram_ratio(words: List[str], n: int = 3) -> float:
+    if len(words) < n * 2:
+        return 0.0
+    ngrams = [" ".join(words[idx: idx + n]) for idx in range(0, len(words) - n + 1)]
+    if not ngrams:
+        return 0.0
+    counts = Counter(ngrams)
+    repeated = sum(count for count in counts.values() if count > 1)
+    return repeated / len(ngrams)
+
+
+def _quality_is_suspicious_token(token: str) -> bool:
+    if not token:
+        return False
+    t = token.lower().strip()
+    if len(t) <= 3:
+        return False
+    if re.search(r"(.)\1\1", t):
+        return True
+    if re.search(r"[bcdfghjklmnpqrstvwxyz]{5,}", t):
+        return True
+    vowel_count = sum(1 for ch in t if ch in "aeiou")
+    if vowel_count == 0:
+        return True
+    vowel_ratio = vowel_count / len(t)
+    if len(t) >= 5 and (vowel_ratio < 0.2 or vowel_ratio > 0.88):
+        return True
+    return False
+
+
+def _quality_known_token_ratio(words: List[str]) -> float:
+    if not words:
+        return 0.0
+    known_tokens = QUALITY_BASE_VOCAB.union(QUALITY_ACTION_VERBS).union(set(QUALITY_SPECIFICITY_HINTS))
+    known_count = sum(1 for word in words if word in known_tokens)
+    return known_count / len(words)
 
 
 def _quality_normalize_key(text: str) -> str:
@@ -421,19 +538,43 @@ def _quality_add_violation(report: Dict[str, Any], violation: Dict[str, Any]):
 
 def _quality_finalize_node_report(report: Dict[str, Any]) -> Dict[str, Any]:
     violations = report.get("violations", [])
-    risk_points = 0
     critical_count = 0
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    violation_types: List[str] = []
     for violation in violations:
         severity = str(violation.get("severity", "medium")).lower()
         if severity not in severity_counts:
             severity = "medium"
         severity_counts[severity] += 1
-        risk_points += QUALITY_SEVERITY_WEIGHT.get(severity, QUALITY_SEVERITY_WEIGHT["medium"])
+        violation_types.append(str(violation.get("type", "")).strip().lower())
         if severity == "critical":
             critical_count += 1
 
-    score = max(0, 100 - risk_points)
+    # Diminishing penalty for many low-severity warnings to avoid over-punishing noisy text.
+    low_count = severity_counts["low"]
+    risk_points = (
+        severity_counts["critical"] * QUALITY_SEVERITY_WEIGHT["critical"]
+        + severity_counts["high"] * QUALITY_SEVERITY_WEIGHT["high"]
+        + severity_counts["medium"] * QUALITY_SEVERITY_WEIGHT["medium"]
+        + min(low_count, 2) * QUALITY_SEVERITY_WEIGHT["low"]
+        + max(0, low_count - 2) * 3
+    )
+
+    # Combined "AI voice" pattern deserves stronger penalty.
+    ai_voice_combo = {"weak_openers", "buzzword_density", "ai_template_pattern", "low_specificity"}
+    combo_hits = len(ai_voice_combo.intersection(set(violation_types)))
+    if combo_hits >= 3:
+        risk_points += 8
+    elif combo_hits == 2:
+        risk_points += 4
+
+    # Safety caps by severity class so score stays interpretable.
+    if severity_counts["critical"] == 0 and severity_counts["high"] == 0:
+        risk_points = min(risk_points, 45)
+    elif severity_counts["critical"] == 0:
+        risk_points = min(risk_points, 70)
+
+    score = max(0, 100 - int(round(risk_points)))
     if critical_count > 0 or score < 70:
         risk_level = "high"
     elif score < 85:
@@ -446,6 +587,10 @@ def _quality_finalize_node_report(report: Dict[str, Any]) -> Dict[str, Any]:
     report["critical_violations"] = critical_count
     report["total_violations"] = len(violations)
     report["severity_counts"] = severity_counts
+    report["score_components"] = {
+        "deduction_points": int(round(risk_points)),
+        "combo_penalty_applied": combo_hits >= 2
+    }
     return report
 
 
@@ -463,6 +608,7 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
         lower_text = text_value.lower()
         words = _quality_tokenize(text_value)
         sentences = _quality_sentence_split(text_value)
+        is_variant_friendly = _quality_path_is_variant_friendly(str(node.get("path") or ""))
         node_reports[node_id] = {
             "node_id": node_id,
             "node_type": node.get("node_type"),
@@ -475,7 +621,7 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
             if lower_text.startswith(opener):
                 _quality_add_violation(report, {
                     "type": "weak_openers",
-                    "severity": "medium",
+                    "severity": "medium" if len(words) >= 8 else "low",
                     "message": "Starts with a weak/generic opener.",
                     "where": [f"Line: {_quality_truncate(text_value)}"],
                     "how_to_fix": [
@@ -485,25 +631,48 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
                 })
                 break
 
-        buzz_hits = [phrase for phrase in QUALITY_BUZZWORDS if phrase in lower_text]
+        buzz_hits = _quality_find_phrase_hits(lower_text, QUALITY_BUZZWORDS, limit=8)
         if buzz_hits:
+            buzz_density = len(buzz_hits) / max(len(words), 1)
+            if len(buzz_hits) >= 4 or buzz_density >= 0.10:
+                buzz_severity = "high"
+            elif len(buzz_hits) >= 2:
+                buzz_severity = "medium"
+            else:
+                buzz_severity = "low"
             _quality_add_violation(report, {
                 "type": "buzzword_density",
-                "severity": "medium" if len(buzz_hits) >= 2 else "low",
+                "severity": buzz_severity,
                 "message": "Contains generic buzzword-heavy language.",
-                "where": [f"Line: {_quality_truncate(text_value)}"],
+                "where": [f"Phrases: {', '.join(buzz_hits[:4])}"],
                 "how_to_fix": [
                     "Replace buzzwords with concrete responsibilities and outcomes.",
                     "Keep wording factual and role-specific."
                 ]
             })
 
+        template_hits = _quality_find_phrase_hits(lower_text, QUALITY_AI_TEMPLATE_PHRASES, limit=8)
+        if len(template_hits) >= 2:
+            _quality_add_violation(report, {
+                "type": "ai_template_pattern",
+                "severity": "high" if len(template_hits) >= 4 else "medium",
+                "message": "Uses formulaic AI-style phrasing patterns.",
+                "where": [f"Patterns: {', '.join(template_hits[:4])}"],
+                "how_to_fix": [
+                    "Rewrite with direct, factual wording about what you actually did.",
+                    "Remove template phrases and keep one clear idea per sentence."
+                ]
+            })
+
         has_metric = bool(re.search(r"\b\d+(?:\.\d+)?%?\b", text_value))
         has_specificity_hint = any(f" {hint} " in f" {lower_text} " for hint in QUALITY_SPECIFICITY_HINTS)
-        if len(words) >= 8 and not has_metric and not has_specificity_hint:
+        has_action_verb = _quality_contains_action_verb(words)
+        has_proper_noun = bool(re.search(r"\b[A-Z][a-zA-Z0-9+/#-]{2,}\b", text_value))
+        specificity_signals = int(has_metric) + int(has_specificity_hint) + int(has_action_verb) + int(has_proper_noun)
+        if (len(words) >= 8 and specificity_signals < 2) or (len(words) >= 5 and specificity_signals == 0):
             _quality_add_violation(report, {
                 "type": "low_specificity",
-                "severity": "low",
+                "severity": "medium" if len(words) >= 18 else "low",
                 "message": "Statement is vague and lacks concrete scope/tool/context.",
                 "where": [f"Line: {_quality_truncate(text_value)}"],
                 "how_to_fix": [
@@ -521,7 +690,7 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
         if repeated_openers and len(sentences) >= 3:
             _quality_add_violation(report, {
                 "type": "repetitive_sentence_openers",
-                "severity": "low",
+                "severity": "medium" if len(repeated_openers) >= 2 else "low",
                 "message": "Multiple sentences start with similar words.",
                 "where": [f"Openers repeated: {', '.join(repeated_openers[:3])}"],
                 "how_to_fix": [
@@ -530,12 +699,42 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
                 ]
             })
 
+        suspicious_tokens = [token for token in words if _quality_is_suspicious_token(token)]
+        suspicious_ratio = (len(suspicious_tokens) / len(words)) if words else 0.0
+        known_ratio = _quality_known_token_ratio(words)
+        proper_noun_count = len(re.findall(r"\b[A-Z][a-zA-Z0-9+/#-]{2,}\b", text_value))
+        if len(words) >= 4:
+            if known_ratio < 0.15 and suspicious_ratio >= 0.34 and proper_noun_count == 0:
+                _quality_add_violation(report, {
+                    "type": "semantic_noise",
+                    "severity": "high",
+                    "message": "Text appears low-meaning or nonsensical.",
+                    "where": [f"Tokens: {', '.join(suspicious_tokens[:4])}"],
+                    "how_to_fix": [
+                        "Rewrite with concrete, meaningful wording describing real work.",
+                        "Use clear subject-action-context phrasing."
+                    ]
+                })
+            elif known_ratio < 0.20 and suspicious_ratio >= 0.26 and proper_noun_count == 0 and len(words) >= 6:
+                _quality_add_violation(report, {
+                    "type": "semantic_noise",
+                    "severity": "medium",
+                    "message": "Text has weak semantic clarity and looks noisy.",
+                    "where": [f"Tokens: {', '.join(suspicious_tokens[:4])}"],
+                    "how_to_fix": [
+                        "Replace unclear tokens with precise terms from your real experience.",
+                        "Use an action verb and specific context."
+                    ]
+                })
+
         long_sentences = [sentence for sentence in sentences if len(_quality_tokenize(sentence)) >= 28]
         comma_dense = [sentence for sentence in sentences if sentence.count(",") >= 3]
         if long_sentences or comma_dense:
+            longest_sentence_len = max((len(_quality_tokenize(sentence)) for sentence in long_sentences), default=0)
+            comma_peak = max((sentence.count(",") for sentence in comma_dense), default=0)
             _quality_add_violation(report, {
                 "type": "readability",
-                "severity": "medium",
+                "severity": "high" if longest_sentence_len >= 40 or comma_peak >= 5 else "medium",
                 "message": "Contains long multi-clause phrasing that reduces readability.",
                 "where": [_quality_truncate((long_sentences or comma_dense)[0])],
                 "how_to_fix": [
@@ -544,12 +743,25 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
                 ]
             })
 
+        ngram_ratio = _quality_repeated_ngram_ratio(words, n=3)
+        if ngram_ratio >= 0.24 and len(words) >= 16:
+            _quality_add_violation(report, {
+                "type": "repetitive_structure",
+                "severity": "medium" if ngram_ratio >= 0.35 else "low",
+                "message": "Phrase structure repeats within the same statement.",
+                "where": [f"Repeated phrase ratio: {round(ngram_ratio, 2)}"],
+                "how_to_fix": [
+                    "Reduce repeated phrase patterns.",
+                    "Rewrite with simpler sentence structure."
+                ]
+            })
+
         numeric_tokens = re.findall(r"\b\d+(?:\.\d+)?%?\b", text_value)
-        has_metric_context = any(hint in lower_text for hint in QUALITY_METRIC_CONTEXT_HINTS)
+        has_metric_context = any(hint in lower_text for hint in QUALITY_METRIC_CONTEXT_HINTS) or _quality_metric_has_unit_context(text_value)
         if numeric_tokens and not has_metric_context:
             _quality_add_violation(report, {
                 "type": "factual_hygiene",
-                "severity": "low",
+                "severity": "medium" if len(numeric_tokens) >= 2 else "low",
                 "message": "Numeric claim lacks nearby context or unit.",
                 "where": [f"Numeric values: {', '.join(numeric_tokens[:4])}"],
                 "how_to_fix": [
@@ -558,8 +770,26 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
                 ]
             })
 
+        if is_variant_friendly and report.get("violations"):
+            # Summary/profile variants are intentionally redundant in many workflows.
+            # Keep detection but soften one level for non-critical warnings.
+            for violation in report["violations"]:
+                severity = str(violation.get("severity", "low")).lower()
+                violation_type = str(violation.get("type", "")).strip().lower()
+                if severity == "medium" and violation_type not in {"semantic_noise"}:
+                    violation["severity"] = "low"
+
     global_issues = []
     text_nodes = [node for node in flat_nodes if (node.get("text") or "").strip()]
+    node_path_map = {
+        node.get("id"): str(node.get("path") or "")
+        for node in text_nodes
+        if node.get("id") is not None
+    }
+    variant_friendly_map = {
+        node_id: _quality_path_is_variant_friendly(path)
+        for node_id, path in node_path_map.items()
+    }
     normalized_groups: Dict[str, List[int]] = defaultdict(list)
     for node in text_nodes:
         node_id = node.get("id")
@@ -572,11 +802,18 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
     for normalized, node_ids in normalized_groups.items():
         if len(node_ids) < 2:
             continue
+        variant_friendly_all = all(variant_friendly_map.get(node_id, False) for node_id in node_ids)
         sample_text = _quality_truncate(normalized, max_len=130)
+        cluster_severity = "low" if variant_friendly_all and len(node_ids) <= 4 else ("high" if len(node_ids) >= 5 else "medium")
+        cluster_message = (
+            "Similar summary/profile variants detected (often intentional)."
+            if variant_friendly_all
+            else "Near-identical statements found in multiple nodes."
+        )
         global_issues.append({
             "type": "repetition_cluster",
-            "severity": "medium",
-            "message": "Near-identical statements found in multiple nodes.",
+            "severity": cluster_severity,
+            "message": cluster_message,
             "node_ids": node_ids,
             "sample": sample_text,
             "how_to_fix": [
@@ -584,6 +821,10 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
                 "Differentiate the remaining bullets by scope, method, or outcome."
             ]
         })
+        # Do not penalize likely intentional summary/profile variants at node level.
+        if variant_friendly_all and len(node_ids) <= 4:
+            continue
+
         for node_id in node_ids:
             report = node_reports.setdefault(node_id, {
                 "node_id": node_id,
@@ -593,7 +834,7 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
             })
             _quality_add_violation(report, {
                 "type": "repetitive_structure",
-                "severity": "medium",
+                "severity": "low" if variant_friendly_map.get(node_id, False) else "medium",
                 "message": "Very similar content appears in other nodes.",
                 "where": [f"Similar cluster: {sample_text}"],
                 "how_to_fix": [
@@ -631,11 +872,12 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
     for left_id, right_id, similarity in near_pairs[:30]:
         left_node = indexed_nodes.get(left_id, {})
         right_node = indexed_nodes.get(right_id, {})
+        pair_variant_friendly = variant_friendly_map.get(left_id, False) and variant_friendly_map.get(right_id, False)
         message = "Multiple bullets share highly similar structure across the profile."
         global_issues.append({
             "type": "near_duplicate_pair",
-            "severity": "medium",
-            "message": message,
+            "severity": "low" if pair_variant_friendly else "medium",
+            "message": "Similar summary variants detected." if pair_variant_friendly else message,
             "node_ids": [left_id, right_id],
             "sample": f"{_quality_truncate(left_node.get('text', ''), 75)} || {_quality_truncate(right_node.get('text', ''), 75)}",
             "similarity": round(similarity, 2),
@@ -644,6 +886,9 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
                 "Merge both bullets if they describe the same work."
             ]
         })
+        if pair_variant_friendly:
+            continue
+
         for current_id, other_node in ((left_id, right_node), (right_id, left_node)):
             report = node_reports.setdefault(current_id, {
                 "node_id": current_id,
@@ -678,9 +923,11 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
 
     repeated_openers = {token: ids for token, ids in opener_groups.items() if len(ids) >= 3}
     for opener, ids in repeated_openers.items():
+        variant_friendly_all = all(variant_friendly_map.get(node_id, False) for node_id in ids)
+        issue_severity = "low" if variant_friendly_all else ("medium" if len(ids) >= 6 else "low")
         global_issues.append({
             "type": "repetitive_sentence_openers",
-            "severity": "low",
+            "severity": issue_severity,
             "message": f"Many nodes start with '{opener}'.",
             "node_ids": ids[:10],
             "how_to_fix": [
@@ -688,6 +935,9 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
                 "Use mixed sentence patterns across bullets."
             ]
         })
+        if variant_friendly_all:
+            continue
+
         for node_id in ids:
             report = node_reports.setdefault(node_id, {
                 "node_id": node_id,
@@ -749,12 +999,15 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
             "aggregated_from_children": True
         }
 
-    if node_reports:
-        overall_score = round(sum(item.get("score", 0) for item in node_reports.values()) / len(node_reports))
+    scored_reports = [item for item in node_reports.values() if not item.get("aggregated_from_children")]
+    reports_for_overall = scored_reports or list(node_reports.values())
+
+    if reports_for_overall:
+        overall_score = round(sum(item.get("score", 0) for item in reports_for_overall) / len(reports_for_overall))
     else:
         overall_score = 100
 
-    critical_total = sum(item.get("critical_violations", 0) for item in node_reports.values())
+    critical_total = sum(item.get("critical_violations", 0) for item in reports_for_overall)
     if critical_total > 0 or overall_score < 70:
         overall_risk = "high"
     elif overall_score < 85:
@@ -763,7 +1016,7 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
         overall_risk = "low"
 
     severity_totals = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-    for report in node_reports.values():
+    for report in reports_for_overall:
         counts = report.get("severity_counts", {})
         for key in severity_totals:
             severity_totals[key] += int(counts.get(key, 0))
@@ -771,12 +1024,71 @@ def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]])
     return {
         "overall_score": int(overall_score),
         "overall_risk": overall_risk,
-        "total_nodes_checked": len(node_reports),
+        "total_nodes_checked": len(reports_for_overall),
         "severity_totals": severity_totals,
         "global_issues": global_issues[:20],
         "node_reports": {str(node_id): report for node_id, report in node_reports.items()},
         "updated_at": datetime.utcnow().isoformat()
     }
+
+
+def _serialize_profile_node_for_ai_context(node: ProfileNode) -> Dict[str, Any]:
+    """Serialize profile node tree for profile-pool AI-fix context prompts."""
+    children = sorted(list(node.children or []), key=lambda c: c.order or 0)
+    return {
+        "id": node.id,
+        "node_type": node.node_type,
+        "title": node.title,
+        "subtitle": node.subtitle,
+        "content": node.content,
+        "start_date": node.start_date,
+        "end_date": node.end_date,
+        "location": node.location,
+        "children": [_serialize_profile_node_for_ai_context(child) for child in children]
+    }
+
+
+def _extract_fixable_text_from_node(node: ProfileNode) -> tuple[str, str]:
+    """
+    Return tuple: (editable_field_name, editable_text).
+    We prioritize content. If content is empty, allow entry/item/custom title edits.
+    """
+    content_value = (node.content or "").strip()
+    if content_value:
+        return "content", content_value
+
+    title_value = (node.title or "").strip()
+    if (node.node_type or "").lower() in {"entry", "item", "custom"} and title_value:
+        return "title", title_value
+
+    return "", ""
+
+
+def _resolve_quality_issue_for_node(
+    quality_report: Dict[str, Any],
+    node_id: int,
+    request_issue: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
+    """Resolve a node-level issue from quality report, preferring requested issue type."""
+    node_reports = (quality_report or {}).get("node_reports") or {}
+    node_report = node_reports.get(str(node_id)) or node_reports.get(node_id) or {}
+    violations = node_report.get("violations") if isinstance(node_report, dict) else []
+    if not isinstance(violations, list) or not violations:
+        return None
+
+    requested_type = str((request_issue or {}).get("type", "")).strip().lower()
+    requested_message = str((request_issue or {}).get("message", "")).strip().lower()
+
+    if requested_type or requested_message:
+        for issue in violations:
+            issue_type = str(issue.get("type", "")).strip().lower()
+            issue_message = str(issue.get("message", "")).strip().lower()
+            if requested_type and issue_type == requested_type:
+                return issue
+            if requested_message and issue_message == requested_message:
+                return issue
+
+    return violations[0]
 
 # ============================================================================
 # DATABASE & SECURITY SETUP
@@ -1242,6 +1554,172 @@ def get_profile_pool_quality(
         "success": True,
         "profile_id": profile_id,
         "quality": quality
+    }
+
+
+@app.post("/profiles/{profile_id}/quality/ai-fix-preview")
+def preview_profile_pool_ai_fix(
+    profile_id: int,
+    request_data: Dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate AI fix suggestion for one profile-pool node issue.
+    This endpoint is non-destructive (preview only).
+    """
+    node_id_raw = request_data.get("node_id")
+    try:
+        node_id = int(node_id_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="node_id is required")
+
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    node = db.query(ProfileNode).filter(
+        ProfileNode.id == node_id,
+        ProfileNode.profile_id == profile_id
+    ).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found in this profile")
+
+    editable_field, original_text = _extract_fixable_text_from_node(node)
+    if not editable_field or not original_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Node has no fixable text. Add text content first."
+        )
+
+    root_nodes = sorted([n for n in profile.nodes if n.parent_id is None], key=lambda x: x.order or 0)
+    serialized_nodes = [_serialize_profile_node_for_quality(root) for root in root_nodes]
+    quality_report = _build_profile_pool_quality_report(serialized_nodes)
+
+    issue = _resolve_quality_issue_for_node(
+        quality_report=quality_report,
+        node_id=node_id,
+        request_issue=request_data.get("issue")
+    )
+    if not issue:
+        raise HTTPException(
+            status_code=400,
+            detail="No node-level quality issue found for this node."
+        )
+
+    node_report = (quality_report.get("node_reports") or {}).get(str(node_id), {})
+    node_path = str(node_report.get("path") or f"node-{node_id}")
+    context_nodes = [_serialize_profile_node_for_ai_context(root) for root in root_nodes]
+    profile_context = ai_tailor_service.profile_nodes_to_text(context_nodes)
+    ai_settings = get_user_ai_settings(current_user)
+
+    result = ai_tailor_service.generate_profile_pool_node_fix_with_openai(
+        node_text=original_text,
+        node_type=str(node.node_type or ""),
+        node_path=node_path,
+        issue=issue,
+        profile_context=profile_context,
+        user_instructions=str(request_data.get("user_instructions", "")).strip() or None,
+        model=ai_settings["openai_model"],
+        reasoning_effort=ai_settings["openai_reasoning_effort"],
+        humanity_llm_enabled=ai_settings["humanity_deep_mode_enabled"],
+        humanity_llm_model=ai_settings["humanity_llm_model"],
+        humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"]
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "AI fix preview failed"))
+
+    return {
+        "success": True,
+        "profile_id": profile_id,
+        "node_id": node_id,
+        "target_field": editable_field,
+        "node_path": node_path,
+        "issue": issue,
+        "original_text": original_text,
+        "revised_text": result.get("revised_text", ""),
+        "change_summary": result.get("change_summary", ""),
+        "confidence": result.get("confidence"),
+        "humanity": result.get("humanity"),
+        "runtime": {
+            "requested_model": result.get("requested_model", result.get("model")),
+            "actual_model": result.get("actual_model", result.get("model")),
+            "api_name": result.get("api_name"),
+            "reasoning_tokens": result.get("reasoning_tokens")
+        }
+    }
+
+
+@app.post("/profiles/{profile_id}/quality/ai-fix-apply")
+def apply_profile_pool_ai_fix(
+    profile_id: int,
+    request_data: Dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Apply edited AI suggestion to a single profile node text field."""
+    node_id_raw = request_data.get("node_id")
+    revised_text = str(request_data.get("revised_text", "")).strip()
+    if not revised_text:
+        raise HTTPException(status_code=400, detail="revised_text is required")
+    try:
+        node_id = int(node_id_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="node_id is required")
+
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    node = db.query(ProfileNode).filter(
+        ProfileNode.id == node_id,
+        ProfileNode.profile_id == profile_id
+    ).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found in this profile")
+
+    editable_field, original_text = _extract_fixable_text_from_node(node)
+    if not editable_field:
+        raise HTTPException(
+            status_code=400,
+            detail="Node has no editable text field for this AI fix."
+        )
+
+    setattr(node, editable_field, revised_text)
+
+    issue_payload = request_data.get("issue") if isinstance(request_data.get("issue"), dict) else {}
+    model_payload = request_data.get("runtime") if isinstance(request_data.get("runtime"), dict) else {}
+    quality_meta = (node.meta_info or {}) if isinstance(node.meta_info, dict) else {}
+    quality_meta_quality = quality_meta.get("quality") if isinstance(quality_meta.get("quality"), dict) else {}
+    quality_meta_quality.update({
+        "last_ai_fix_at": datetime.utcnow().isoformat(),
+        "last_ai_fix_field": editable_field,
+        "last_ai_fix_issue_type": str(issue_payload.get("type", "")).strip().lower(),
+        "last_ai_fix_issue_message": str(issue_payload.get("message", "")).strip(),
+        "last_ai_fix_requested_model": str(model_payload.get("requested_model", "")).strip(),
+        "last_ai_fix_actual_model": str(model_payload.get("actual_model", "")).strip(),
+        "last_ai_fix_chars_delta": len(revised_text) - len(original_text or "")
+    })
+    quality_meta["quality"] = quality_meta_quality
+    node.meta_info = quality_meta
+    flag_modified(node, "meta_info")
+
+    db.commit()
+    db.refresh(node)
+
+    return {
+        "success": True,
+        "profile_id": profile_id,
+        "node_id": node_id,
+        "target_field": editable_field,
+        "updated_text": revised_text,
+        "meta_info": node.meta_info
     }
 
 
