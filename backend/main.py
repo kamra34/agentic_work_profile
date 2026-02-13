@@ -14,6 +14,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from typing import List, Optional, Dict, Any
+from collections import Counter, defaultdict
 import os
 import re
 import hashlib
@@ -284,6 +285,498 @@ def _raise_if_humanity_blocked(report: Dict[str, Any], force_export: bool = Fals
                 "humanity": report
             }
         )
+
+
+QUALITY_WEAK_OPENERS = (
+    "responsible for",
+    "worked on",
+    "involved in",
+    "helped with",
+    "assisted with",
+)
+
+QUALITY_BUZZWORDS = (
+    "results-driven",
+    "dynamic professional",
+    "proven track record",
+    "cutting-edge",
+    "synergy",
+    "innovative solutions",
+    "passionate about",
+    "thought leader",
+    "highly motivated",
+)
+
+QUALITY_SPECIFICITY_HINTS = (
+    "using", "with", "via", "through", "across", "for", "to", "by", "in",
+    "python", "sql", "aws", "gcp", "azure", "spark", "airflow", "kubernetes",
+    "product", "platform", "pipeline", "model", "service"
+)
+
+QUALITY_METRIC_CONTEXT_HINTS = (
+    "%", "percent", "kpi", "latency", "revenue", "cost", "users", "requests",
+    "transactions", "months", "years", "days", "sla", "uptime", "throughput"
+)
+
+QUALITY_STOP_OPENERS = {"the", "a", "an", "and", "with", "for", "to", "in", "on", "at"}
+
+QUALITY_SEVERITY_WEIGHT = {
+    "low": 6,
+    "medium": 12,
+    "high": 20,
+    "critical": 35
+}
+
+
+def _quality_truncate(text: str, max_len: int = 160) -> str:
+    value = (text or "").strip()
+    if len(value) <= max_len:
+        return value
+    return value[: max_len - 3].rstrip() + "..."
+
+
+def _quality_normalize_key(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _quality_tokenize(text: str) -> List[str]:
+    return re.findall(r"[a-zA-Z][a-zA-Z0-9\-']*", (text or "").lower())
+
+
+def _quality_sentence_split(text: str) -> List[str]:
+    parts = re.split(r"(?<=[.!?;])\s+|\n+", text or "")
+    return [part.strip() for part in parts if part and part.strip()]
+
+
+def _quality_extract_node_text(node: Dict[str, Any]) -> str:
+    node_type = (node.get("node_type") or "").lower()
+    content = (node.get("content") or "").strip()
+    title = (node.get("title") or "").strip()
+
+    if node_type == "section":
+        return ""
+    if content:
+        return content
+    if node_type in {"entry", "item", "custom"} and title:
+        return title
+    return ""
+
+
+def _serialize_profile_node_for_quality(node: ProfileNode) -> Dict[str, Any]:
+    children = sorted(list(node.children or []), key=lambda c: c.order or 0)
+    return {
+        "id": node.id,
+        "parent_id": node.parent_id,
+        "level": node.level,
+        "node_type": node.node_type,
+        "title": node.title,
+        "subtitle": node.subtitle,
+        "content": node.content,
+        "children": [_serialize_profile_node_for_quality(child) for child in children]
+    }
+
+
+def _flatten_profile_nodes_for_quality(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    flat: List[Dict[str, Any]] = []
+
+    def walk(current_nodes: List[Dict[str, Any]], path_titles: List[str]):
+        for node in current_nodes:
+            node_type = node.get("node_type") or ""
+            title = (node.get("title") or "").strip()
+            label = title or node_type or "node"
+            current_path = path_titles + [label]
+            text_value = _quality_extract_node_text(node)
+            flat.append({
+                "id": node.get("id"),
+                "parent_id": node.get("parent_id"),
+                "level": int(node.get("level") or 0),
+                "node_type": node_type,
+                "title": title,
+                "text": text_value,
+                "path": " > ".join([part for part in current_path if part]),
+            })
+            walk(node.get("children") or [], current_path)
+
+    walk(nodes or [], [])
+    return flat
+
+
+def _quality_add_violation(report: Dict[str, Any], violation: Dict[str, Any]):
+    existing = report.get("violations", [])
+    key = (
+        str(violation.get("type", "")).lower(),
+        str(violation.get("message", "")).strip().lower()
+    )
+    for item in existing:
+        current_key = (
+            str(item.get("type", "")).lower(),
+            str(item.get("message", "")).strip().lower()
+        )
+        if key == current_key:
+            return
+    report.setdefault("violations", []).append(violation)
+
+
+def _quality_finalize_node_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    violations = report.get("violations", [])
+    risk_points = 0
+    critical_count = 0
+    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for violation in violations:
+        severity = str(violation.get("severity", "medium")).lower()
+        if severity not in severity_counts:
+            severity = "medium"
+        severity_counts[severity] += 1
+        risk_points += QUALITY_SEVERITY_WEIGHT.get(severity, QUALITY_SEVERITY_WEIGHT["medium"])
+        if severity == "critical":
+            critical_count += 1
+
+    score = max(0, 100 - risk_points)
+    if critical_count > 0 or score < 70:
+        risk_level = "high"
+    elif score < 85:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+
+    report["score"] = int(score)
+    report["risk_level"] = risk_level
+    report["critical_violations"] = critical_count
+    report["total_violations"] = len(violations)
+    report["severity_counts"] = severity_counts
+    return report
+
+
+def _build_profile_pool_quality_report(profile_tree_nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    flat_nodes = _flatten_profile_nodes_for_quality(profile_tree_nodes)
+    indexed_nodes = {node["id"]: node for node in flat_nodes if node.get("id") is not None}
+    node_reports: Dict[int, Dict[str, Any]] = {}
+
+    for node in flat_nodes:
+        node_id = node.get("id")
+        text_value = (node.get("text") or "").strip()
+        if node_id is None or not text_value:
+            continue
+
+        lower_text = text_value.lower()
+        words = _quality_tokenize(text_value)
+        sentences = _quality_sentence_split(text_value)
+        node_reports[node_id] = {
+            "node_id": node_id,
+            "node_type": node.get("node_type"),
+            "path": node.get("path"),
+            "violations": []
+        }
+        report = node_reports[node_id]
+
+        for opener in QUALITY_WEAK_OPENERS:
+            if lower_text.startswith(opener):
+                _quality_add_violation(report, {
+                    "type": "weak_openers",
+                    "severity": "medium",
+                    "message": "Starts with a weak/generic opener.",
+                    "where": [f"Line: {_quality_truncate(text_value)}"],
+                    "how_to_fix": [
+                        "Start with a specific action verb and concrete scope.",
+                        "Use outcome-oriented wording instead of generic opener phrases."
+                    ]
+                })
+                break
+
+        buzz_hits = [phrase for phrase in QUALITY_BUZZWORDS if phrase in lower_text]
+        if buzz_hits:
+            _quality_add_violation(report, {
+                "type": "buzzword_density",
+                "severity": "medium" if len(buzz_hits) >= 2 else "low",
+                "message": "Contains generic buzzword-heavy language.",
+                "where": [f"Line: {_quality_truncate(text_value)}"],
+                "how_to_fix": [
+                    "Replace buzzwords with concrete responsibilities and outcomes.",
+                    "Keep wording factual and role-specific."
+                ]
+            })
+
+        has_metric = bool(re.search(r"\b\d+(?:\.\d+)?%?\b", text_value))
+        has_specificity_hint = any(f" {hint} " in f" {lower_text} " for hint in QUALITY_SPECIFICITY_HINTS)
+        if len(words) >= 8 and not has_metric and not has_specificity_hint:
+            _quality_add_violation(report, {
+                "type": "low_specificity",
+                "severity": "low",
+                "message": "Statement is vague and lacks concrete scope/tool/context.",
+                "where": [f"Line: {_quality_truncate(text_value)}"],
+                "how_to_fix": [
+                    "Add concrete context: tool, scope, or objective.",
+                    "If available, add measurable outcome from your real experience."
+                ]
+            })
+
+        opener_counter = Counter()
+        for sentence in sentences:
+            sentence_words = _quality_tokenize(sentence)
+            if sentence_words:
+                opener_counter[sentence_words[0]] += 1
+        repeated_openers = [token for token, count in opener_counter.items() if count >= 2 and token not in QUALITY_STOP_OPENERS]
+        if repeated_openers and len(sentences) >= 3:
+            _quality_add_violation(report, {
+                "type": "repetitive_sentence_openers",
+                "severity": "low",
+                "message": "Multiple sentences start with similar words.",
+                "where": [f"Openers repeated: {', '.join(repeated_openers[:3])}"],
+                "how_to_fix": [
+                    "Vary sentence openings across bullets and lines.",
+                    "Alternate action-first, context-first, and outcome-first constructions."
+                ]
+            })
+
+        long_sentences = [sentence for sentence in sentences if len(_quality_tokenize(sentence)) >= 28]
+        comma_dense = [sentence for sentence in sentences if sentence.count(",") >= 3]
+        if long_sentences or comma_dense:
+            _quality_add_violation(report, {
+                "type": "readability",
+                "severity": "medium",
+                "message": "Contains long multi-clause phrasing that reduces readability.",
+                "where": [_quality_truncate((long_sentences or comma_dense)[0])],
+                "how_to_fix": [
+                    "Split long sentence into 1-2 concise statements.",
+                    "Remove stacked clauses and keep one idea per bullet."
+                ]
+            })
+
+        numeric_tokens = re.findall(r"\b\d+(?:\.\d+)?%?\b", text_value)
+        has_metric_context = any(hint in lower_text for hint in QUALITY_METRIC_CONTEXT_HINTS)
+        if numeric_tokens and not has_metric_context:
+            _quality_add_violation(report, {
+                "type": "factual_hygiene",
+                "severity": "low",
+                "message": "Numeric claim lacks nearby context or unit.",
+                "where": [f"Numeric values: {', '.join(numeric_tokens[:4])}"],
+                "how_to_fix": [
+                    "Add nearby context (what the number represents, over what scope/timeframe).",
+                    "Ensure metric wording is clear and verifiable."
+                ]
+            })
+
+    global_issues = []
+    text_nodes = [node for node in flat_nodes if (node.get("text") or "").strip()]
+    normalized_groups: Dict[str, List[int]] = defaultdict(list)
+    for node in text_nodes:
+        node_id = node.get("id")
+        if node_id is None:
+            continue
+        normalized = _quality_normalize_key(node.get("text") or "")
+        if len(normalized) >= 24:
+            normalized_groups[normalized].append(node_id)
+
+    for normalized, node_ids in normalized_groups.items():
+        if len(node_ids) < 2:
+            continue
+        sample_text = _quality_truncate(normalized, max_len=130)
+        global_issues.append({
+            "type": "repetition_cluster",
+            "severity": "medium",
+            "message": "Near-identical statements found in multiple nodes.",
+            "node_ids": node_ids,
+            "sample": sample_text,
+            "how_to_fix": [
+                "Keep one strongest version and remove/merge duplicates.",
+                "Differentiate the remaining bullets by scope, method, or outcome."
+            ]
+        })
+        for node_id in node_ids:
+            report = node_reports.setdefault(node_id, {
+                "node_id": node_id,
+                "node_type": indexed_nodes.get(node_id, {}).get("node_type"),
+                "path": indexed_nodes.get(node_id, {}).get("path"),
+                "violations": []
+            })
+            _quality_add_violation(report, {
+                "type": "repetitive_structure",
+                "severity": "medium",
+                "message": "Very similar content appears in other nodes.",
+                "where": [f"Similar cluster: {sample_text}"],
+                "how_to_fix": [
+                    "Consolidate duplicates into one concise bullet.",
+                    "Use distinct evidence per bullet if multiple bullets remain."
+                ]
+            })
+
+    token_sets: Dict[int, set] = {}
+    candidate_ids: List[int] = []
+    for node in text_nodes:
+        node_id = node.get("id")
+        if node_id is None:
+            continue
+        tokens = set(_quality_tokenize(node.get("text") or ""))
+        if len(tokens) >= 8:
+            token_sets[node_id] = tokens
+            candidate_ids.append(node_id)
+
+    near_pairs = []
+    for idx, left_id in enumerate(candidate_ids):
+        left_tokens = token_sets.get(left_id, set())
+        for right_id in candidate_ids[idx + 1:]:
+            right_tokens = token_sets.get(right_id, set())
+            if not left_tokens or not right_tokens:
+                continue
+            intersection = len(left_tokens.intersection(right_tokens))
+            union = len(left_tokens.union(right_tokens))
+            if union == 0:
+                continue
+            similarity = intersection / union
+            if similarity >= 0.82:
+                near_pairs.append((left_id, right_id, similarity))
+
+    for left_id, right_id, similarity in near_pairs[:30]:
+        left_node = indexed_nodes.get(left_id, {})
+        right_node = indexed_nodes.get(right_id, {})
+        message = "Multiple bullets share highly similar structure across the profile."
+        global_issues.append({
+            "type": "near_duplicate_pair",
+            "severity": "medium",
+            "message": message,
+            "node_ids": [left_id, right_id],
+            "sample": f"{_quality_truncate(left_node.get('text', ''), 75)} || {_quality_truncate(right_node.get('text', ''), 75)}",
+            "similarity": round(similarity, 2),
+            "how_to_fix": [
+                "Rewrite one bullet to focus on a distinct contribution or outcome.",
+                "Merge both bullets if they describe the same work."
+            ]
+        })
+        for current_id, other_node in ((left_id, right_node), (right_id, left_node)):
+            report = node_reports.setdefault(current_id, {
+                "node_id": current_id,
+                "node_type": indexed_nodes.get(current_id, {}).get("node_type"),
+                "path": indexed_nodes.get(current_id, {}).get("path"),
+                "violations": []
+            })
+            other_path = other_node.get("path") or f"node-{other_node.get('id')}"
+            _quality_add_violation(report, {
+                "type": "repetitive_structure",
+                "severity": "medium",
+                "message": message,
+                "where": [f"Similar to: {other_path}"],
+                "how_to_fix": [
+                    "Differentiate the bullets by scope, approach, or measured impact.",
+                    "Remove one if both express the same achievement."
+                ]
+            })
+
+    opener_groups: Dict[str, List[int]] = defaultdict(list)
+    for node in text_nodes:
+        node_id = node.get("id")
+        if node_id is None:
+            continue
+        tokens = _quality_tokenize(node.get("text") or "")
+        if not tokens:
+            continue
+        opener = tokens[0]
+        if len(opener) < 4 or opener in QUALITY_STOP_OPENERS:
+            continue
+        opener_groups[opener].append(node_id)
+
+    repeated_openers = {token: ids for token, ids in opener_groups.items() if len(ids) >= 3}
+    for opener, ids in repeated_openers.items():
+        global_issues.append({
+            "type": "repetitive_sentence_openers",
+            "severity": "low",
+            "message": f"Many nodes start with '{opener}'.",
+            "node_ids": ids[:10],
+            "how_to_fix": [
+                "Vary opener verbs to avoid repetitive tone.",
+                "Use mixed sentence patterns across bullets."
+            ]
+        })
+        for node_id in ids:
+            report = node_reports.setdefault(node_id, {
+                "node_id": node_id,
+                "node_type": indexed_nodes.get(node_id, {}).get("node_type"),
+                "path": indexed_nodes.get(node_id, {}).get("path"),
+                "violations": []
+            })
+            _quality_add_violation(report, {
+                "type": "repetitive_sentence_openers",
+                "severity": "low",
+                "message": "Opening verb pattern repeats across the profile.",
+                "where": [f"Repeated opener: {opener}"],
+                "how_to_fix": [
+                    "Use different action verbs to diversify tone.",
+                    "Reorder sentence structure to avoid repeated starts."
+                ]
+            })
+
+    # Finalize content node reports
+    for node_id, report in list(node_reports.items()):
+        node_reports[node_id] = _quality_finalize_node_report(report)
+
+    # Aggregate score/risk for structural nodes based on direct children
+    direct_children_map: Dict[int, List[int]] = defaultdict(list)
+    for node in flat_nodes:
+        node_id = node.get("id")
+        parent_id = node.get("parent_id")
+        if node_id is not None and parent_id is not None:
+            direct_children_map[parent_id].append(node_id)
+
+    sorted_by_level = sorted(flat_nodes, key=lambda n: n.get("level", 0), reverse=True)
+    for node in sorted_by_level:
+        node_id = node.get("id")
+        if node_id is None or node_id in node_reports:
+            continue
+        child_reports = [node_reports.get(child_id) for child_id in direct_children_map.get(node_id, [])]
+        child_reports = [item for item in child_reports if isinstance(item, dict)]
+        if not child_reports:
+            continue
+        avg_score = round(sum(item.get("score", 0) for item in child_reports) / len(child_reports))
+        total_violations = sum(item.get("total_violations", 0) for item in child_reports)
+        critical_count = sum(item.get("critical_violations", 0) for item in child_reports)
+        if critical_count > 0 or avg_score < 70:
+            risk_level = "high"
+        elif avg_score < 85:
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+        node_reports[node_id] = {
+            "node_id": node_id,
+            "node_type": node.get("node_type"),
+            "path": node.get("path"),
+            "score": int(avg_score),
+            "risk_level": risk_level,
+            "critical_violations": int(critical_count),
+            "total_violations": int(total_violations),
+            "severity_counts": {"critical": critical_count, "high": 0, "medium": 0, "low": 0},
+            "violations": [],
+            "aggregated_from_children": True
+        }
+
+    if node_reports:
+        overall_score = round(sum(item.get("score", 0) for item in node_reports.values()) / len(node_reports))
+    else:
+        overall_score = 100
+
+    critical_total = sum(item.get("critical_violations", 0) for item in node_reports.values())
+    if critical_total > 0 or overall_score < 70:
+        overall_risk = "high"
+    elif overall_score < 85:
+        overall_risk = "medium"
+    else:
+        overall_risk = "low"
+
+    severity_totals = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for report in node_reports.values():
+        counts = report.get("severity_counts", {})
+        for key in severity_totals:
+            severity_totals[key] += int(counts.get(key, 0))
+
+    return {
+        "overall_score": int(overall_score),
+        "overall_risk": overall_risk,
+        "total_nodes_checked": len(node_reports),
+        "severity_totals": severity_totals,
+        "global_issues": global_issues[:20],
+        "node_reports": {str(node_id): report for node_id, report in node_reports.items()},
+        "updated_at": datetime.utcnow().isoformat()
+    }
 
 # ============================================================================
 # DATABASE & SECURITY SETUP
@@ -726,6 +1219,30 @@ def get_profile(
     # Sort by order to ensure correct display
     profile.nodes = sorted([n for n in profile.nodes if n.parent_id is None], key=lambda x: x.order)
     return profile
+
+
+@app.get("/profiles/{profile_id}/quality")
+def get_profile_pool_quality(
+    profile_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Run profile-pool quality checks (node-level + cross-profile) without changing hierarchy."""
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    root_nodes = sorted([n for n in profile.nodes if n.parent_id is None], key=lambda x: x.order or 0)
+    serialized_nodes = [_serialize_profile_node_for_quality(node) for node in root_nodes]
+    quality = _build_profile_pool_quality_report(serialized_nodes)
+    return {
+        "success": True,
+        "profile_id": profile_id,
+        "quality": quality
+    }
 
 
 @app.post("/profiles", response_model=ProfileResponse)
