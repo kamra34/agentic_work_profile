@@ -3379,6 +3379,38 @@ function SavedCVDetail({ cvId, onBack }) {
   const humanityScoreFormula = humanityHasLLM
     ? 'Score = 45% heuristic + 20% stylometric + 35% LLM critic'
     : 'Score = 70% heuristic + 30% stylometric';
+  const getIssueWhereList = (issue) => {
+    if (!issue) return [];
+    const raw = issue.where;
+    if (Array.isArray(raw)) {
+      return raw
+        .map((item) => {
+          if (typeof item === 'string') return item.trim();
+          if (item && typeof item === 'object') {
+            const line = item.line ? `Line ${item.line}: ` : '';
+            const text = String(item.text || '').trim();
+            return `${line}${text}`.trim();
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .slice(0, 3);
+    }
+    if (typeof raw === 'string' && raw.trim()) return [raw.trim()];
+    return [];
+  };
+  const getIssueFixList = (issue) => {
+    if (!issue) return [];
+    const raw = issue.how_to_fix;
+    if (Array.isArray(raw)) {
+      return raw
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 3);
+    }
+    if (typeof raw === 'string' && raw.trim()) return [raw.trim()];
+    return [];
+  };
 
   return (
     <div className="saved-cv-detail">
@@ -3600,19 +3632,39 @@ function SavedCVDetail({ cvId, onBack }) {
                 <div className="humanity-issues">
                   <div className="humanity-issues-title">Top reasons</div>
                   {humanityTopIssues.length > 0 ? (
-                    humanityTopIssues.map((issue, idx) => (
-                      <div className="humanity-issue-item" key={`humanity-issue-${idx}`}>
-                        <div className="humanity-issue-header">
-                          <span className={`humanity-issue-severity ${String(issue?.severity || 'medium').toLowerCase()}`}>
-                            {String(issue?.severity || 'medium').toUpperCase()}
-                          </span>
-                          {issue?.type && (
-                            <span className="humanity-issue-type">{String(issue.type)}</span>
+                    humanityTopIssues.map((issue, idx) => {
+                      const whereList = getIssueWhereList(issue);
+                      const fixList = getIssueFixList(issue);
+                      return (
+                        <div className="humanity-issue-item" key={`humanity-issue-${idx}`}>
+                          <div className="humanity-issue-header">
+                            <span className={`humanity-issue-severity ${String(issue?.severity || 'medium').toLowerCase()}`}>
+                              {String(issue?.severity || 'medium').toUpperCase()}
+                            </span>
+                            {issue?.type && (
+                              <span className="humanity-issue-type">{String(issue.type)}</span>
+                            )}
+                          </div>
+                          <div className="humanity-issue-message">{issue.message}</div>
+                          {whereList.length > 0 && (
+                            <div className="humanity-issue-subblock">
+                              <div className="humanity-issue-subtitle">Where found</div>
+                              {whereList.map((item, whereIdx) => (
+                                <div className="humanity-issue-subitem" key={`where-${idx}-${whereIdx}`}>• {item}</div>
+                              ))}
+                            </div>
+                          )}
+                          {fixList.length > 0 && (
+                            <div className="humanity-issue-subblock">
+                              <div className="humanity-issue-subtitle">How to fix</div>
+                              {fixList.map((item, fixIdx) => (
+                                <div className="humanity-issue-subitem" key={`fix-${idx}-${fixIdx}`}>• {item}</div>
+                              ))}
+                            </div>
                           )}
                         </div>
-                        <div className="humanity-issue-message">{issue.message}</div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="humanity-issue-item muted">No major flags detected.</div>
                   )}

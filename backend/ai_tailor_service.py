@@ -261,6 +261,34 @@ def _extract_numeric_tokens(text: str) -> set:
     return {t.strip() for t in tokens if t.strip()}
 
 
+def _truncate_text(text: str, max_len: int = 140) -> str:
+    value = (text or "").strip()
+    if len(value) <= max_len:
+        return value
+    return value[: max_len - 3].rstrip() + "..."
+
+
+def _indexed_non_empty_lines(text: str) -> List[tuple]:
+    return [
+        (idx + 1, ln.strip())
+        for idx, ln in enumerate((text or "").splitlines())
+        if ln and ln.strip()
+    ]
+
+
+def _line_evidence(indexed_lines: List[tuple], predicate, max_hits: int = 4) -> List[Dict[str, Any]]:
+    hits = []
+    for line_no, line_text in indexed_lines:
+        if predicate(line_text):
+            hits.append({
+                "line": line_no,
+                "text": _truncate_text(line_text, max_len=160)
+            })
+        if len(hits) >= max_hits:
+            break
+    return hits
+
+
 def _evaluate_humanity_heuristics(
     text: str,
     source_text: str = "",
@@ -293,8 +321,10 @@ def _evaluate_humanity_heuristics(
         }
 
     lower = content.lower()
-    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
-    bullet_lines = [ln for ln in lines if ln.startswith("- ")]
+    indexed_lines = _indexed_non_empty_lines(content)
+    lines = [ln for _, ln in indexed_lines]
+    bullet_indexed = [(line_no, ln) for line_no, ln in indexed_lines if ln.startswith("- ")]
+    bullet_lines = [ln for _, ln in bullet_indexed]
     bullet_bodies = [ln[2:].strip().lower() for ln in bullet_lines]
 
     violations = []
@@ -308,11 +338,22 @@ def _evaluate_humanity_heuristics(
             ai_hits.append({"phrase": phrase, "count": count})
             risk_points += min(5 * count, 15)
     if ai_hits:
+        ai_patterns = [re.compile(rf"\b{re.escape(item['phrase'])}\b", re.IGNORECASE) for item in ai_hits]
+        where_hits = _line_evidence(
+            indexed_lines,
+            lambda ln: any(pattern.search(ln) for pattern in ai_patterns),
+            max_hits=4
+        )
         violations.append({
             "type": "ai_voice_phrases",
             "severity": "high",
             "message": "Detected phrases often associated with AI-generated or generic writing.",
-            "evidence": ai_hits
+            "evidence": ai_hits,
+            "where": where_hits,
+            "how_to_fix": [
+                "Replace buzzword-heavy wording with concrete actions you personally did.",
+                "Use specific scope, tools, and outcomes instead of generic positioning phrases."
+            ]
         })
 
     generic_hits = []
@@ -322,20 +363,43 @@ def _evaluate_humanity_heuristics(
             generic_hits.append({"phrase": phrase, "count": count})
             risk_points += min(3 * count, 12)
     if generic_hits:
+        generic_patterns = [re.compile(rf"\b{re.escape(item['phrase'])}\b", re.IGNORECASE) for item in generic_hits]
+        where_hits = _line_evidence(
+            indexed_lines,
+            lambda ln: any(pattern.search(ln) for pattern in generic_patterns),
+            max_hits=4
+        )
         violations.append({
             "type": "generic_filler",
             "severity": "medium",
             "message": "Detected generic phrasing that weakens credibility.",
-            "evidence": generic_hits
+            "evidence": generic_hits,
+            "where": where_hits,
+            "how_to_fix": [
+                "Rewrite each flagged line with a concrete action verb and direct outcome.",
+                "Delete filler statements that do not add role-relevant evidence."
+            ]
         })
 
     # 2) Weak bullet openings
     weak_opening_hits = []
+    weak_opening_where = []
+    starter_by_line = {}
     for body in bullet_bodies:
         for starter in WEAK_BULLET_STARTERS:
             if body.startswith(starter):
                 weak_opening_hits.append(starter)
                 risk_points += 3
+                break
+    for line_no, line_text in bullet_indexed:
+        normalized = line_text[2:].strip().lower()
+        for starter in WEAK_BULLET_STARTERS:
+            if normalized.startswith(starter):
+                weak_opening_where.append({
+                    "line": line_no,
+                    "text": _truncate_text(line_text, max_len=160)
+                })
+                starter_by_line[line_no] = starter
                 break
     if weak_opening_hits:
         counts = Counter(weak_opening_hits)
@@ -343,7 +407,12 @@ def _evaluate_humanity_heuristics(
             "type": "weak_bullet_openings",
             "severity": "medium",
             "message": "Bullets start with weak/generic phrasing. Prefer concrete action verbs.",
-            "evidence": [{"starter": k, "count": v} for k, v in counts.items()]
+            "evidence": [{"starter": k, "count": v} for k, v in counts.items()],
+            "where": weak_opening_where[:4],
+            "how_to_fix": [
+                "Start bullets with a specific action verb (for example: built, optimized, delivered, led).",
+                "Follow verb + scope + outcome pattern in one line."
+            ]
         })
 
     # 3) Repetition checks
@@ -351,11 +420,22 @@ def _evaluate_humanity_heuristics(
     repeated_lines = [ln for ln, cnt in Counter(normalized_lines).items() if cnt > 1 and len(ln) > 20]
     if repeated_lines:
         risk_points += min(4 * len(repeated_lines), 16)
+        repeated_set = set(repeated_lines)
+        where_hits = _line_evidence(
+            indexed_lines,
+            lambda ln: re.sub(r"\s+", " ", ln.lower()) in repeated_set,
+            max_hits=5
+        )
         violations.append({
             "type": "repetition",
             "severity": "medium",
             "message": "Detected repeated or near-identical lines.",
-            "evidence": repeated_lines[:5]
+            "evidence": repeated_lines[:5],
+            "where": where_hits,
+            "how_to_fix": [
+                "Merge duplicate lines into one stronger bullet.",
+                "Keep one version with the clearest impact and remove the rest."
+            ]
         })
 
     # 4) Metrics specificity (advisory; not every section requires metrics)
@@ -366,6 +446,11 @@ def _evaluate_humanity_heuristics(
     metric_ratio = (bullets_with_metrics / len(bullet_lines)) if bullet_lines else 0.0
     if bullet_lines and len(bullet_lines) >= 4 and metric_ratio < 0.20:
         risk_points += 6
+        bullet_without_metric = _line_evidence(
+            bullet_indexed,
+            lambda ln: re.search(r"\b\d+(?:\.\d+)?%?\b", ln) is None,
+            max_hits=4
+        )
         violations.append({
             "type": "low_specificity",
             "severity": "low",
@@ -373,7 +458,12 @@ def _evaluate_humanity_heuristics(
             "evidence": {
                 "bullet_count": len(bullet_lines),
                 "bullets_with_metrics": bullets_with_metrics
-            }
+            },
+            "where": bullet_without_metric,
+            "how_to_fix": [
+                "For high-impact bullets, add concrete scope if available (size, volume, frequency, timeline).",
+                "If exact numbers are unavailable, use specific non-numeric qualifiers (for example: cross-functional, production-scale, multi-region)."
+            ]
         })
 
     # 5) Grounding check: newly introduced numeric claims
@@ -382,11 +472,21 @@ def _evaluate_humanity_heuristics(
     introduced_tokens = sorted(list(refined_tokens - source_tokens))
     if source_text and introduced_tokens:
         risk_points += min(8 + (2 * len(introduced_tokens)), 20)
+        where_hits = _line_evidence(
+            indexed_lines,
+            lambda ln: any(token in ln for token in introduced_tokens),
+            max_hits=6
+        )
         violations.append({
             "type": "new_numeric_claims",
             "severity": "critical",
             "message": "Detected numeric claims not present in source content.",
-            "evidence": introduced_tokens[:20]
+            "evidence": introduced_tokens[:20],
+            "where": where_hits,
+            "how_to_fix": [
+                "Remove unsupported numbers or replace them with claims present in selected source items.",
+                "If the metric is real, ensure the source profile node includes it before refinement/export."
+            ]
         })
 
     score = max(0, 100 - risk_points)
@@ -445,6 +545,8 @@ def _evaluate_stylometric_signals(text: str) -> Dict[str, Any]:
             }
         }
 
+    indexed_lines = _indexed_non_empty_lines(content)
+
     # Sentence parsing
     sentence_parts = re.split(r"(?<=[.!?])\s+|\n+", content)
     sentences = [s.strip() for s in sentence_parts if s and len(s.strip()) > 0]
@@ -474,7 +576,12 @@ def _evaluate_stylometric_signals(text: str) -> Dict[str, Any]:
             "type": "uniform_sentence_structure",
             "severity": "medium",
             "message": "Sentence lengths are unusually uniform.",
-            "evidence": {"sentence_len_std": std_len}
+            "evidence": {"sentence_len_std": std_len},
+            "where": [],
+            "how_to_fix": [
+                "Mix sentence lengths intentionally (short + medium + long).",
+                "Split long clauses and vary sentence starts."
+            ]
         })
 
     if len(words) >= 120 and lexical_diversity < 0.36:
@@ -483,29 +590,57 @@ def _evaluate_stylometric_signals(text: str) -> Dict[str, Any]:
             "type": "low_lexical_diversity",
             "severity": "medium",
             "message": "Vocabulary diversity is low for the text length.",
-            "evidence": {"lexical_diversity": lexical_diversity}
+            "evidence": {"lexical_diversity": lexical_diversity},
+            "where": [],
+            "how_to_fix": [
+                "Avoid repeating the same verbs and qualifiers across bullets.",
+                "Use role-specific terminology from your actual selected experience."
+            ]
         })
 
     if repeated_openers:
         risk_points += min(8, len(repeated_openers) * 2)
+        repeated_openers_set = set(repeated_openers.keys())
+        where_hits = _line_evidence(
+            indexed_lines,
+            lambda ln: (_tokenize_words(ln)[0] if _tokenize_words(ln) else "") in repeated_openers_set,
+            max_hits=5
+        )
         violations.append({
             "type": "repetitive_sentence_openers",
             "severity": "low",
             "message": "Many sentences begin with the same words.",
-            "evidence": repeated_openers
+            "evidence": repeated_openers,
+            "where": where_hits,
+            "how_to_fix": [
+                "Vary sentence openers (action, context, result).",
+                "Avoid starting consecutive bullets with the same verb."
+            ]
         })
 
-    bullet_lines = [ln.strip() for ln in content.splitlines() if ln.strip().startswith("- ")]
+    bullet_indexed = [(line_no, ln) for line_no, ln in indexed_lines if ln.startswith("- ")]
+    bullet_lines = [ln for _, ln in bullet_indexed]
     if len(bullet_lines) >= 6:
         normalized_bullets = [re.sub(r"\s+", " ", ln[2:].strip().lower()) for ln in bullet_lines]
         dup_bullets = [b for b, cnt in Counter(normalized_bullets).items() if cnt > 1 and len(b) > 18]
         if dup_bullets:
             risk_points += min(10, len(dup_bullets) * 3)
+            dup_set = set(dup_bullets)
+            where_hits = _line_evidence(
+                bullet_indexed,
+                lambda ln: re.sub(r"\s+", " ", ln[2:].strip().lower()) in dup_set,
+                max_hits=5
+            )
             violations.append({
                 "type": "repetitive_bullets",
                 "severity": "medium",
                 "message": "Bullets contain repeated templates or near duplicates.",
-                "evidence": dup_bullets[:5]
+                "evidence": dup_bullets[:5],
+                "where": where_hits,
+                "how_to_fix": [
+                    "Keep one strongest bullet per repeated theme and remove duplicates.",
+                    "Differentiate remaining bullets by scope, method, or measurable impact."
+                ]
             })
 
     score = max(0, 100 - risk_points)
@@ -558,7 +693,9 @@ Return ONLY valid JSON:
       "type": "short_machine_name",
       "severity": "low|medium|high|critical",
       "message": "clear issue description",
-      "evidence": "short quote or pattern description"
+      "evidence": "short quote or pattern description",
+      "where": ["line/location hint from TARGET TEXT"],
+      "how_to_fix": ["specific rewrite action"]
     }}
   ],
   "recommended_actions": ["short actionable fix", "..."]
@@ -613,7 +750,9 @@ TARGET TEXT:
                 "type": str(issue.get("type", "llm_issue")).strip() or "llm_issue",
                 "severity": sev,
                 "message": str(issue.get("message", "Potential AI-like writing pattern detected.")).strip(),
-                "evidence": str(issue.get("evidence", "")).strip()
+                "evidence": str(issue.get("evidence", "")).strip(),
+                "where": _safe_list_of_strings(issue.get("where"), max_items=5, max_len=160),
+                "how_to_fix": _safe_list_of_strings(issue.get("how_to_fix"), max_items=5, max_len=180),
             })
 
     return {
@@ -678,7 +817,9 @@ def evaluate_humanity_hybrid(
                 "type": issue.get("type", "llm_issue"),
                 "severity": issue.get("severity", "medium"),
                 "message": issue.get("message", "Potential AI-like writing issue"),
-                "evidence": issue.get("evidence", "")
+                "evidence": issue.get("evidence", ""),
+                "where": issue.get("where", []),
+                "how_to_fix": issue.get("how_to_fix", []),
             })
 
     critical_violations = sum(1 for v in violations if str(v.get("severity", "")).lower() == "critical")
