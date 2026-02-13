@@ -16,10 +16,37 @@ function MasterProfile() {
   const [draggedNode, setDraggedNode] = useState(null);
   const [expandedNodes, setExpandedNodes] = useState(new Set());
   const [scrollPosition, setScrollPosition] = useState(0);
+  const [qualityReport, setQualityReport] = useState(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
+  const [qualityError, setQualityError] = useState('');
+  const [qualityExplorerExpanded, setQualityExplorerExpanded] = useState(false);
+  const [qualityTab, setQualityTab] = useState('cross');
 
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  const fetchProfileQuality = async (profileId) => {
+    if (!profileId) return;
+    setQualityLoading(true);
+    setQualityError('');
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/profiles/${profileId}/quality`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to calculate profile quality');
+      }
+      const result = await response.json();
+      setQualityReport(result?.quality || null);
+    } catch (error) {
+      console.error('Error fetching profile quality:', error);
+      setQualityError(error.message || 'Failed to calculate quality');
+    } finally {
+      setQualityLoading(false);
+    }
+  };
 
   const fetchProfile = async (preserveState = false) => {
     try {
@@ -33,11 +60,14 @@ function MasterProfile() {
         const defaultProfile = profiles.find(p => p.is_default) || profiles[0];
         setProfile(defaultProfile);
         setNodes(defaultProfile.nodes || []);
+        await fetchProfileQuality(defaultProfile.id);
 
         // Only reset expanded nodes on initial load, preserve them on updates
         if (!preserveState) {
           setExpandedNodes(new Set());
         }
+      } else {
+        setQualityReport(null);
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -521,6 +551,45 @@ function MasterProfile() {
     ? (nodeSelectionRisk.level === 'medium' ? nodeSelectionRisk : scoringRisk)
     : scoringRisk;
 
+  const qualityByNode = qualityReport?.node_reports || {};
+  const qualitySeverityTotals = qualityReport?.severity_totals || { critical: 0, high: 0, medium: 0, low: 0 };
+  const qualityGlobalIssues = qualityReport?.global_issues || [];
+  const severityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+  const sortedQualityGlobalIssues = [...qualityGlobalIssues].sort((a, b) => {
+    const left = severityOrder[a?.severity || 'low'] || 0;
+    const right = severityOrder[b?.severity || 'low'] || 0;
+    if (right !== left) return right - left;
+    const leftCount = Array.isArray(a?.node_ids) ? a.node_ids.length : 0;
+    const rightCount = Array.isArray(b?.node_ids) ? b.node_ids.length : 0;
+    return rightCount - leftCount;
+  });
+  const globalSeverityTotals = sortedQualityGlobalIssues.reduce((acc, issue) => {
+    const key = (issue?.severity || 'low').toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(acc, key)) acc[key] += 1;
+    return acc;
+  }, { critical: 0, high: 0, medium: 0, low: 0 });
+  const nodeIssueItems = Object.values(qualityByNode)
+    .filter((report) => Array.isArray(report?.violations) && report.violations.length > 0)
+    .flatMap((report) => report.violations.map((issue, idx) => ({
+      issue_key: `${report.node_id}-${idx}`,
+      node_id: report.node_id,
+      path: report.path || `node-${report.node_id}`,
+      node_score: report.score,
+      ...issue
+    })))
+    .sort((a, b) => {
+      const left = severityOrder[a?.severity || 'low'] || 0;
+      const right = severityOrder[b?.severity || 'low'] || 0;
+      if (right !== left) return right - left;
+      return (a?.node_score ?? 100) - (b?.node_score ?? 100);
+    });
+  const affectedNodeCount = new Set(nodeIssueItems.map((item) => item.node_id)).size;
+  const globalAffectedNodeCount = new Set(
+    sortedQualityGlobalIssues.flatMap((issue) => (Array.isArray(issue?.node_ids) ? issue.node_ids : []))
+  ).size;
+  const visibleNodeIssues = nodeIssueItems.slice(0, 24);
+  const visibleCrossIssues = sortedQualityGlobalIssues.slice(0, 8);
+
   if (loading) {
     return <div className="master-profile-loading">Loading profile...</div>;
   }
@@ -699,17 +768,189 @@ function MasterProfile() {
         )}
       </div>
 
+      <div className="quality-workspace">
+        <div className="quality-workspace-top">
+          <div>
+            <h3 className="quality-workspace-title">Profile Quality Workspace</h3>
+            <p className="quality-workspace-subtitle">
+              Job-agnostic writing quality checks for Profile Pool. Fix here before tailoring.
+            </p>
+          </div>
+          <button
+            className="btn-secondary"
+            onClick={() => fetchProfileQuality(profile?.id)}
+            disabled={qualityLoading || !profile?.id}
+          >
+            {qualityLoading ? 'Checking quality...' : 'Recalculate Quality'}
+          </button>
+        </div>
+
+        <div className="quality-strip-grid">
+          <div className="quality-strip-card">
+            <div className="quality-strip-label">Pool Quality</div>
+            <div className={`quality-strip-value quality-${qualityReport?.overall_risk || 'low'}`}>
+              {qualityReport?.overall_score ?? '-'}
+            </div>
+            <div className="quality-strip-meta">{qualityReport?.total_nodes_checked ?? 0} nodes checked</div>
+          </div>
+          <div className="quality-strip-card">
+            <div className="quality-strip-label">Node-Level Issues</div>
+            <div className="quality-strip-value">{nodeIssueItems.length}</div>
+            <div className="quality-strip-meta">{affectedNodeCount} nodes affected</div>
+            <div className="quality-severity-row compact">
+              <span className="severity-chip critical">C {qualitySeverityTotals.critical || 0}</span>
+              <span className="severity-chip high">H {qualitySeverityTotals.high || 0}</span>
+              <span className="severity-chip medium">M {qualitySeverityTotals.medium || 0}</span>
+              <span className="severity-chip low">L {qualitySeverityTotals.low || 0}</span>
+            </div>
+          </div>
+          <div className="quality-strip-card">
+            <div className="quality-strip-label">Cross-Profile Clusters</div>
+            <div className="quality-strip-value">{sortedQualityGlobalIssues.length}</div>
+            <div className="quality-strip-meta">{globalAffectedNodeCount} nodes referenced</div>
+            <div className="quality-severity-row compact">
+              <span className="severity-chip critical">C {globalSeverityTotals.critical}</span>
+              <span className="severity-chip high">H {globalSeverityTotals.high}</span>
+              <span className="severity-chip medium">M {globalSeverityTotals.medium}</span>
+              <span className="severity-chip low">L {globalSeverityTotals.low}</span>
+            </div>
+          </div>
+        </div>
+
+        {qualityError && <div className="quality-error">{qualityError}</div>}
+
+        <div className="quality-explorer">
+          <div className="quality-explorer-header">
+            <div className="quality-issues-title">Issue Explorer</div>
+            <button
+              className="quality-collapse-btn"
+              onClick={() => setQualityExplorerExpanded((prev) => !prev)}
+            >
+              {qualityExplorerExpanded ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {qualityExplorerExpanded && (
+            <>
+              <div className="quality-tabs">
+                <button
+                  className={`quality-tab-btn ${qualityTab === 'node' ? 'active' : ''}`}
+                  onClick={() => setQualityTab('node')}
+                >
+                  Node Issues ({nodeIssueItems.length})
+                </button>
+                <button
+                  className={`quality-tab-btn ${qualityTab === 'cross' ? 'active' : ''}`}
+                  onClick={() => setQualityTab('cross')}
+                >
+                  Cross-Profile ({sortedQualityGlobalIssues.length})
+                </button>
+              </div>
+
+              {qualityTab === 'node' && (
+                <div className="quality-list">
+                  {nodeIssueItems.length === 0 && (
+                    <div className="quality-empty">No node-level issues detected.</div>
+                  )}
+                  {nodeIssueItems.length > 24 && (
+                    <div className="quality-list-caption">
+                      Showing top 24 issues by severity and node score.
+                    </div>
+                  )}
+                  {visibleNodeIssues.map((issue) => (
+                    <div key={issue.issue_key} className="quality-list-item">
+                      <div className="quality-list-main">
+                        <div className="quality-list-title-row">
+                          <span className={`quality-issue-severity-tag ${issue.severity || 'low'}`}>
+                            {(issue.severity || 'low').toUpperCase()}
+                          </span>
+                          <span className="quality-issue-type-tag">{String(issue.type || 'issue').toUpperCase()}</span>
+                        </div>
+                        <div className="quality-list-message">{issue.message}</div>
+                        <div className="quality-list-meta">
+                          Node {issue.node_id} • Score {issue.node_score}% • {issue.path}
+                        </div>
+                        {Array.isArray(issue.where) && issue.where.length > 0 && (
+                          <div className="quality-list-meta">Where: {issue.where[0]?.text || issue.where[0]}</div>
+                        )}
+                        {Array.isArray(issue.how_to_fix) && issue.how_to_fix.length > 0 && (
+                          <div className="quality-list-fix">Fix: {issue.how_to_fix[0]}</div>
+                        )}
+                      </div>
+                      <button
+                        className="quality-node-box"
+                        onClick={() => handlePreviewNodeClick(issue.node_id)}
+                        title={`Go to node ${issue.node_id}`}
+                      >
+                        {issue.node_id}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {qualityTab === 'cross' && (
+                <div className="quality-list">
+                  {sortedQualityGlobalIssues.length === 0 && (
+                    <div className="quality-empty">No cross-profile issues detected.</div>
+                  )}
+                  {sortedQualityGlobalIssues.length > 8 && (
+                    <div className="quality-list-caption">
+                      Showing top 8 clusters by severity and impacted nodes.
+                    </div>
+                  )}
+                  {visibleCrossIssues.map((issue, idx) => {
+                    const issueNodeIds = Array.isArray(issue.node_ids) ? issue.node_ids : [];
+                    return (
+                      <div key={`global-issue-${idx}`} className="quality-list-item">
+                        <div className="quality-list-main">
+                          <div className="quality-list-title-row">
+                            <span className={`quality-issue-severity-tag ${issue.severity || 'low'}`}>
+                              {(issue.severity || 'low').toUpperCase()}
+                            </span>
+                            <span className="quality-issue-type-tag">{String(issue.type || 'cluster').toUpperCase()}</span>
+                          </div>
+                          <div className="quality-list-message">{issue.message}</div>
+                          {issue.sample && <div className="quality-list-meta">Sample: {issue.sample}</div>}
+                          <div className="quality-list-meta">{issueNodeIds.length} nodes in this cluster</div>
+                          {Array.isArray(issue.how_to_fix) && issue.how_to_fix.length > 0 && (
+                            <div className="quality-list-fix">Fix: {issue.how_to_fix[0]}</div>
+                          )}
+                        </div>
+                        <div className="quality-node-boxes">
+                          {issueNodeIds.slice(0, 10).map((nodeId) => (
+                            <button
+                              key={`cross-node-${idx}-${nodeId}`}
+                              className="quality-node-box"
+                              onClick={() => handlePreviewNodeClick(nodeId)}
+                              title={`Go to node ${nodeId}`}
+                            >
+                              {nodeId}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
       <div className="master-profile-content">
         {/* Left Panel - Editor */}
         <div className="editor-panel">
           <div className="editor-header">
             <h2>Profile Structure</h2>
-            <button
-              className="btn-primary"
-              onClick={() => handleAddNode(null)}
-            >
-              + Add Section
-            </button>
+            <div className="editor-header-actions">
+              <button
+                className="btn-primary"
+                onClick={() => handleAddNode(null)}
+              >
+                + Add Section
+              </button>
+            </div>
           </div>
 
           <div className="tree-view">
@@ -739,11 +980,41 @@ function MasterProfile() {
                   setDraggedNode={setDraggedNode}
                   expandedNodes={expandedNodes}
                   setExpandedNodes={setExpandedNodes}
+                  qualityByNode={qualityByNode}
                   level={0}
                 />
               ))
             )}
           </div>
+
+          {selectedNode && qualityByNode?.[String(selectedNode.id)] && (
+            <div className="selected-node-quality">
+              <div className="selected-quality-header">
+                <strong>Quality Details</strong>
+                <span className={`selected-quality-badge risk-${qualityByNode[String(selectedNode.id)].risk_level || 'low'}`}>
+                  {qualityByNode[String(selectedNode.id)].score}%
+                </span>
+              </div>
+              {Array.isArray(qualityByNode[String(selectedNode.id)].violations) && qualityByNode[String(selectedNode.id)].violations.length > 0 ? (
+                qualityByNode[String(selectedNode.id)].violations.slice(0, 3).map((issue, idx) => (
+                  <div key={`selected-issue-${idx}`} className="selected-quality-issue">
+                    <div className="selected-issue-title">
+                      <span className={`severity-dot ${issue.severity || 'low'}`}></span>
+                      <span>{issue.message}</span>
+                    </div>
+                    {Array.isArray(issue.where) && issue.where.length > 0 && (
+                      <div className="selected-issue-meta">Where: {issue.where[0]?.text || issue.where[0]}</div>
+                    )}
+                    {Array.isArray(issue.how_to_fix) && issue.how_to_fix.length > 0 && (
+                      <div className="selected-issue-meta">Fix: {issue.how_to_fix[0]}</div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="selected-quality-ok">No major issues on this node.</div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right Panel - Preview */}
@@ -814,11 +1085,29 @@ function MasterProfile() {
 }
 
 // Tree Node Component - Recursive
-function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDelete, onReorder, draggedNode, setDraggedNode, expandedNodes, setExpandedNodes, level }) {
+function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDelete, onReorder, draggedNode, setDraggedNode, expandedNodes, setExpandedNodes, qualityByNode, level }) {
   const [dragOver, setDragOver] = useState(null); // 'before', 'after', or null
   const isSelected = selectedNode?.id === node.id;
   const isDragging = draggedNode?.id === node.id;
   const isExpanded = expandedNodes.has(node.id) || !node.children || node.children.length === 0;
+  const nodeQuality = qualityByNode?.[String(node.id)] || qualityByNode?.[node.id] || null;
+  const qualityBadgeHint = (() => {
+    if (!nodeQuality) return '';
+    const score = nodeQuality.score ?? '-';
+    const violations = Array.isArray(nodeQuality.violations) ? nodeQuality.violations : [];
+    if (Number(score) === 100 && violations.length === 0) {
+      return 'Quality score 100%. No issues detected.';
+    }
+    const prefix = `Quality score ${score}%.`;
+    if (violations.length > 0) {
+      const top = violations.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.message}`).join('\n');
+      return `${prefix}\n${top}`;
+    }
+    if (nodeQuality.aggregated_from_children) {
+      return `${prefix}\nAggregated from child node issues.`;
+    }
+    return `${prefix}\nThis node has quality deductions.`;
+  })();
 
   const toggleExpanded = () => {
     const newExpandedNodes = new Set(expandedNodes);
@@ -923,6 +1212,14 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDel
 
         <div className="node-content">
           <span className={`node-type-badge node-type-${node.node_type}`}>{node.node_type}</span>
+          {nodeQuality && (
+            <span
+              className={`node-quality-badge risk-${nodeQuality.risk_level || 'low'}`}
+              title={qualityBadgeHint}
+            >
+              {nodeQuality.score}%
+            </span>
+          )}
           <span className="node-title">
             {node.node_type === 'bullet' || node.node_type === 'paragraph'
               ? (node.content || 'Empty')
@@ -996,6 +1293,7 @@ function TreeNode({ node, selectedNode, onSelect, onAdd, onEdit, onUpdate, onDel
               setDraggedNode={setDraggedNode}
               expandedNodes={expandedNodes}
               setExpandedNodes={setExpandedNodes}
+              qualityByNode={qualityByNode}
               level={level + 1}
             />
           ))}
