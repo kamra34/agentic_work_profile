@@ -1969,6 +1969,7 @@
 
 /* Action Buttons on Nodes */
 .edit-node-btn,
+.add-node-btn,
 .toggle-visibility-btn {
   flex-shrink: 0;
   cursor: pointer;
@@ -1988,6 +1989,28 @@
   background: #f1f5f9;
   opacity: 1;
   transform: scale(1.15);
+}
+
+.add-node-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1d4ed8;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.add-node-btn:hover {
+  border-color: #93c5fd;
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+  transform: translateY(-1px);
 }
 
 /* =================================================================
@@ -3494,6 +3517,84 @@
   color: #2d3748 !important; /* Force readable text color */
 }
 
+.add-node-modal {
+  width: min(640px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 2px solid #dbeafe;
+  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.26);
+}
+
+.add-node-modal .modal-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #1e293b;
+}
+
+.add-node-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.add-node-parent-path {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.add-node-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.add-node-field label {
+  font-size: 0.84rem;
+  color: #334155;
+  font-weight: 600;
+}
+
+.add-node-field input,
+.add-node-field textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 0.62rem 0.72rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #0f172a;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.add-node-field textarea {
+  resize: vertical;
+  min-height: 94px;
+}
+
+.add-node-field input:focus,
+.add-node-field textarea:focus {
+  outline: none;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+.add-node-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.add-node-submit {
+  min-width: 120px;
+}
+
 .modal-close-btn {
   background: #f7fafc !important;
   border: 2px solid #cbd5e0;
@@ -4295,6 +4396,10 @@
 
   .refinement-modal .modal-body {
     padding: 1rem;
+  }
+
+  .add-node-row {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -37,6 +37,44 @@ HTML2PDF_TEMPLATES = {"creative"}  # Only Creative uses HTML2PDF for now
 REPORTLAB_TEMPLATES = {"professional", "modern", "compact", "ats_optimized"}  # Others use ReportLab
 
 
+def _normalize_pdf_metadata(pdf_buffer: BytesIO) -> BytesIO:
+    """
+    Re-write PDF with normalized metadata to avoid leaking generator/library details.
+    Keeps document content unchanged.
+    """
+    try:
+        try:
+            from PyPDF2 import PdfReader, PdfWriter
+        except Exception:
+            from pypdf import PdfReader, PdfWriter
+
+        pdf_buffer.seek(0)
+        reader = PdfReader(pdf_buffer)
+        writer = PdfWriter()
+
+        for page in reader.pages:
+            writer.add_page(page)
+
+        # Keep metadata minimal and neutral.
+        writer.add_metadata({
+            "/Title": "CV",
+            "/Author": "",
+            "/Subject": "",
+            "/Keywords": "",
+            "/Creator": "Work Profile",
+            "/Producer": "Work Profile",
+        })
+
+        cleaned_buffer = BytesIO()
+        writer.write(cleaned_buffer)
+        cleaned_buffer.seek(0)
+        return cleaned_buffer
+    except Exception as e:
+        print(f"[PDF_SERVICE] Metadata normalization skipped: {e}")
+        pdf_buffer.seek(0)
+        return pdf_buffer
+
+
 def _transform_cv_data_for_weasyprint(cv_data: Dict[str, Any], hidden_items: Optional[List[int]] = None) -> Dict[str, Any]:
     """
     Transform cv_data from ReportLab format to WeasyPrint format
@@ -662,7 +700,7 @@ class CVPDFGenerator:
             raise
 
         buffer.seek(0)
-        return buffer
+        return _normalize_pdf_metadata(buffer)
 
     def _build_header(self, cv_data: Dict[str, Any]) -> List:
         """Build the header section with contact info"""
@@ -1049,7 +1087,7 @@ def generate_cv_pdf(
             customizations=customizations or {}
         )
 
-        return generator.generate()
+        return _normalize_pdf_metadata(generator.generate())
     else:
         # Use ReportLab generator (original implementation)
         print(f"[PDF_SERVICE] Using ReportLab generator for template: {template_name}")

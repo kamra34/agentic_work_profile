@@ -18,6 +18,20 @@ function SavedCVDetail({ cvId, onBack }) {
   const [previewTab, setPreviewTab] = useState('preview'); // 'preview', 'openai', 'claude'
   const [editingNode, setEditingNode] = useState(null); // Track which node is being edited
   const [editedContent, setEditedContent] = useState({}); // Store edited content
+  const [addNodeModal, setAddNodeModal] = useState({
+    isOpen: false,
+    parentNode: null,
+    parentLevel: 0
+  });
+  const [newNodeForm, setNewNodeForm] = useState({
+    node_type: 'entry',
+    title: '',
+    subtitle: '',
+    content: '',
+    start_date: '',
+    end_date: '',
+    location: ''
+  });
   const [recalculating, setRecalculating] = useState(false);
   const [showPromptSection, setShowPromptSection] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -120,6 +134,7 @@ function SavedCVDetail({ cvId, onBack }) {
   const [loadingPreviewMetadata, setLoadingPreviewMetadata] = useState(false);
   const [previewMetadataTimer, setPreviewMetadataTimer] = useState(null);
   const skipAutoHumanityCheckRef = useRef(true);
+  const nextTempNodeIdRef = useRef(-1);
 
   const baseInstructionTemplates = [
     {
@@ -522,6 +537,149 @@ function SavedCVDetail({ cvId, onBack }) {
     setEditedContent({});
   };
 
+  const getAllowedChildTypes = (parentLevel) => {
+    if (parentLevel < 2) return ['entry', 'bullet', 'paragraph'];
+    return ['bullet', 'paragraph'];
+  };
+
+  const openAddNodeModal = (parentNode, parentLevel) => {
+    const allowedTypes = getAllowedChildTypes(parentLevel);
+    const defaultType = allowedTypes.includes('entry') ? 'entry' : allowedTypes[0];
+
+    setAddNodeModal({
+      isOpen: true,
+      parentNode,
+      parentLevel
+    });
+    setNewNodeForm({
+      node_type: defaultType,
+      title: '',
+      subtitle: '',
+      content: '',
+      start_date: '',
+      end_date: '',
+      location: ''
+    });
+  };
+
+  const closeAddNodeModal = () => {
+    setAddNodeModal({
+      isOpen: false,
+      parentNode: null,
+      parentLevel: 0
+    });
+  };
+
+  const createNodeFromForm = () => {
+    const nodeType = newNodeForm.node_type;
+    const parentNode = addNodeModal.parentNode;
+    const parentLevel = addNodeModal.parentLevel;
+    const allowedTypes = getAllowedChildTypes(parentLevel);
+
+    if (!parentNode) {
+      throw new Error('Parent node is missing');
+    }
+    if (!allowedTypes.includes(nodeType)) {
+      throw new Error('This item type is not allowed at this level');
+    }
+    if ((nodeType === 'bullet' || nodeType === 'paragraph') && !newNodeForm.content.trim()) {
+      throw new Error(`${nodeType === 'bullet' ? 'Bullet' : 'Paragraph'} content is required`);
+    }
+    if (nodeType === 'entry' && !newNodeForm.title.trim()) {
+      throw new Error('Entry title is required');
+    }
+
+    const newId = nextTempNodeIdRef.current--;
+    const newGlobalId = `manual-added-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const computedLevel = typeof parentNode.level === 'number' ? parentNode.level + 1 : parentLevel + 1;
+    const inferredRootId =
+      parentNode.root_id != null
+        ? parentNode.root_id
+        : (parentNode.node_type === 'section' ? parentNode.id : null);
+
+    return {
+      id: newId,
+      global_id: newGlobalId,
+      profile_id: cvData?.profile_id,
+      parent_id: parentNode.id,
+      root_id: inferredRootId,
+      level: computedLevel,
+      node_type: nodeType,
+      title: nodeType === 'entry' ? newNodeForm.title.trim() : '',
+      subtitle: nodeType === 'entry' ? (newNodeForm.subtitle || '').trim() : '',
+      content: (newNodeForm.content || '').trim(),
+      content_type: 'text',
+      start_date: nodeType === 'entry' ? (newNodeForm.start_date || '').trim() : '',
+      end_date: nodeType === 'entry' ? (newNodeForm.end_date || '').trim() : '',
+      location: nodeType === 'entry' ? (newNodeForm.location || '').trim() : '',
+      order: (parentNode.children || []).length,
+      is_visible: true,
+      is_selected: true,
+      ai_refined: false,
+      children: []
+    };
+  };
+
+  const handleAddNodeToSnapshot = async () => {
+    if (!cvData?.content_snapshot?.nodes) return;
+
+    try {
+      const parentNode = addNodeModal.parentNode;
+      const newNode = createNodeFromForm();
+
+      const addToTree = (nodes) => {
+        return nodes.map(node => {
+          if (node.global_id === parentNode.global_id) {
+            return {
+              ...node,
+              children: [...(node.children || []), newNode]
+            };
+          }
+          if (node.children && node.children.length > 0) {
+            return { ...node, children: addToTree(node.children) };
+          }
+          return node;
+        });
+      };
+
+      const updatedNodes = normalizeNodeOrderRecursive(addToTree(cvData.content_snapshot.nodes));
+      const updatedSnapshot = {
+        ...cvData.content_snapshot,
+        nodes: updatedNodes
+      };
+
+      const updatedSelections = {
+        ...nodeSelections,
+        [newNode.global_id]: true
+      };
+
+      setCvData(prev => ({
+        ...prev,
+        content_snapshot: updatedSnapshot
+      }));
+      setNodeSelections(updatedSelections);
+      setExpandedNodes(prev => {
+        const next = new Set(prev);
+        next.add(parentNode.id);
+        return next;
+      });
+      setSelectedNode(newNode);
+      closeAddNodeModal();
+
+      setAutoSaveStatus('saving');
+      const snapshotForSave = {
+        ...updatedSnapshot,
+        nodes: updateNodesWithSelectionsRecursive(updatedSnapshot.nodes, updatedSelections)
+      };
+      await saveSnapshotToBackend(snapshotForSave);
+      setAutoSaveStatus('saved');
+    } catch (err) {
+      console.error('Error adding node:', err);
+      alert(err.message || 'Failed to add item');
+      setAutoSaveStatus('error');
+    }
+  };
+
   // Save edited content
   const saveNodeEdit = (node) => {
     // Update the node in cvData
@@ -599,8 +757,22 @@ function SavedCVDetail({ cvId, onBack }) {
     }));
   };
 
+  // Keep node.order aligned with the visual array order at every tree level.
+  const normalizeNodeOrderRecursive = (nodes) => {
+    return (nodes || []).map((node, index) => ({
+      ...node,
+      order: index,
+      children: node.children ? normalizeNodeOrderRecursive(node.children) : []
+    }));
+  };
+
   // Helper to save snapshot to backend
   const saveSnapshotToBackend = async (snapshot) => {
+    const normalizedSnapshot = {
+      ...snapshot,
+      nodes: normalizeNodeOrderRecursive(snapshot.nodes || [])
+    };
+
     const selectedNodeIds = [];
     const collectSelectedIds = (nodes) => {
       nodes.forEach(node => {
@@ -615,7 +787,7 @@ function SavedCVDetail({ cvId, onBack }) {
         }
       });
     };
-    collectSelectedIds(snapshot.nodes);
+    collectSelectedIds(normalizedSnapshot.nodes);
 
     const token = localStorage.getItem('token');
     const response = await fetch(`${API_URL}/api/tailor/${cvId}`, {
@@ -625,7 +797,7 @@ function SavedCVDetail({ cvId, onBack }) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        content_snapshot: snapshot,
+        content_snapshot: normalizedSnapshot,
         selected_node_ids: selectedNodeIds
       })
     });
@@ -700,7 +872,7 @@ function SavedCVDetail({ cvId, onBack }) {
         return reordered;
       };
 
-      const reorderedNodes = reorderNodes(cvData.content_snapshot.nodes);
+      const reorderedNodes = normalizeNodeOrderRecursive(reorderNodes(cvData.content_snapshot.nodes));
 
       // Update local state
       const updatedSnapshot = {
@@ -2233,45 +2405,11 @@ function SavedCVDetail({ cvId, onBack }) {
     setShowPreviewTemplateModal(true);
   };
 
-  const confirmHumanityOverride = (humanity) => {
-    if (!humanity?.requires_confirmation) return true;
-
-    const topViolations = (humanity.violations || [])
-      .slice(0, 3)
-      .map(v => `??? ${v.message}`)
-      .join('\n');
-    const llmSummary = humanity?.llm_review?.summary
-      ? `\nLLM critic: ${humanity.llm_review.summary}\n`
-      : '\n';
-
-    return window.confirm(
-      `Humanity Guard warning (score: ${humanity.score}/${humanity.threshold}).\n\n` +
-      `${topViolations || 'Content may sound AI-generated or include risky claims.'}${llmSummary}\n` +
-      `Do you want to export anyway?`
-    );
-  };
-
-  const getExportDecision = async () => {
-    const snapshot = buildCurrentSnapshot();
-    const humanity = await runHumanityCheck(snapshot, 'deep');
-    if (humanity?.requires_confirmation) {
-      const confirmed = confirmHumanityOverride(humanity);
-      if (!confirmed) {
-        return { allow: false, forceExport: false };
-      }
-      return { allow: true, forceExport: true };
-    }
-    return { allow: true, forceExport: false };
-  };
-
   // Generate PDF with selected template
   const previewPDF = async (templateName, customizations = {}) => {
     try {
       setPreviewingPDF(true);
       setShowPreviewTemplateModal(false); // Close modal
-
-      const exportDecision = await getExportDecision();
-      if (!exportDecision.allow) return;
 
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/tailor/${cvId}/preview-pdf`, {
@@ -2283,7 +2421,7 @@ function SavedCVDetail({ cvId, onBack }) {
         body: JSON.stringify({
           cv_format: templateName,
           customizations: customizations,
-          force_export: exportDecision.forceExport
+          force_export: true
         })
       });
 
@@ -2397,28 +2535,6 @@ function SavedCVDetail({ cvId, onBack }) {
     try {
       const token = localStorage.getItem('token');
 
-      // First, check if this CV already exists in the application tracker
-      const checkResponse = await fetch(`${API_URL}/api/applications/check-duplicate/${cvId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (checkResponse.ok) {
-        const duplicateCheck = await checkResponse.json();
-        if (duplicateCheck.exists) {
-          setSavingToTracker(false);
-          alert(
-            `This CV has already been saved to the Application Tracker!\n\n` +
-            `Status: ${duplicateCheck.status}\n` +
-            `Created: ${new Date(duplicateCheck.created_at).toLocaleString()}\n\n` +
-            `You can view it in the Application Tracker page.`
-          );
-          return;
-        }
-      }
-
-      // If no duplicate, proceed with creation
       const response = await fetch(`${API_URL}/api/applications/create`, {
         method: 'POST',
         headers: {
@@ -2473,9 +2589,6 @@ function SavedCVDetail({ cvId, onBack }) {
     }
 
     try {
-      const exportDecision = await getExportDecision();
-      if (!exportDecision.allow) return;
-
       const token = localStorage.getItem('token');
 
       // Call backend endpoint to generate and download PDF
@@ -2486,7 +2599,7 @@ function SavedCVDetail({ cvId, onBack }) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          force_export: exportDecision.forceExport
+          force_export: true
         })
       });
 
@@ -2581,6 +2694,10 @@ function SavedCVDetail({ cvId, onBack }) {
     const isSelected = selectedNode?.id === node.id;
     const isIncluded = nodeSelections[node.global_id];
     const hasChildren = node.children && node.children.length > 0;
+    const allowedChildTypes = getAllowedChildTypes(level);
+    const canAddChild =
+      ['section', 'entry', 'bullet'].includes(node.node_type) &&
+      allowedChildTypes.length > 0;
     const aiRecs = getAIRecommendations(node.id);
     const isDragging = draggedNode?.id === node.id;
     const isDragOver = dragOver?.nodeId === node.id;
@@ -2878,6 +2995,20 @@ function SavedCVDetail({ cvId, onBack }) {
               >
                 ✏️
               </button>
+
+              {/* Add Child Button */}
+              {canAddChild && (
+                <button
+                  className="add-node-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openAddNodeModal(node, level);
+                  }}
+                  title={`Add ${allowedChildTypes.join(' / ')} under this item`}
+                >
+                  +
+                </button>
+              )}
 
               {/* Refine Button - Distinctive icons for sections vs entries */}
               {node.node_type === 'section' && (
@@ -3411,6 +3542,7 @@ function SavedCVDetail({ cvId, onBack }) {
     if (typeof raw === 'string' && raw.trim()) return [raw.trim()];
     return [];
   };
+  const addNodeAllowedTypes = getAllowedChildTypes(addNodeModal.parentLevel);
 
   return (
     <div className="saved-cv-detail">
@@ -4035,26 +4167,6 @@ function SavedCVDetail({ cvId, onBack }) {
             try {
               const token = localStorage.getItem('token');
 
-              // Check for duplicate first
-              const checkResponse = await fetch(`${API_URL}/api/applications/check-duplicate/${cvId}`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`
-                }
-              });
-
-              if (checkResponse.ok) {
-                const duplicateCheck = await checkResponse.json();
-                if (duplicateCheck.exists) {
-                  alert(
-                    `This CV has already been saved to the Application Tracker!\n\n` +
-                    `Status: ${duplicateCheck.status}\n` +
-                    `Created: ${new Date(duplicateCheck.created_at).toLocaleString()}\n\n` +
-                    `You can view it in the Application Tracker page.`
-                  );
-                  return;
-                }
-              }
-
               // Create job application with all settings
               const createResponse = await fetch(`${API_URL}/api/applications/create`, {
                 method: 'POST',
@@ -4644,6 +4756,136 @@ function SavedCVDetail({ cvId, onBack }) {
                   <strong>Error:</strong> {refinementResult.error || 'Failed to refine section'}
                 </div>
               )}
+          </div>
+        </div>
+      )}
+
+      {addNodeModal.isOpen && (
+        <div className="modal-overlay add-node-modal-overlay" onClick={closeAddNodeModal}>
+          <div className="modal add-node-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Add Item</h2>
+              <button
+                onClick={closeAddNodeModal}
+                className="modal-close-btn"
+                title="Close"
+              >
+                âœ•
+              </button>
+            </div>
+
+            <div className="modal-body add-node-modal-body">
+              <p className="add-node-parent-path">
+                Parent: <strong>{addNodeModal.parentNode?.title || addNodeModal.parentNode?.content || 'Selected node'}</strong>
+              </p>
+
+              <div className="add-node-field">
+                <label htmlFor="add-node-type">Type</label>
+                <select
+                  id="add-node-type"
+                  className="reasoning-effort-dropdown"
+                  value={newNodeForm.node_type}
+                  onChange={(e) => setNewNodeForm((prev) => ({ ...prev, node_type: e.target.value }))}
+                >
+                  {addNodeAllowedTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {newNodeForm.node_type === 'entry' && (
+                <>
+                  <div className="add-node-field">
+                    <label htmlFor="add-node-title">Title *</label>
+                    <input
+                      id="add-node-title"
+                      type="text"
+                      value={newNodeForm.title}
+                      onChange={(e) => setNewNodeForm((prev) => ({ ...prev, title: e.target.value }))}
+                      placeholder="Example: Senior Data Scientist"
+                    />
+                  </div>
+                  <div className="add-node-field">
+                    <label htmlFor="add-node-subtitle">Subtitle</label>
+                    <input
+                      id="add-node-subtitle"
+                      type="text"
+                      value={newNodeForm.subtitle}
+                      onChange={(e) => setNewNodeForm((prev) => ({ ...prev, subtitle: e.target.value }))}
+                      placeholder="Example: Company Name"
+                    />
+                  </div>
+                  <div className="add-node-row">
+                    <div className="add-node-field">
+                      <label htmlFor="add-node-start-date">Start Date</label>
+                      <input
+                        id="add-node-start-date"
+                        type="text"
+                        value={newNodeForm.start_date}
+                        onChange={(e) => setNewNodeForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                        placeholder="MMM YYYY"
+                      />
+                    </div>
+                    <div className="add-node-field">
+                      <label htmlFor="add-node-end-date">End Date</label>
+                      <input
+                        id="add-node-end-date"
+                        type="text"
+                        value={newNodeForm.end_date}
+                        onChange={(e) => setNewNodeForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                        placeholder="Present"
+                      />
+                    </div>
+                  </div>
+                  <div className="add-node-field">
+                    <label htmlFor="add-node-location">Location</label>
+                    <input
+                      id="add-node-location"
+                      type="text"
+                      value={newNodeForm.location}
+                      onChange={(e) => setNewNodeForm((prev) => ({ ...prev, location: e.target.value }))}
+                      placeholder="City, Country"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="add-node-field">
+                <label htmlFor="add-node-content">
+                  {newNodeForm.node_type === 'entry' ? 'Description' : 'Content *'}
+                </label>
+                <textarea
+                  id="add-node-content"
+                  value={newNodeForm.content}
+                  onChange={(e) => setNewNodeForm((prev) => ({ ...prev, content: e.target.value }))}
+                  placeholder={
+                    newNodeForm.node_type === 'paragraph'
+                      ? 'Write paragraph text...'
+                      : newNodeForm.node_type === 'bullet'
+                        ? 'Write bullet text...'
+                        : 'Optional entry description'
+                  }
+                  rows={newNodeForm.node_type === 'paragraph' ? 5 : 4}
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                onClick={closeAddNodeModal}
+                className="btn-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddNodeToSnapshot}
+                className="btn-start-refine add-node-submit"
+              >
+                Add Item
+              </button>
+            </div>
           </div>
         </div>
       )}
