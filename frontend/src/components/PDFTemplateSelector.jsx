@@ -174,6 +174,19 @@ const TEMPLATES = [
   }
 ];
 
+const extractSelectedSectionsFromCvData = (cvData) => {
+  const nodes = cvData?.content_snapshot?.nodes;
+  if (!Array.isArray(nodes)) return [];
+
+  return nodes
+    .filter((node) => node?.node_type === 'section' && node?.is_selected)
+    .map((node, index) => ({
+      id: node.title || `section_${index}`,
+      title: node.title || 'Untitled Section',
+      originalIndex: index
+    }));
+};
+
 function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplicationId = null }) {
   const [selectedTemplate, setSelectedTemplate] = useState('professional');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -202,51 +215,33 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
   const [showFullSizePreview, setShowFullSizePreview] = useState(false);
 
   // Section ordering state
-  const [sectionOrder, setSectionOrder] = useState([]);
+  const [sectionOrder, setSectionOrder] = useState(() => extractSelectedSectionsFromCvData(cvData));
+  const [sectionsInitialized, setSectionsInitialized] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null);
 
   // Refs to prevent duplicate API calls
   const previewRequestRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const initializedCvIdRef = useRef(null);
 
   const selectedTemplateData = TEMPLATES.find(t => t.id === selectedTemplate);
 
-  // Fetch CV sections for ordering
-  const fetchSections = useCallback(async () => {
-    if (!cvId) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/tailor/${cvId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) return;
-
-      const data = await response.json();
-      if (data.content_snapshot && data.content_snapshot.nodes) {
-        // Extract sections from nodes
-        const sections = data.content_snapshot.nodes
-          .filter(node => node.node_type === 'section' && node.is_selected)
-          .map((node, index) => ({
-            id: node.title || `section_${index}`,
-            title: node.title || 'Untitled Section',
-            originalIndex: index
-          }));
-        setSectionOrder(sections);
-      }
-    } catch (error) {
-      console.error('Error fetching sections:', error);
-    }
+  useEffect(() => {
+    initializedCvIdRef.current = null;
+    setSectionsInitialized(false);
   }, [cvId]);
 
-  // Initialize section order
+  // Initialize section order from already-loaded CV data (no extra API call needed)
   useEffect(() => {
-    fetchSections();
-  }, [fetchSections]);
+    if (!cvId) return;
+    if (!cvData?.content_snapshot?.nodes) return;
+    if (initializedCvIdRef.current === cvId) return;
+
+    setSectionOrder(extractSelectedSectionsFromCvData(cvData));
+    setSectionsInitialized(true);
+    initializedCvIdRef.current = cvId;
+  }, [cvId, cvData]);
 
   // Fetch preview image and metadata
   const fetchPreview = useCallback(async () => {
@@ -403,10 +398,17 @@ function PDFTemplateSelector({ cvId, cvData, onClose, onGenerate, existingApplic
     }
   }, [cvId, selectedTemplate, customizations, sectionOrder, fullSizeImageUrl]);
 
-  // Fetch preview when template, customizations, or section order changes
+  // Fetch preview when template/customizations/section order changes
+  // Debounced to avoid duplicate requests during rapid UI updates.
   useEffect(() => {
-    fetchPreview();
-  }, [fetchPreview]);
+    if (!sectionsInitialized) return;
+
+    const timer = setTimeout(() => {
+      fetchPreview();
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [fetchPreview, sectionsInitialized]);
 
   // Invalidate full-size preview when settings change
   useEffect(() => {

@@ -4296,13 +4296,14 @@ async def preview_tailored_cv_pdf(
     # Use the shared transformation function to ensure consistency
     sections = transform_nodes_to_sections(snapshot.get('nodes', []))
 
-    ai_settings = get_user_ai_settings(current_user)
-    humanity_report = _evaluate_humanity_for_nodes(
-        snapshot.get('nodes', []),
-        mode="deep",
-        ai_settings=ai_settings
-    )
-    _raise_if_humanity_blocked(humanity_report, force_export=force_export)
+    if not force_export:
+        ai_settings = get_user_ai_settings(current_user)
+        humanity_report = _evaluate_humanity_for_nodes(
+            snapshot.get('nodes', []),
+            mode="deep",
+            ai_settings=ai_settings
+        )
+        _raise_if_humanity_blocked(humanity_report, force_export=False)
 
     # Apply section reordering if specified in customizations
     section_order = customizations.get('sectionOrder', [])
@@ -4608,13 +4609,14 @@ async def export_application_pdf(
     # Get the finalized content snapshot and transform it for PDF service
     snapshot = application.final_content_snapshot
     force_export = bool((request_data or {}).get("force_export", False))
-    ai_settings = get_user_ai_settings(current_user)
-    humanity_report = _evaluate_humanity_for_nodes(
-        (snapshot or {}).get("nodes", []),
-        mode="deep",
-        ai_settings=ai_settings
-    )
-    _raise_if_humanity_blocked(humanity_report, force_export=force_export)
+    if not force_export:
+        ai_settings = get_user_ai_settings(current_user)
+        humanity_report = _evaluate_humanity_for_nodes(
+            (snapshot or {}).get("nodes", []),
+            mode="deep",
+            ai_settings=ai_settings
+        )
+        _raise_if_humanity_blocked(humanity_report, force_export=False)
 
     # Transform hierarchical nodes to flat sections for PDF service
     def transform_nodes_to_sections(nodes):
