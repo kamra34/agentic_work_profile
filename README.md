@@ -341,6 +341,7 @@ agentic_work_profile/
 - ✅ Request validation with Pydantic
 - ✅ Secure API key management
 - ✅ HTTPS-ready deployment
+- ✅ Railway auto-deploy on pushes to the configured `main` branch
 
 ### **Privacy**
 - ✅ No data sharing with third parties
