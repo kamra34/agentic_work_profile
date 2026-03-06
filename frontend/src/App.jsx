@@ -7,6 +7,8 @@ import ExamplesPage from './pages/ExamplesPage';
 import HowItWorksPage from './pages/HowItWorksPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import Dashboard from './components/Dashboard';
 import DashboardHomePage from './pages/DashboardHomePage';
 import UserProfilePage from './pages/UserProfilePage';
@@ -14,6 +16,7 @@ import ProfilePoolPage from './pages/ProfilePoolPage';
 import TailorCVPage from './pages/TailorCVPage';
 import CVPortfolioPage from './pages/CVPortfolioPage';
 import ApplicationTrackerPage from './pages/ApplicationTrackerPage';
+import AdminPage from './pages/AdminPage';
 import JobAnalysisView from './components/JobAnalysisView';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AIAnalysisProvider } from './context/AIAnalysisContext';
@@ -124,6 +127,12 @@ function App() {
         <Route path="/register" element={
           user ? <Navigate to="/dashboard" replace /> : <RegisterPage />
         } />
+        <Route path="/forgot-password" element={
+          user ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />
+        } />
+        <Route path="/reset-password" element={
+          user ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />
+        } />
 
         {/* Protected Routes - Dashboard with nested routes */}
         <Route path="/dashboard" element={
@@ -139,6 +148,7 @@ function App() {
           <Route path="tailor" element={<TailorCVPage />} />
           <Route path="portfolio" element={<CVPortfolioPage />} />
           <Route path="applications" element={<ApplicationTrackerPage />} />
+          <Route path="admin" element={<AdminPage currentUser={user} />} />
         </Route>
 
         {/* Job Analysis View - Standalone page */}

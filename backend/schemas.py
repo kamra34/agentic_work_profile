@@ -3,7 +3,7 @@ Universal Pydantic schemas for API validation.
 All profile content uses ProfileNode schemas - no section-specific schemas needed.
 """
 
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, validator, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -35,6 +35,23 @@ class UserRegister(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @validator('new_password')
+    def validate_new_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        if len(v.encode('utf-8')) > 72:
+            raise ValueError('Password is too long (max 72 bytes)')
+        return v
 
 
 class Token(BaseModel):
@@ -115,6 +132,44 @@ class UserAISettingsUpdate(BaseModel):
     humanity_llm_model: Optional[str] = None
     humanity_llm_reasoning_effort: Optional[str] = None
     refinement_instruction_templates: Optional[List[Dict[str, str]]] = None
+
+
+class AdminUserSummary(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    is_admin: bool
+    created_at: datetime
+    last_activity_at: Optional[datetime] = None
+    profiles_count: int = 0
+    nodes_count: int = 0
+    tailored_cvs_count: int = 0
+    applications_count: int = 0
+
+
+class AdminUserDetail(AdminUserSummary):
+    tailored_cv_status_counts: Dict[str, int] = Field(default_factory=dict)
+    application_status_counts: Dict[str, int] = Field(default_factory=dict)
+    cv_format_counts: Dict[str, int] = Field(default_factory=dict)
+    jobs_analyzed_count: int = 0
+    score_recalculation_runs: int = 0
+    recent_roles: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class AdminUserAdminUpdate(BaseModel):
+    is_admin: bool
+
+
+class AdminPasswordResetUpdate(BaseModel):
+    new_password: str
+
+    @validator('new_password')
+    def validate_new_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        if len(v.encode('utf-8')) > 72:
+            raise ValueError('Password is too long (max 72 bytes)')
+        return v
 
 
 # ============================================================================

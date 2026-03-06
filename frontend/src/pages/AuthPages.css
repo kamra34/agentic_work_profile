@@ -138,6 +138,16 @@
   margin-top: 0.5rem;
 }
 
+.auth-helper-row {
+  margin-top: 0.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.helper-link {
+  font-size: 0.85rem;
+}
+
 .btn-full {
   width: 100%;
   padding: 1rem;

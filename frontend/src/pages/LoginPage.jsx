@@ -108,6 +108,11 @@ function LoginPage({ onLogin }) {
                 autoComplete="current-password"
                 placeholder="Enter your password"
               />
+              <div className="auth-helper-row">
+                <Link to="/forgot-password" className="auth-link helper-link">
+                  Forgot password?
+                </Link>
+              </div>
             </div>
 
             <button type="submit" className="btn btn-primary btn-full" disabled={loading}>

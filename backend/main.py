@@ -19,6 +19,12 @@ import os
 import re
 import base64
 import hashlib
+import smtplib
+from email.message import EmailMessage
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+from html import escape
 from dotenv import load_dotenv
 import uuid
 from pathlib import Path
@@ -33,8 +39,9 @@ load_dotenv(dotenv_path=env_path)
 
 from models import User, Profile, ProfileNode, TailoredCV, JobApplication
 from schemas import (
-    UserRegister, UserLogin, Token, UserResponse,
+    UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, Token, UserResponse,
     UserProfileInfo, UserProfileInfoUpdate, UserAISettings, UserAISettingsUpdate,
+    AdminUserSummary, AdminUserDetail, AdminUserAdminUpdate, AdminPasswordResetUpdate,
     ProfileResponse, ProfileCreate, ProfileUpdate,
     ProfileNodeResponse, ProfileNodeCreate, ProfileNodeUpdate,
     JobApplicationCreate, JobApplicationUpdate, JobApplicationResponse
@@ -1125,6 +1132,9 @@ DEFAULT_HUMANITY_LLM_REASONING = os.getenv("HUMANITY_LLM_REASONING_EFFORT", "low
 if DEFAULT_HUMANITY_LLM_REASONING not in VALID_REASONING_EFFORT:
     DEFAULT_HUMANITY_LLM_REASONING = "low"
 
+PRIMARY_ADMIN_EMAIL = os.getenv("PRIMARY_ADMIN_EMAIL", "kr.nosrati@gmail.com").strip().lower()
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "60"))
+
 
 def _normalize_openai_model(model: Optional[str]) -> str:
     value = (model or "").strip()
@@ -1403,6 +1413,36 @@ def _ensure_user_ai_settings_columns():
 _ensure_user_ai_settings_columns()
 
 
+def _ensure_admin_controls():
+    """
+    Bootstrap admin role controls:
+    - Ensure is_admin column exists and has sane defaults.
+    - Seed PRIMARY_ADMIN_EMAIL as admin.
+    - If all existing users are admins (legacy default), demote all first.
+    """
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN"))
+        conn.execute(text("UPDATE users SET is_admin = FALSE WHERE is_admin IS NULL"))
+
+        # Postgres supports default updates; ignore other engines safely.
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("ALTER TABLE users ALTER COLUMN is_admin SET DEFAULT FALSE"))
+
+        total_users = conn.execute(text("SELECT COUNT(*) FROM users")).scalar() or 0
+        admin_users = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_admin = TRUE")).scalar() or 0
+        if total_users > 0 and admin_users == total_users:
+            conn.execute(text("UPDATE users SET is_admin = FALSE"))
+
+        if PRIMARY_ADMIN_EMAIL:
+            conn.execute(
+                text("UPDATE users SET is_admin = TRUE WHERE LOWER(email) = :email"),
+                {"email": PRIMARY_ADMIN_EMAIL}
+            )
+
+
+_ensure_admin_controls()
+
+
 def _ensure_tailored_cv_runtime_columns():
     """Best-effort schema bootstrap for Tailored CV runtime metadata columns."""
     with engine.begin() as conn:
@@ -1455,6 +1495,169 @@ def create_access_token(data: dict):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def _password_fingerprint(hashed_password: str) -> str:
+    return hashlib.sha256((hashed_password or "").encode("utf-8")).hexdigest()[:16]
+
+
+def create_password_reset_token(user: User) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=max(5, PASSWORD_RESET_TOKEN_EXPIRE_MINUTES))
+    payload = {
+        "sub": str(user.id),
+        "type": "password_reset",
+        "ph": _password_fingerprint(user.hashed_password),
+        "exp": expire,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _decode_password_reset_token(token: str) -> Dict[str, Any]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired password reset token")
+
+    if payload.get("type") != "password_reset":
+        raise HTTPException(status_code=400, detail="Invalid password reset token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid password reset token")
+
+    return payload
+
+
+def _send_password_reset_email(to_email: str, full_name: str, token: str) -> bool:
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5174").strip().rstrip("/")
+    reset_link = f"{frontend_url}/reset-password?token={quote(token)}"
+    subject = "Reset your password"
+    recipient_name = escape(full_name or "there")
+    safe_reset_link = escape(reset_link)
+    text_body = (
+        f"Hello {full_name or 'there'},\n\n"
+        f"We received a request to reset your password.\n"
+        f"Use the link below to set a new password (valid for {PASSWORD_RESET_TOKEN_EXPIRE_MINUTES} minutes):\n\n"
+        f"{reset_link}\n\n"
+        f"If you did not request this, you can ignore this email.\n"
+    )
+    html_body = f"""
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f3f7ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #dbe7ff;border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(37,99,235,0.14);">
+            <tr>
+              <td style="padding:22px 26px;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#ffffff;">
+                <div style="font-size:13px;letter-spacing:0.08em;text-transform:uppercase;opacity:.9;">Agentic CV Builder</div>
+                <h1 style="margin:10px 0 0 0;font-size:24px;line-height:1.25;">Password Reset Request</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 26px 8px 26px;font-size:15px;line-height:1.65;">
+                <p style="margin:0 0 14px 0;">Hello {recipient_name},</p>
+                <p style="margin:0 0 14px 0;">We received a request to reset your password. Use the button below to set a new password.</p>
+                <p style="margin:0 0 20px 0;color:#334155;">This link is valid for <strong>{PASSWORD_RESET_TOKEN_EXPIRE_MINUTES} minutes</strong>.</p>
+                <p style="margin:0 0 20px 0;">
+                  <a href="{safe_reset_link}" style="display:inline-block;padding:12px 22px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#ffffff;text-decoration:none;font-weight:700;">Reset Password</a>
+                </p>
+                <p style="margin:0 0 8px 0;color:#64748b;font-size:13px;">If the button does not work, copy and paste this URL:</p>
+                <p style="margin:0 0 20px 0;word-break:break-all;font-size:13px;color:#1e293b;background:#f8fafc;border:1px solid #e2e8f0;padding:10px;border-radius:8px;">{safe_reset_link}</p>
+                <p style="margin:0 0 16px 0;color:#475569;">If you did not request this, you can safely ignore this email.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 26px 22px 26px;border-top:1px solid #eef2ff;font-size:12px;color:#94a3b8;">
+                This is an automated security email from Agentic CV Builder.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+""".strip()
+
+    # Prefer Brevo HTTP API when BREVO_API_KEY is available.
+    brevo_api_key = os.getenv("BREVO_API_KEY", "").strip()
+    brevo_from = os.getenv("EMAIL_FROM", "").strip()
+    brevo_from_name = os.getenv("EMAIL_FROM_NAME", "Agentic CV Builder").strip() or "Agentic CV Builder"
+    if brevo_api_key and brevo_from:
+        payload = {
+            "sender": {"name": brevo_from_name, "email": brevo_from},
+            "to": [{"email": to_email, "name": full_name or to_email}],
+            "subject": subject,
+            "htmlContent": html_body,
+            "textContent": text_body,
+        }
+
+        req = Request(
+            url="https://api.brevo.com/v3/smtp/email",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "accept": "application/json",
+                "content-type": "application/json",
+                "api-key": brevo_api_key,
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=20) as response:
+                if 200 <= response.status < 300:
+                    return True
+                api_logger.error(f"[Auth] Brevo email failed with status {response.status}")
+        except HTTPError as exc:
+            details = ""
+            try:
+                details = exc.read().decode("utf-8", errors="ignore")
+            except Exception:
+                details = str(exc)
+            api_logger.error(f"[Auth] Brevo email HTTP error: {exc.code} {details}")
+        except URLError as exc:
+            api_logger.error(f"[Auth] Brevo email connection error: {exc}")
+        except Exception as exc:
+            api_logger.error(f"[Auth] Brevo email unexpected error: {exc}")
+
+        return False
+
+    # Fallback to SMTP when Brevo API key is not configured.
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port_raw = os.getenv("SMTP_PORT", "587").strip()
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    smtp_from = os.getenv("SMTP_FROM_EMAIL", "").strip() or smtp_user
+    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+    if not smtp_host or not smtp_from:
+        api_logger.warning("[Auth] Email provider not configured. Password reset email skipped.")
+        return False
+
+    try:
+        smtp_port = int(smtp_port_raw)
+    except (TypeError, ValueError):
+        smtp_port = 587
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = smtp_from
+    msg["To"] = to_email
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            if smtp_use_tls:
+                server.starttls()
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        return True
+    except Exception as exc:
+        api_logger.error(f"[Auth] Failed to send reset email: {exc}")
+        return False
+
+
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
@@ -1480,6 +1683,19 @@ def get_current_user(
     return user
 
 
+def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
+def _max_dt(*values: Optional[datetime]) -> Optional[datetime]:
+    candidates = [value for value in values if isinstance(value, datetime)]
+    if not candidates:
+        return None
+    return max(candidates)
+
+
 # ============================================================================
 # Auth Endpoints
 # ============================================================================
@@ -1494,7 +1710,8 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     user = User(
         email=user_data.email,
         full_name=user_data.full_name,
-        hashed_password=pwd_context.hash(user_data.password)
+        hashed_password=pwd_context.hash(user_data.password),
+        is_admin=False
     )
     db.add(user)
     db.commit()
@@ -1518,6 +1735,53 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
 
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/api/forgot-password")
+@app.post("/auth/forgot-password")
+def forgot_password(request_data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Request password reset link.
+    Always returns a generic success response to avoid revealing whether email exists.
+    """
+    generic_response = {
+        "success": True,
+        "message": "If the email is registered, a reset link has been sent."
+    }
+
+    user = db.query(User).filter(func.lower(User.email) == request_data.email.lower()).first()
+    if not user:
+        return generic_response
+
+    token = create_password_reset_token(user)
+    _send_password_reset_email(user.email, user.full_name, token)
+    return generic_response
+
+
+@app.post("/api/reset-password")
+@app.post("/auth/reset-password")
+def reset_password(request_data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Reset password using a valid reset token."""
+    payload = _decode_password_reset_token(request_data.token)
+    user_id_str = payload.get("sub")
+    token_fingerprint = payload.get("ph")
+
+    try:
+        user_id = int(user_id_str)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid password reset token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid password reset token")
+
+    if token_fingerprint != _password_fingerprint(user.hashed_password):
+        raise HTTPException(status_code=400, detail="Reset token is no longer valid. Request a new link.")
+
+    user.hashed_password = pwd_context.hash(request_data.new_password)
+    db.commit()
+
+    return {"success": True, "message": "Password has been reset successfully."}
 
 
 @app.post("/api/refresh-token", response_model=Token)
@@ -1618,6 +1882,312 @@ def update_user_ai_settings_endpoint(
     db.refresh(current_user)
 
     return get_user_ai_settings(current_user)
+
+
+# ============================================================================
+# Admin Endpoints
+# ============================================================================
+
+@app.get("/api/admin/users", response_model=List[AdminUserSummary])
+def admin_list_users(
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """List all users with quick usage stats (no password/key data)."""
+    profiles_stats = (
+        db.query(
+            Profile.user_id.label("user_id"),
+            func.count(Profile.id).label("profiles_count"),
+            func.max(Profile.updated_at).label("profiles_last_activity"),
+        )
+        .group_by(Profile.user_id)
+        .subquery()
+    )
+    node_stats = (
+        db.query(
+            Profile.user_id.label("user_id"),
+            func.count(ProfileNode.id).label("nodes_count"),
+            func.max(ProfileNode.updated_at).label("nodes_last_activity"),
+        )
+        .join(Profile, Profile.id == ProfileNode.profile_id)
+        .group_by(Profile.user_id)
+        .subquery()
+    )
+    tailored_stats = (
+        db.query(
+            TailoredCV.user_id.label("user_id"),
+            func.count(TailoredCV.id).label("tailored_cvs_count"),
+            func.max(TailoredCV.updated_at).label("tailored_last_activity"),
+        )
+        .group_by(TailoredCV.user_id)
+        .subquery()
+    )
+    application_stats = (
+        db.query(
+            JobApplication.user_id.label("user_id"),
+            func.count(JobApplication.id).label("applications_count"),
+            func.max(JobApplication.updated_at).label("applications_last_activity"),
+        )
+        .group_by(JobApplication.user_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            User,
+            profiles_stats.c.profiles_count,
+            profiles_stats.c.profiles_last_activity,
+            node_stats.c.nodes_count,
+            node_stats.c.nodes_last_activity,
+            tailored_stats.c.tailored_cvs_count,
+            tailored_stats.c.tailored_last_activity,
+            application_stats.c.applications_count,
+            application_stats.c.applications_last_activity,
+        )
+        .outerjoin(profiles_stats, profiles_stats.c.user_id == User.id)
+        .outerjoin(node_stats, node_stats.c.user_id == User.id)
+        .outerjoin(tailored_stats, tailored_stats.c.user_id == User.id)
+        .outerjoin(application_stats, application_stats.c.user_id == User.id)
+        .order_by(User.created_at.desc())
+        .all()
+    )
+
+    result: List[AdminUserSummary] = []
+    for (
+        user,
+        profiles_count,
+        profiles_last_activity,
+        nodes_count,
+        nodes_last_activity,
+        tailored_cvs_count,
+        tailored_last_activity,
+        applications_count,
+        applications_last_activity,
+    ) in rows:
+        last_activity = _max_dt(
+            profiles_last_activity,
+            nodes_last_activity,
+            tailored_last_activity,
+            applications_last_activity,
+            user.created_at,
+        )
+        result.append(
+            AdminUserSummary(
+                id=user.id,
+                email=user.email,
+                full_name=user.full_name,
+                is_admin=bool(user.is_admin),
+                created_at=user.created_at,
+                last_activity_at=last_activity,
+                profiles_count=int(profiles_count or 0),
+                nodes_count=int(nodes_count or 0),
+                tailored_cvs_count=int(tailored_cvs_count or 0),
+                applications_count=int(applications_count or 0),
+            )
+        )
+    return result
+
+
+@app.get("/api/admin/users/{user_id}", response_model=AdminUserDetail)
+def admin_get_user_detail(
+    user_id: int,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Detailed per-user product usage stats (sensitive secrets excluded)."""
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profiles_count = db.query(func.count(Profile.id)).filter(Profile.user_id == user_id).scalar() or 0
+    nodes_count = (
+        db.query(func.count(ProfileNode.id))
+        .join(Profile, Profile.id == ProfileNode.profile_id)
+        .filter(Profile.user_id == user_id)
+        .scalar()
+        or 0
+    )
+    tailored_cvs_count = db.query(func.count(TailoredCV.id)).filter(TailoredCV.user_id == user_id).scalar() or 0
+    applications_count = db.query(func.count(JobApplication.id)).filter(JobApplication.user_id == user_id).scalar() or 0
+
+    profiles_last = db.query(func.max(Profile.updated_at)).filter(Profile.user_id == user_id).scalar()
+    nodes_last = (
+        db.query(func.max(ProfileNode.updated_at))
+        .join(Profile, Profile.id == ProfileNode.profile_id)
+        .filter(Profile.user_id == user_id)
+        .scalar()
+    )
+    tailored_last = db.query(func.max(TailoredCV.updated_at)).filter(TailoredCV.user_id == user_id).scalar()
+    applications_last = db.query(func.max(JobApplication.updated_at)).filter(JobApplication.user_id == user_id).scalar()
+    last_activity = _max_dt(profiles_last, nodes_last, tailored_last, applications_last, target_user.created_at)
+
+    tailored_status_rows = (
+        db.query(TailoredCV.status, func.count(TailoredCV.id))
+        .filter(TailoredCV.user_id == user_id)
+        .group_by(TailoredCV.status)
+        .all()
+    )
+    application_status_rows = (
+        db.query(JobApplication.status, func.count(JobApplication.id))
+        .filter(JobApplication.user_id == user_id)
+        .group_by(JobApplication.status)
+        .all()
+    )
+    cv_format_rows = (
+        db.query(JobApplication.cv_format, func.count(JobApplication.id))
+        .filter(JobApplication.user_id == user_id)
+        .group_by(JobApplication.cv_format)
+        .all()
+    )
+
+    jobs_analyzed_count = (
+        db.query(func.count(TailoredCV.id))
+        .filter(TailoredCV.user_id == user_id, TailoredCV.job_analysis.isnot(None))
+        .scalar()
+        or 0
+    )
+
+    recent_cvs = (
+        db.query(TailoredCV)
+        .filter(TailoredCV.user_id == user_id)
+        .order_by(TailoredCV.updated_at.desc())
+        .limit(8)
+        .all()
+    )
+    recent_cv_ids = [cv.id for cv in recent_cvs]
+    latest_application_by_cv_id: Dict[int, JobApplication] = {}
+    if recent_cv_ids:
+        recent_applications = (
+            db.query(JobApplication)
+            .filter(
+                JobApplication.user_id == user_id,
+                JobApplication.tailored_cv_id.in_(recent_cv_ids)
+            )
+            .order_by(JobApplication.updated_at.desc())
+            .all()
+        )
+        for app in recent_applications:
+            if app.tailored_cv_id not in latest_application_by_cv_id:
+                latest_application_by_cv_id[app.tailored_cv_id] = app
+
+    all_cvs_for_recalc = (
+        db.query(TailoredCV.recalculated_scores)
+        .filter(TailoredCV.user_id == user_id)
+        .all()
+    )
+    score_recalculation_runs = sum(len(item[0] or []) for item in all_cvs_for_recalc)
+
+    recent_roles = []
+    for cv in recent_cvs:
+        linked_application = latest_application_by_cv_id.get(cv.id)
+        status_value = linked_application.status if linked_application else cv.status
+        updated_at_value = (
+            linked_application.updated_at if linked_application and linked_application.updated_at else cv.updated_at
+        )
+        recent_roles.append(
+            {
+                "tailored_cv_id": cv.id,
+                "job_title": cv.job_title,
+                "company_name": cv.company_name,
+                "status": status_value,
+                "status_source": "application" if linked_application else "tailored_cv",
+                "updated_at": updated_at_value.isoformat() if updated_at_value else None,
+            }
+        )
+
+    return AdminUserDetail(
+        id=target_user.id,
+        email=target_user.email,
+        full_name=target_user.full_name,
+        is_admin=bool(target_user.is_admin),
+        created_at=target_user.created_at,
+        last_activity_at=last_activity,
+        profiles_count=int(profiles_count),
+        nodes_count=int(nodes_count),
+        tailored_cvs_count=int(tailored_cvs_count),
+        applications_count=int(applications_count),
+        tailored_cv_status_counts={str(status or "unknown"): int(count) for status, count in tailored_status_rows},
+        application_status_counts={str(status or "unknown"): int(count) for status, count in application_status_rows},
+        cv_format_counts={str(fmt or "unknown"): int(count) for fmt, count in cv_format_rows},
+        jobs_analyzed_count=int(jobs_analyzed_count),
+        score_recalculation_runs=int(score_recalculation_runs),
+        recent_roles=recent_roles,
+    )
+
+
+@app.put("/api/admin/users/{user_id}/admin", response_model=AdminUserSummary)
+def admin_update_user_admin_role(
+    user_id: int,
+    payload: AdminUserAdminUpdate,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Grant/revoke admin role for a target user (admin only)."""
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if current_admin.id == target_user.id and payload.is_admin is False:
+        raise HTTPException(status_code=400, detail="You cannot revoke your own admin role")
+
+    target_user.is_admin = bool(payload.is_admin)
+    db.commit()
+    db.refresh(target_user)
+
+    profiles_count = db.query(func.count(Profile.id)).filter(Profile.user_id == target_user.id).scalar() or 0
+    nodes_count = (
+        db.query(func.count(ProfileNode.id))
+        .join(Profile, Profile.id == ProfileNode.profile_id)
+        .filter(Profile.user_id == target_user.id)
+        .scalar()
+        or 0
+    )
+    tailored_cvs_count = db.query(func.count(TailoredCV.id)).filter(TailoredCV.user_id == target_user.id).scalar() or 0
+    applications_count = db.query(func.count(JobApplication.id)).filter(JobApplication.user_id == target_user.id).scalar() or 0
+
+    profiles_last = db.query(func.max(Profile.updated_at)).filter(Profile.user_id == target_user.id).scalar()
+    nodes_last = (
+        db.query(func.max(ProfileNode.updated_at))
+        .join(Profile, Profile.id == ProfileNode.profile_id)
+        .filter(Profile.user_id == target_user.id)
+        .scalar()
+    )
+    tailored_last = db.query(func.max(TailoredCV.updated_at)).filter(TailoredCV.user_id == target_user.id).scalar()
+    applications_last = db.query(func.max(JobApplication.updated_at)).filter(JobApplication.user_id == target_user.id).scalar()
+    last_activity = _max_dt(profiles_last, nodes_last, tailored_last, applications_last, target_user.created_at)
+
+    return AdminUserSummary(
+        id=target_user.id,
+        email=target_user.email,
+        full_name=target_user.full_name,
+        is_admin=bool(target_user.is_admin),
+        created_at=target_user.created_at,
+        last_activity_at=last_activity,
+        profiles_count=int(profiles_count),
+        nodes_count=int(nodes_count),
+        tailored_cvs_count=int(tailored_cvs_count),
+        applications_count=int(applications_count),
+    )
+
+
+@app.put("/api/admin/users/{user_id}/reset-password")
+def admin_reset_user_password(
+    user_id: int,
+    payload: AdminPasswordResetUpdate,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin emergency password reset for a specific user."""
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if current_admin.id == target_user.id:
+        raise HTTPException(status_code=400, detail="Use forgot password flow for your own account")
+
+    target_user.hashed_password = pwd_context.hash(payload.new_password)
+    db.commit()
+    return {"success": True, "message": "Password reset completed."}
 
 
 # ============================================================================

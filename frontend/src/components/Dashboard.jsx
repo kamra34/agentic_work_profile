@@ -146,6 +146,19 @@ function Dashboard({ user, onLogout }) {
               <span className="label">Application Tracker</span>
             </NavLink>
           </div>
+
+          {user?.is_admin && (
+            <div className="sidebar-section">
+              <div className="sidebar-section-title">Admin</div>
+              <NavLink
+                to="/dashboard/admin"
+                className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+              >
+                <span className="icon">🛠️</span>
+                <span className="label">Admin Console</span>
+              </NavLink>
+            </div>
+          )}
         </aside>
 
         <main className="main-content">
