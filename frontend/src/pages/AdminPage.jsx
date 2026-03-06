@@ -3,6 +3,23 @@ import './AdminPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+const PERSONAL_INFO_LABELS = {
+  phone_number: 'Phone',
+  country: 'Country',
+  city: 'City',
+  professional_title: 'Professional Title',
+  years_of_experience: 'Years of Experience',
+  bio: 'Bio',
+  availability: 'Availability',
+  preferred_work_mode: 'Preferred Work Mode'
+};
+
+const ONLINE_LABELS = {
+  linkedin_url: 'LinkedIn',
+  github_url: 'GitHub',
+  portfolio_url: 'Portfolio'
+};
+
 function formatDate(dateValue) {
   if (!dateValue) return 'N/A';
   const date = new Date(dateValue);
@@ -27,6 +44,42 @@ function renderCountMap(mapValue, emptyLabel = 'No data yet') {
   );
 }
 
+function renderInfoMap(mapValue, labels) {
+  const entries = Object.entries(mapValue || {});
+  if (!entries.length) {
+    return <div className="admin-empty-line">No additional values.</div>;
+  }
+  return (
+    <div className="admin-info-grid">
+      {entries.map(([key, value]) => (
+        <div className="admin-info-item" key={key}>
+          <div className="admin-info-label">{labels[key] || key}</div>
+          <div className="admin-info-value">{String(value)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function renderLinksMap(mapValue) {
+  const entries = Object.entries(mapValue || {});
+  if (!entries.length) {
+    return <div className="admin-empty-line">No online links added.</div>;
+  }
+  return (
+    <div className="admin-info-grid">
+      {entries.map(([key, value]) => (
+        <div className="admin-info-item" key={key}>
+          <div className="admin-info-label">{ONLINE_LABELS[key] || key}</div>
+          <a className="admin-info-link" href={value} target="_blank" rel="noreferrer">
+            {value}
+          </a>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AdminPage({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -37,15 +90,14 @@ function AdminPage({ currentUser }) {
   const [detailError, setDetailError] = useState('');
   const [updatingRoleUserId, setUpdatingRoleUserId] = useState(null);
   const [resettingPasswordUserId, setResettingPasswordUserId] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState(null);
 
   const token = localStorage.getItem('token');
-
   const adminCount = useMemo(() => users.filter((item) => item.is_admin).length, [users]);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
     setUsersError('');
-
     try {
       const response = await fetch(`${API_URL}/api/admin/users`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -55,17 +107,19 @@ function AdminPage({ currentUser }) {
         throw new Error(data.detail || 'Failed to load users');
       }
 
-      setUsers(Array.isArray(data) ? data : []);
-      if (Array.isArray(data) && data.length > 0) {
-        const preferredUser = selectedUserId
-          ? data.find((item) => item.id === selectedUserId)
-          : data.find((item) => item.id === currentUser?.id) || data[0];
-        if (preferredUser) {
-          setSelectedUserId(preferredUser.id);
-        }
-      } else {
+      const usersData = Array.isArray(data) ? data : [];
+      setUsers(usersData);
+      if (!usersData.length) {
         setSelectedUserId(null);
         setSelectedUserDetail(null);
+        return;
+      }
+
+      const preferredUser = selectedUserId
+        ? usersData.find((item) => item.id === selectedUserId)
+        : usersData.find((item) => item.id === currentUser?.id) || usersData[0];
+      if (preferredUser) {
+        setSelectedUserId(preferredUser.id);
       }
     } catch (error) {
       setUsersError(error.message || 'Failed to load users');
@@ -167,6 +221,47 @@ function AdminPage({ currentUser }) {
     }
   };
 
+  const handleDeleteUser = async (targetUser) => {
+    if (!targetUser) return;
+    if (targetUser.id === currentUser.id) {
+      alert('You cannot delete your own account.');
+      return;
+    }
+    if (targetUser.is_admin) {
+      alert('Admin users cannot be deleted from Admin Console.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete user "${targetUser.full_name}" (${targetUser.email})?\n\nThis will remove their profile and related records permanently.`
+    );
+    if (!confirmed) return;
+
+    setDeletingUserId(targetUser.id);
+    try {
+      const response = await fetch(`${API_URL}/api/admin/users/${targetUser.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to delete user');
+      }
+
+      const remaining = users.filter((item) => item.id !== targetUser.id);
+      setUsers(remaining);
+      if (selectedUserId === targetUser.id) {
+        const nextUser = remaining[0] || null;
+        setSelectedUserId(nextUser ? nextUser.id : null);
+        setSelectedUserDetail(null);
+      }
+    } catch (error) {
+      alert(error.message || 'Failed to delete user');
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
   if (!currentUser?.is_admin) {
     return (
       <div className="admin-page">
@@ -180,14 +275,20 @@ function AdminPage({ currentUser }) {
 
   return (
     <div className="admin-page">
-      <div className="admin-header">
-        <div>
+      <div className="admin-hero">
+        <div className="admin-hero-text">
           <h1>Admin Console</h1>
-          <p>Manage user roles and monitor product usage safely.</p>
+          <p>User management, activity insights, and secure account operations.</p>
         </div>
-        <div className="admin-header-stats">
-          <div className="admin-pill">Users: {users.length}</div>
-          <div className="admin-pill">Admins: {adminCount}</div>
+        <div className="admin-hero-stats">
+          <div className="admin-stat-pill">
+            <span>Total Users</span>
+            <strong>{users.length}</strong>
+          </div>
+          <div className="admin-stat-pill">
+            <span>Admins</span>
+            <strong>{adminCount}</strong>
+          </div>
         </div>
       </div>
 
@@ -238,6 +339,7 @@ function AdminPage({ currentUser }) {
           </div>
           {loadingDetail && <div className="admin-loading">Loading user details...</div>}
           {detailError && <div className="admin-error">{detailError}</div>}
+
           {!loadingDetail && !detailError && selectedUserDetail && (
             <div className="admin-detail-content">
               <div className="admin-detail-top">
@@ -274,6 +376,18 @@ function AdminPage({ currentUser }) {
                   >
                     Reset Password
                   </button>
+                  <button
+                    type="button"
+                    className="admin-action-btn delete"
+                    onClick={() => handleDeleteUser(selectedUserDetail)}
+                    disabled={
+                      deletingUserId === selectedUserDetail.id ||
+                      selectedUserDetail.id === currentUser.id ||
+                      selectedUserDetail.is_admin
+                    }
+                  >
+                    {deletingUserId === selectedUserDetail.id ? 'Deleting...' : 'Delete User'}
+                  </button>
                 </div>
               </div>
 
@@ -284,6 +398,16 @@ function AdminPage({ currentUser }) {
                 <div className="admin-kpi-card"><span>Applications</span><strong>{selectedUserDetail.applications_count}</strong></div>
                 <div className="admin-kpi-card"><span>Jobs Analyzed</span><strong>{selectedUserDetail.jobs_analyzed_count}</strong></div>
                 <div className="admin-kpi-card"><span>Score Recalcs</span><strong>{selectedUserDetail.score_recalculation_runs}</strong></div>
+              </div>
+
+              <div className="admin-box">
+                <h4>Personal Information</h4>
+                {renderInfoMap(selectedUserDetail.personal_info, PERSONAL_INFO_LABELS)}
+              </div>
+
+              <div className="admin-box">
+                <h4>Online Presence</h4>
+                {renderLinksMap(selectedUserDetail.online_presence)}
               </div>
 
               <div className="admin-dual-grid">
@@ -328,6 +452,7 @@ function AdminPage({ currentUser }) {
               </div>
             </div>
           )}
+
           {!loadingDetail && !detailError && !selectedUserDetail && (
             <div className="admin-empty-line">Select a user to view detailed stats.</div>
           )}

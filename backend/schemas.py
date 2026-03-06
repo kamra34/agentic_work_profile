@@ -151,6 +151,8 @@ class AdminUserDetail(AdminUserSummary):
     tailored_cv_status_counts: Dict[str, int] = Field(default_factory=dict)
     application_status_counts: Dict[str, int] = Field(default_factory=dict)
     cv_format_counts: Dict[str, int] = Field(default_factory=dict)
+    personal_info: Dict[str, Any] = Field(default_factory=dict)
+    online_presence: Dict[str, str] = Field(default_factory=dict)
     jobs_analyzed_count: int = 0
     score_recalculation_runs: int = 0
     recent_roles: List[Dict[str, Any]] = Field(default_factory=list)

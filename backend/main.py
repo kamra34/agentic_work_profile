@@ -1526,6 +1526,92 @@ def _decode_password_reset_token(token: str) -> Dict[str, Any]:
     return payload
 
 
+def _send_email_notification(
+    to_email: str,
+    to_name: str,
+    subject: str,
+    text_body: str,
+    html_body: str
+) -> bool:
+    # Prefer Brevo HTTP API when BREVO_API_KEY is available.
+    brevo_api_key = os.getenv("BREVO_API_KEY", "").strip()
+    brevo_from = os.getenv("EMAIL_FROM", "").strip()
+    brevo_from_name = os.getenv("EMAIL_FROM_NAME", "Agentic CV Builder").strip() or "Agentic CV Builder"
+    if brevo_api_key and brevo_from:
+        payload = {
+            "sender": {"name": brevo_from_name, "email": brevo_from},
+            "to": [{"email": to_email, "name": to_name or to_email}],
+            "subject": subject,
+            "htmlContent": html_body,
+            "textContent": text_body,
+        }
+
+        req = Request(
+            url="https://api.brevo.com/v3/smtp/email",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "accept": "application/json",
+                "content-type": "application/json",
+                "api-key": brevo_api_key,
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=20) as response:
+                if 200 <= response.status < 300:
+                    return True
+                api_logger.error(f"[Email] Brevo send failed with status {response.status}")
+        except HTTPError as exc:
+            details = ""
+            try:
+                details = exc.read().decode("utf-8", errors="ignore")
+            except Exception:
+                details = str(exc)
+            api_logger.error(f"[Email] Brevo HTTP error: {exc.code} {details}")
+        except URLError as exc:
+            api_logger.error(f"[Email] Brevo connection error: {exc}")
+        except Exception as exc:
+            api_logger.error(f"[Email] Brevo unexpected error: {exc}")
+
+        return False
+
+    # Fallback to SMTP when Brevo API key is not configured.
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port_raw = os.getenv("SMTP_PORT", "587").strip()
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    smtp_from = os.getenv("SMTP_FROM_EMAIL", "").strip() or smtp_user
+    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+    if not smtp_host or not smtp_from:
+        api_logger.warning("[Email] Email provider not configured.")
+        return False
+
+    try:
+        smtp_port = int(smtp_port_raw)
+    except (TypeError, ValueError):
+        smtp_port = 587
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = smtp_from
+    msg["To"] = to_email
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            if smtp_use_tls:
+                server.starttls()
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        return True
+    except Exception as exc:
+        api_logger.error(f"[Email] SMTP send failed: {exc}")
+        return False
+
+
 def _send_password_reset_email(to_email: str, full_name: str, token: str) -> bool:
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5174").strip().rstrip("/")
     reset_link = f"{frontend_url}/reset-password?token={quote(token)}"
@@ -1578,84 +1664,101 @@ def _send_password_reset_email(to_email: str, full_name: str, token: str) -> boo
   </body>
 </html>
 """.strip()
+    return _send_email_notification(
+        to_email=to_email,
+        to_name=full_name or to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
 
-    # Prefer Brevo HTTP API when BREVO_API_KEY is available.
-    brevo_api_key = os.getenv("BREVO_API_KEY", "").strip()
-    brevo_from = os.getenv("EMAIL_FROM", "").strip()
-    brevo_from_name = os.getenv("EMAIL_FROM_NAME", "Agentic CV Builder").strip() or "Agentic CV Builder"
-    if brevo_api_key and brevo_from:
-        payload = {
-            "sender": {"name": brevo_from_name, "email": brevo_from},
-            "to": [{"email": to_email, "name": full_name or to_email}],
-            "subject": subject,
-            "htmlContent": html_body,
-            "textContent": text_body,
-        }
 
-        req = Request(
-            url="https://api.brevo.com/v3/smtp/email",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "api-key": brevo_api_key,
-            },
-            method="POST",
+def _get_admin_alert_recipients(db: Session) -> List[str]:
+    recipients = set()
+
+    # Current admins in database
+    admin_emails = db.query(User.email).filter(User.is_admin.is_(True)).all()
+    for row in admin_emails:
+        value = (row[0] or "").strip().lower()
+        if value:
+            recipients.add(value)
+
+    # Optional explicit list (comma-separated)
+    raw_env_list = os.getenv("ADMIN_ALERT_EMAILS", "")
+    for email in raw_env_list.split(","):
+        value = email.strip().lower()
+        if value:
+            recipients.add(value)
+
+    # Always include primary admin bootstrap email if set
+    if PRIMARY_ADMIN_EMAIL:
+        recipients.add(PRIMARY_ADMIN_EMAIL.lower())
+
+    return sorted(recipients)
+
+
+def _send_new_user_registered_alert(db: Session, new_user: User):
+    if not _normalize_bool(os.getenv("SEND_ADMIN_NEW_USER_ALERTS", "true"), True):
+        return
+
+    recipients = _get_admin_alert_recipients(db)
+    if not recipients:
+        return
+
+    display_name = new_user.full_name or "Unknown"
+    display_email = new_user.email or "Unknown"
+    created_str = (
+        new_user.created_at.strftime("%Y-%m-%d %H:%M UTC")
+        if isinstance(new_user.created_at, datetime)
+        else "Unknown"
+    )
+    subject = f"New User Registration: {display_name}"
+    text_body = (
+        "A new user has registered.\n\n"
+        f"Full Name: {display_name}\n"
+        f"Email: {display_email}\n"
+        f"Registered At: {created_str}\n"
+    )
+    html_body = f"""
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f3f7ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #dbe7ff;border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(37,99,235,0.14);">
+            <tr>
+              <td style="padding:22px 26px;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#ffffff;">
+                <div style="font-size:13px;letter-spacing:0.08em;text-transform:uppercase;opacity:.9;">Agentic CV Builder</div>
+                <h1 style="margin:10px 0 0 0;font-size:24px;line-height:1.25;">New User Registered</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 26px 24px 26px;font-size:15px;line-height:1.65;">
+                <p style="margin:0 0 14px 0;">A new user account has been created:</p>
+                <p style="margin:0 0 8px 0;"><strong>Full Name:</strong> {escape(display_name)}</p>
+                <p style="margin:0 0 8px 0;"><strong>Email:</strong> {escape(display_email)}</p>
+                <p style="margin:0;"><strong>Registered At:</strong> {escape(created_str)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+""".strip()
+
+    for recipient in recipients:
+        ok = _send_email_notification(
+            to_email=recipient,
+            to_name=recipient,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
         )
-        try:
-            with urlopen(req, timeout=20) as response:
-                if 200 <= response.status < 300:
-                    return True
-                api_logger.error(f"[Auth] Brevo email failed with status {response.status}")
-        except HTTPError as exc:
-            details = ""
-            try:
-                details = exc.read().decode("utf-8", errors="ignore")
-            except Exception:
-                details = str(exc)
-            api_logger.error(f"[Auth] Brevo email HTTP error: {exc.code} {details}")
-        except URLError as exc:
-            api_logger.error(f"[Auth] Brevo email connection error: {exc}")
-        except Exception as exc:
-            api_logger.error(f"[Auth] Brevo email unexpected error: {exc}")
-
-        return False
-
-    # Fallback to SMTP when Brevo API key is not configured.
-    smtp_host = os.getenv("SMTP_HOST", "").strip()
-    smtp_port_raw = os.getenv("SMTP_PORT", "587").strip()
-    smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
-    smtp_from = os.getenv("SMTP_FROM_EMAIL", "").strip() or smtp_user
-    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes", "on"}
-
-    if not smtp_host or not smtp_from:
-        api_logger.warning("[Auth] Email provider not configured. Password reset email skipped.")
-        return False
-
-    try:
-        smtp_port = int(smtp_port_raw)
-    except (TypeError, ValueError):
-        smtp_port = 587
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = smtp_from
-    msg["To"] = to_email
-    msg.set_content(text_body)
-    msg.add_alternative(html_body, subtype="html")
-
-    try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-            if smtp_use_tls:
-                server.starttls()
-            if smtp_user and smtp_password:
-                server.login(smtp_user, smtp_password)
-            server.send_message(msg)
-        return True
-    except Exception as exc:
-        api_logger.error(f"[Auth] Failed to send reset email: {exc}")
-        return False
+        if not ok:
+            api_logger.warning(f"[Auth] Failed to send admin registration alert to {recipient}")
 
 
 def get_current_user(
@@ -1721,6 +1824,11 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     profile = Profile(user_id=user.id, title="My Profile", is_default=True)
     db.add(profile)
     db.commit()
+
+    try:
+        _send_new_user_registered_alert(db, user)
+    except Exception as exc:
+        api_logger.error(f"[Auth] Failed to send new-user admin alert: {exc}")
 
     return user
 
@@ -2095,6 +2203,35 @@ def admin_get_user_detail(
             }
         )
 
+    def _clean_text(value: Optional[str]) -> str:
+        return (value or "").strip()
+
+    personal_info: Dict[str, Any] = {}
+    if _clean_text(target_user.phone_number):
+        personal_info["phone_number"] = _clean_text(target_user.phone_number)
+    if _clean_text(target_user.country):
+        personal_info["country"] = _clean_text(target_user.country)
+    if _clean_text(target_user.city):
+        personal_info["city"] = _clean_text(target_user.city)
+    if _clean_text(target_user.professional_title):
+        personal_info["professional_title"] = _clean_text(target_user.professional_title)
+    if target_user.years_of_experience is not None:
+        personal_info["years_of_experience"] = int(target_user.years_of_experience)
+    if _clean_text(target_user.bio):
+        personal_info["bio"] = _clean_text(target_user.bio)
+    if _clean_text(target_user.availability).lower() not in {"", "available"}:
+        personal_info["availability"] = _clean_text(target_user.availability)
+    if _clean_text(target_user.preferred_work_mode).lower() not in {"", "hybrid"}:
+        personal_info["preferred_work_mode"] = _clean_text(target_user.preferred_work_mode)
+
+    online_presence: Dict[str, str] = {}
+    if _clean_text(target_user.linkedin_url):
+        online_presence["linkedin_url"] = _clean_text(target_user.linkedin_url)
+    if _clean_text(target_user.github_url):
+        online_presence["github_url"] = _clean_text(target_user.github_url)
+    if _clean_text(target_user.portfolio_url):
+        online_presence["portfolio_url"] = _clean_text(target_user.portfolio_url)
+
     return AdminUserDetail(
         id=target_user.id,
         email=target_user.email,
@@ -2109,6 +2246,8 @@ def admin_get_user_detail(
         tailored_cv_status_counts={str(status or "unknown"): int(count) for status, count in tailored_status_rows},
         application_status_counts={str(status or "unknown"): int(count) for status, count in application_status_rows},
         cv_format_counts={str(fmt or "unknown"): int(count) for fmt, count in cv_format_rows},
+        personal_info=personal_info,
+        online_presence=online_presence,
         jobs_analyzed_count=int(jobs_analyzed_count),
         score_recalculation_runs=int(score_recalculation_runs),
         recent_roles=recent_roles,
@@ -2188,6 +2327,28 @@ def admin_reset_user_password(
     target_user.hashed_password = pwd_context.hash(payload.new_password)
     db.commit()
     return {"success": True, "message": "Password reset completed."}
+
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a non-admin user (admins cannot delete themselves or other admins)."""
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target_user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    if target_user.is_admin:
+        raise HTTPException(status_code=400, detail="Admin accounts cannot be deleted from Admin Console")
+
+    target_email = target_user.email
+    db.delete(target_user)
+    db.commit()
+    return {"success": True, "message": f"User {target_email} deleted."}
 
 
 # ============================================================================
