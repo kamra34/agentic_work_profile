@@ -1,13 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './ProfilePage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const AI_SETTINGS_AUTOSAVE_DELAY_MS = 900;
+
+const buildAISettingsPayload = (settings, openaiKey, anthropicKey, clearFlags) => {
+  const payload = {
+    openai_model: settings.openai_model,
+    openai_reasoning_effort: settings.openai_reasoning_effort,
+    claude_model: settings.claude_model,
+    humanity_deep_mode_enabled: settings.humanity_deep_mode_enabled,
+    humanity_llm_model: settings.humanity_llm_model,
+    humanity_llm_reasoning_effort: settings.humanity_llm_reasoning_effort
+  };
+
+  if ((openaiKey || '').trim()) {
+    payload.openai_api_key = openaiKey.trim();
+  }
+  if ((anthropicKey || '').trim()) {
+    payload.anthropic_api_key = anthropicKey.trim();
+  }
+  if (clearFlags?.openai) {
+    payload.clear_openai_api_key = true;
+  }
+  if (clearFlags?.anthropic) {
+    payload.clear_anthropic_api_key = true;
+  }
+
+  return payload;
+};
 
 function ProfilePage() {
   const defaultAISettings = {
     openai_model: 'gpt-4o',
     openai_reasoning_effort: 'medium',
     claude_model: 'claude-sonnet-4-20250514',
+    openai_api_key_configured: false,
+    anthropic_api_key_configured: false,
     humanity_deep_mode_enabled: true,
     humanity_llm_model: 'gpt-4o',
     humanity_llm_reasoning_effort: 'low'
@@ -16,6 +45,16 @@ function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingAISettings, setIsSavingAISettings] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [openaiKeyInput, setOpenaiKeyInput] = useState('');
+  const [anthropicKeyInput, setAnthropicKeyInput] = useState('');
+  const [clearKeyFlags, setClearKeyFlags] = useState({
+    openai: false,
+    anthropic: false
+  });
+  const [aiAutoSaveStatus, setAiAutoSaveStatus] = useState('idle'); // idle | saving | saved | error
+  const [aiAutoSaveError, setAiAutoSaveError] = useState('');
+  const aiSettingsReadyRef = useRef(false);
+  const lastSavedAISignatureRef = useRef('');
   const [profileData, setProfileData] = useState({
     full_name: '',
     email: '',
@@ -74,6 +113,14 @@ function ProfilePage() {
           ...prev,
           ...data
         }));
+        setOpenaiKeyInput('');
+        setAnthropicKeyInput('');
+        setClearKeyFlags({ openai: false, anthropic: false });
+        const baselinePayload = buildAISettingsPayload(data, '', '', { openai: false, anthropic: false });
+        lastSavedAISignatureRef.current = JSON.stringify(baselinePayload);
+        aiSettingsReadyRef.current = true;
+        setAiAutoSaveStatus('saved');
+        setAiAutoSaveError('');
       }
     } catch (error) {
       console.error('Error fetching AI settings:', error);
@@ -108,30 +155,51 @@ function ProfilePage() {
     }
   };
 
-  const handleSaveAISettings = async () => {
+  const handleSaveAISettings = async ({ auto = false, payloadOverride = null } = {}) => {
+    if (isSavingAISettings) {
+      return;
+    }
     setIsSavingAISettings(true);
+    setAiAutoSaveStatus('saving');
+    setAiAutoSaveError('');
     try {
       const token = localStorage.getItem('token');
+      const payload = payloadOverride || buildAISettingsPayload(aiSettings, openaiKeyInput, anthropicKeyInput, clearKeyFlags);
+
       const response = await fetch(`${API_URL}/api/user/ai-settings`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(aiSettings)
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save AI settings');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || 'Failed to save AI settings');
       }
 
       const saved = await response.json();
       setAiSettings(saved);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+      setOpenaiKeyInput('');
+      setAnthropicKeyInput('');
+      setClearKeyFlags({ openai: false, anthropic: false });
+      const baselinePayload = buildAISettingsPayload(saved, '', '', { openai: false, anthropic: false });
+      lastSavedAISignatureRef.current = JSON.stringify(baselinePayload);
+      aiSettingsReadyRef.current = true;
+      setAiAutoSaveStatus('saved');
+      if (!auto) {
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 3000);
+      }
     } catch (error) {
       console.error('Error saving AI settings:', error);
-      alert('Failed to save AI settings. Please try again.');
+      setAiAutoSaveStatus('error');
+      setAiAutoSaveError(error.message || 'Failed to save AI settings.');
+      if (!auto) {
+        alert(error.message || 'Failed to save AI settings. Please try again.');
+      }
     } finally {
       setIsSavingAISettings(false);
     }
@@ -150,6 +218,61 @@ function ProfilePage() {
       [field]: value
     }));
   };
+
+  const handleProviderKeyInput = (provider, value) => {
+    if (provider === 'openai') {
+      setOpenaiKeyInput(value);
+      if (value.trim()) {
+        setClearKeyFlags(prev => ({ ...prev, openai: false }));
+      }
+      return;
+    }
+    setAnthropicKeyInput(value);
+    if (value.trim()) {
+      setClearKeyFlags(prev => ({ ...prev, anthropic: false }));
+    }
+  };
+
+  const handleClearProviderKey = (provider) => {
+    if (provider === 'openai') {
+      setOpenaiKeyInput('');
+      setClearKeyFlags(prev => ({ ...prev, openai: true }));
+      return;
+    }
+    setAnthropicKeyInput('');
+    setClearKeyFlags(prev => ({ ...prev, anthropic: true }));
+  };
+
+  const handleProviderKeyBlur = () => {
+    if (!aiSettingsReadyRef.current || isSavingAISettings) {
+      return;
+    }
+    if (!openaiKeyInput.trim() && !anthropicKeyInput.trim()) {
+      return;
+    }
+    handleSaveAISettings({ auto: true });
+  };
+
+  useEffect(() => {
+    if (!aiSettingsReadyRef.current || isSavingAISettings) {
+      return;
+    }
+    if (openaiKeyInput.trim() || anthropicKeyInput.trim()) {
+      return;
+    }
+
+    const payload = buildAISettingsPayload(aiSettings, openaiKeyInput, anthropicKeyInput, clearKeyFlags);
+    const signature = JSON.stringify(payload);
+    if (signature === lastSavedAISignatureRef.current) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      handleSaveAISettings({ auto: true, payloadOverride: payload });
+    }, AI_SETTINGS_AUTOSAVE_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [aiSettings, openaiKeyInput, anthropicKeyInput, clearKeyFlags, isSavingAISettings]);
 
   const handleCancel = () => {
     fetchProfileData();
@@ -595,6 +718,70 @@ function ProfilePage() {
           </div>
           <div className="card-content ai-settings-content">
             <div className="ai-setting-group">
+              <h4 className="ai-group-title">Provider API Keys (Required)</h4>
+              <p className="ai-keys-note">
+                Server keys are disabled. Every AI request uses only your own provider keys.
+              </p>
+              <div className="ai-settings-grid">
+                <div className="ai-setting-field">
+                  <label className="ai-setting-label">OpenAI API Key</label>
+                  <p className="ai-setting-help">Used for OpenAI analysis, scoring, refinement, and humanity deep check.</p>
+                  <div className="ai-key-status-row">
+                    <span className={`ai-key-badge ${(aiSettings.openai_api_key_configured && !clearKeyFlags.openai) ? 'configured' : 'missing'}`}>
+                      {(aiSettings.openai_api_key_configured && !clearKeyFlags.openai) ? 'Configured' : 'Not configured'}
+                    </span>
+                    {(aiSettings.openai_api_key_configured && !clearKeyFlags.openai) && (
+                      <button
+                        type="button"
+                        className="ai-key-clear-btn"
+                        onClick={() => handleClearProviderKey('openai')}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    className="field-input ai-key-input"
+                    value={openaiKeyInput}
+                    onChange={(e) => handleProviderKeyInput('openai', e.target.value)}
+                    onBlur={handleProviderKeyBlur}
+                    placeholder={aiSettings.openai_api_key_configured && !clearKeyFlags.openai ? 'Enter new key to rotate' : 'sk-...'}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="ai-setting-field">
+                  <label className="ai-setting-label">Claude API Key</label>
+                  <p className="ai-setting-help">Used for Claude analysis, scoring, and node recommendations.</p>
+                  <div className="ai-key-status-row">
+                    <span className={`ai-key-badge ${(aiSettings.anthropic_api_key_configured && !clearKeyFlags.anthropic) ? 'configured' : 'missing'}`}>
+                      {(aiSettings.anthropic_api_key_configured && !clearKeyFlags.anthropic) ? 'Configured' : 'Not configured'}
+                    </span>
+                    {(aiSettings.anthropic_api_key_configured && !clearKeyFlags.anthropic) && (
+                      <button
+                        type="button"
+                        className="ai-key-clear-btn"
+                        onClick={() => handleClearProviderKey('anthropic')}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    className="field-input ai-key-input"
+                    value={anthropicKeyInput}
+                    onChange={(e) => handleProviderKeyInput('anthropic', e.target.value)}
+                    onBlur={handleProviderKeyBlur}
+                    placeholder={aiSettings.anthropic_api_key_configured && !clearKeyFlags.anthropic ? 'Enter new key to rotate' : 'sk-ant-...'}
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="ai-setting-group">
               <h4 className="ai-group-title">Tailor CV Runtime</h4>
               <div className="ai-settings-grid">
                 <div className="ai-setting-field">
@@ -702,11 +889,16 @@ function ProfilePage() {
             <div className="ai-save-row">
               <button
                 className="btn-save ai-settings-save"
-                onClick={handleSaveAISettings}
+                onClick={() => handleSaveAISettings({ auto: false })}
                 disabled={isSavingAISettings}
               >
-                {isSavingAISettings ? 'Saving AI Settings...' : 'Save AI Settings'}
+                {isSavingAISettings ? 'Saving...' : 'Save Now'}
               </button>
+              <div className={`ai-autosave-status ${aiAutoSaveStatus}`}>
+                {aiAutoSaveStatus === 'saving' && 'Auto-saving changes...'}
+                {aiAutoSaveStatus === 'saved' && 'All AI settings changes are saved automatically.'}
+                {aiAutoSaveStatus === 'error' && (aiAutoSaveError || 'Auto-save failed. Please retry.')}
+              </div>
             </div>
           </div>
         </div>

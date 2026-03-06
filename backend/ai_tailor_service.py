@@ -10,7 +10,6 @@ import time
 import re
 from collections import Counter
 from statistics import mean, pstdev
-from openai import OpenAI
 from anthropic import Anthropic
 from typing import Dict, Any, List
 from datetime import datetime, timezone
@@ -57,17 +56,6 @@ def sanitize_unicode_for_pdf(text: str) -> str:
     return ''.join(cleaned_chars)
 
 # Initialize AI clients
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-
-if not OPENAI_API_KEY:
-    print("WARNING: OPENAI_API_KEY not found in environment variables")
-if not ANTHROPIC_API_KEY:
-    print("WARNING: ANTHROPIC_API_KEY not found in environment variables")
-
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
-anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
-
 VALID_REASONING_EFFORT = {"none", "low", "medium", "high"}
 
 
@@ -661,7 +649,8 @@ def _evaluate_humanity_with_llm(
     source_text: str = "",
     model: str = HUMANITY_LLM_MODEL,
     reasoning_effort: str = HUMANITY_LLM_REASONING,
-    enabled: bool = HUMANITY_DEEP_MODE_ENABLED
+    enabled: bool = HUMANITY_DEEP_MODE_ENABLED,
+    api_key: str = None
 ) -> Dict[str, Any]:
     """
     LLM critic layer for deep humanity review.
@@ -677,6 +666,11 @@ def _evaluate_humanity_with_llm(
         return {
             "used": False,
             "error": "Deep mode disabled by configuration"
+        }
+    if not api_key:
+        return {
+            "used": False,
+            "error": "OpenAI API key missing for deep humanity review"
         }
 
     review_prompt = f"""You are a strict CV writing quality auditor.
@@ -718,6 +712,7 @@ TARGET TEXT:
         user_prompt=review_prompt,
         model=model,
         reasoning_effort=reasoning_effort,
+        api_key=api_key,
         timeout=90
     )
 
@@ -776,7 +771,8 @@ def evaluate_humanity_hybrid(
     mode: str = "quick",
     llm_enabled: bool = HUMANITY_DEEP_MODE_ENABLED,
     llm_model: str = HUMANITY_LLM_MODEL,
-    llm_reasoning_effort: str = HUMANITY_LLM_REASONING
+    llm_reasoning_effort: str = HUMANITY_LLM_REASONING,
+    llm_api_key: str = None
 ) -> Dict[str, Any]:
     """
     Hybrid humanity scoring:
@@ -797,7 +793,8 @@ def evaluate_humanity_hybrid(
             source_text=source_text,
             model=llm_model,
             reasoning_effort=llm_reasoning_effort,
-            enabled=llm_enabled
+            enabled=llm_enabled,
+            api_key=llm_api_key
         )
 
     heuristic_score = heuristic.get("score", 0)
@@ -1350,7 +1347,12 @@ Return JSON with node IDs and selection status:
 """
 
 
-def analyze_job_with_openai(job_description: str, model: str = None, reasoning_effort: str = None) -> Dict[str, Any]:
+def analyze_job_with_openai(
+    job_description: str,
+    model: str = None,
+    reasoning_effort: str = None,
+    api_key: str = None
+) -> Dict[str, Any]:
     """
     Analyze job description using OpenAI (supports both GPT-4o and GPT-5.1)
 
@@ -1375,7 +1377,8 @@ def analyze_job_with_openai(job_description: str, model: str = None, reasoning_e
             system_prompt="You are an expert job requirement analyst. Always respond with valid JSON.",
             user_prompt=user_prompt,
             model=model_name,
-            reasoning_effort=resolved_reasoning_effort
+            reasoning_effort=resolved_reasoning_effort,
+            api_key=api_key
         )
 
         if not result["success"]:
@@ -1452,20 +1455,20 @@ def analyze_job_with_openai(job_description: str, model: str = None, reasoning_e
         }
 
 
-def analyze_job_with_claude(job_description: str, model: str = None) -> Dict[str, Any]:
+def analyze_job_with_claude(job_description: str, model: str = None, api_key: str = None) -> Dict[str, Any]:
     """Analyze job description using Claude Sonnet 4.5"""
     requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
     logger.step(f"Job analysis with Claude ({requested_model})", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
 
-    if not anthropic_client:
+    if not api_key:
         logger.error("Claude client not initialized")
         finished_at = _now_iso()
         return {
             "success": False,
             "model": requested_model,
-            "error": "Claude client not initialized. Check API key.",
+            "error": "Claude API key missing. Add your key in AI Settings.",
             "runtime": _build_runtime(
                 stage="job_analysis",
                 provider="anthropic",
@@ -1482,12 +1485,13 @@ def analyze_job_with_claude(job_description: str, model: str = None) -> Dict[str
     logger.info(f"Job description length: {len(job_description)} characters")
 
     try:
+        claude_client = Anthropic(api_key=api_key)
         # Build the exact prompt that will be sent
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
 
         logger.info("Calling Claude Sonnet 4.5 API...")
 
-        response = anthropic_client.messages.create(
+        response = claude_client.messages.create(
             model=requested_model,
             max_tokens=4096,
             messages=[
@@ -1568,7 +1572,8 @@ def score_profile_with_openai(
     profile_content: str,
     job_description: str = "",
     model: str = None,
-    reasoning_effort: str = None
+    reasoning_effort: str = None,
+    api_key: str = None
 ) -> Dict[str, Any]:
     """
     Score profile fit using OpenAI (supports both GPT-4o and GPT-5.1)
@@ -1598,7 +1603,8 @@ def score_profile_with_openai(
             system_prompt="You are an expert recruiter and ATS specialist. Always respond with valid JSON.",
             user_prompt=user_prompt,
             model=model_name,
-            reasoning_effort=resolved_reasoning_effort
+            reasoning_effort=resolved_reasoning_effort,
+            api_key=api_key
         )
 
         if not result["success"]:
@@ -1684,7 +1690,8 @@ def score_profile_with_claude(
     job_requirements: Dict,
     profile_content: str,
     job_description: str = "",
-    model: str = None
+    model: str = None,
+    api_key: str = None
 ) -> Dict[str, Any]:
     """Score profile fit using Claude Sonnet 4.5"""
     requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
@@ -1692,13 +1699,13 @@ def score_profile_with_claude(
     started_at = _now_iso()
     start_ts = time.time()
 
-    if not anthropic_client:
+    if not api_key:
         logger.error("Claude client not initialized")
         finished_at = _now_iso()
         return {
             "success": False,
             "model": requested_model,
-            "error": "Claude client not initialized. Check API key.",
+            "error": "Claude API key missing. Add your key in AI Settings.",
             "runtime": _build_runtime(
                 stage="profile_scoring",
                 provider="anthropic",
@@ -1715,6 +1722,7 @@ def score_profile_with_claude(
     logger.info(f"Profile content length: {len(profile_content)} characters")
 
     try:
+        claude_client = Anthropic(api_key=api_key)
         # Build the exact prompt that will be sent
         user_prompt = SCORING_PROMPT.format(
             job_description=job_description or "(not provided)",
@@ -1724,7 +1732,7 @@ def score_profile_with_claude(
 
         logger.info("Calling Claude Sonnet 4.5 API...")
 
-        response = anthropic_client.messages.create(
+        response = claude_client.messages.create(
             model=requested_model,
             max_tokens=4096,
             messages=[
@@ -1796,7 +1804,8 @@ def recommend_nodes_with_openai(
     profile_nodes: List[Dict],
     job_description: str = "",
     model: str = None,
-    reasoning_effort: str = None
+    reasoning_effort: str = None,
+    api_key: str = None
 ) -> Dict[str, Any]:
     """
     Recommend which nodes to include using OpenAI (supports both GPT-4o and GPT-5.1)
@@ -1827,6 +1836,7 @@ def recommend_nodes_with_openai(
             user_prompt=prompt_content,
             model=model_name,
             reasoning_effort=resolved_reasoning_effort,
+            api_key=api_key,
             timeout=180  # 180 second timeout (3 minutes)
         )
 
@@ -1917,7 +1927,8 @@ def recommend_nodes_with_claude(
     job_requirements: Dict,
     profile_nodes: List[Dict],
     job_description: str = "",
-    model: str = None
+    model: str = None,
+    api_key: str = None
 ) -> Dict[str, Any]:
     """Recommend which nodes to include using Claude Sonnet 4.5"""
     requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
@@ -1925,13 +1936,13 @@ def recommend_nodes_with_claude(
     started_at = _now_iso()
     start_ts = time.time()
 
-    if not anthropic_client:
+    if not api_key:
         logger.error("Claude client not initialized")
         finished_at = _now_iso()
         return {
             "success": False,
             "model": requested_model,
-            "error": "Claude client not initialized. Check API key.",
+            "error": "Claude API key missing. Add your key in AI Settings.",
             "runtime": _build_runtime(
                 stage="node_selection",
                 provider="anthropic",
@@ -1946,6 +1957,7 @@ def recommend_nodes_with_claude(
         }
 
     try:
+        claude_client = Anthropic(api_key=api_key)
         prompt_content = NODE_SELECTION_PROMPT.format(
             job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
@@ -1955,7 +1967,7 @@ def recommend_nodes_with_claude(
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
         logger.info("Calling Claude Sonnet 4.5 API...")
 
-        response = anthropic_client.messages.create(
+        response = claude_client.messages.create(
             model=requested_model,
             max_tokens=16384,  # Increased from 8192 to handle larger responses with many nodes
             system="You are an expert CV tailoring specialist. You must respond with ONLY valid JSON, no additional text or explanation before or after the JSON. Ensure your JSON is properly formatted with no trailing commas, all strings properly quoted, and all braces/brackets balanced.",
@@ -2216,9 +2228,11 @@ def generate_profile_pool_node_fix_with_openai(
     user_instructions: str = None,
     model: str = None,
     reasoning_effort: str = None,
+    api_key: str = None,
     humanity_llm_enabled: bool = HUMANITY_DEEP_MODE_ENABLED,
     humanity_llm_model: str = HUMANITY_LLM_MODEL,
-    humanity_llm_reasoning_effort: str = HUMANITY_LLM_REASONING
+    humanity_llm_reasoning_effort: str = HUMANITY_LLM_REASONING,
+    humanity_llm_api_key: str = None
 ) -> Dict[str, Any]:
     """
     Generate a human-sounding, fact-preserving rewrite for a single profile-pool node.
@@ -2287,6 +2301,7 @@ Return JSON with this exact shape:
             user_prompt=prompt,
             model=model_to_use,
             reasoning_effort=normalized_reasoning,
+            api_key=api_key,
             timeout=90
         )
         if not result.get("success"):
@@ -2315,7 +2330,8 @@ Return JSON with this exact shape:
             mode="deep" if humanity_llm_enabled else "quick",
             llm_enabled=humanity_llm_enabled,
             llm_model=humanity_llm_model,
-            llm_reasoning_effort=humanity_llm_reasoning_effort
+            llm_reasoning_effort=humanity_llm_reasoning_effort,
+            llm_api_key=humanity_llm_api_key
         )
         humanity["mode"] = "deep" if humanity_llm_enabled else "quick"
 
@@ -2349,12 +2365,14 @@ def refine_section_content_with_openai(
     node_type: str = "section",
     node_title: str = "",
     reasoning_effort: str = None,
+    api_key: str = None,
     rewrite_mode: str = "minimal",
     human_strict: bool = True,
     target_pages: int = None,
     humanity_llm_enabled: bool = HUMANITY_DEEP_MODE_ENABLED,
     humanity_llm_model: str = HUMANITY_LLM_MODEL,
-    humanity_llm_reasoning_effort: str = HUMANITY_LLM_REASONING
+    humanity_llm_reasoning_effort: str = HUMANITY_LLM_REASONING,
+    humanity_llm_api_key: str = None
 ) -> Dict[str, Any]:
     """
     Refine a section or entry's content using OpenAI GPT-5.1.
@@ -2376,10 +2394,10 @@ def refine_section_content_with_openai(
     Returns:
         Dict with refined_content, changes_summary, stats, and prompt_sent
     """
-    if not openai_client:
+    if not api_key:
         return {
             "success": False,
-            "error": "OpenAI client not initialized",
+            "error": "OpenAI API key missing. Add your key in AI Settings.",
             "model": "gpt-5.1"
         }
 
@@ -2604,6 +2622,7 @@ Remember: Return ONLY the JSON object, no other text."""
             user_prompt=refinement_prompt,
             model=model_to_use,
             reasoning_effort=reasoning_effort,  # Can be none, low, medium, high, or None
+            api_key=api_key,
             timeout=120  # 2 minute timeout for refinement
         )
 
@@ -2642,7 +2661,8 @@ Remember: Return ONLY the JSON object, no other text."""
             mode="deep" if human_strict else "quick",
             llm_enabled=humanity_llm_enabled,
             llm_model=humanity_llm_model,
-            llm_reasoning_effort=humanity_llm_reasoning_effort
+            llm_reasoning_effort=humanity_llm_reasoning_effort,
+            llm_api_key=humanity_llm_api_key
         )
         humanity["mode"] = "strict" if human_strict else "advisory"
         humanity["rewrite_mode"] = normalized_rewrite_mode

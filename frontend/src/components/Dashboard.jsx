@@ -79,12 +79,22 @@ function Dashboard({ user, onLogout }) {
             <div className="sidebar-section-title">📋 Profile Management</div>
             <NavLink
               to="/dashboard/profile"
-              className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
-              title="View and edit your personal profile"
+              className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''} ${isAnalyzing ? 'disabled' : ''}`}
+              onClick={(e) => {
+                if (isAnalyzing) {
+                  e.preventDefault();
+                  alert('Cannot open My Profile while AI analysis is running.\n\nPlease wait for analysis to complete or stop it from Tailor CV.');
+                }
+              }}
+              title={isAnalyzing ? 'Blocked during AI analysis' : 'View and edit your personal profile'}
             >
               <span className="icon">👤</span>
               <span className="label">My Profile</span>
-              <span className="badge badge-new">New</span>
+              {isAnalyzing ? (
+                <span className="badge badge-locked">Locked</span>
+              ) : (
+                <span className="badge badge-new">New</span>
+              )}
             </NavLink>
             <NavLink
               to="/dashboard/pool"

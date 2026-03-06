@@ -17,6 +17,7 @@ from typing import List, Optional, Dict, Any
 from collections import Counter, defaultdict
 import os
 import re
+import base64
 import hashlib
 from dotenv import load_dotenv
 import uuid
@@ -24,6 +25,7 @@ from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
+from cryptography.fernet import Fernet, InvalidToken
 
 # Load .env from project root (parent directory)
 env_path = Path(__file__).parent.parent / '.env'
@@ -236,7 +238,8 @@ def _evaluate_humanity_for_nodes(
         mode=mode,
         llm_enabled=bool(settings.get("humanity_deep_mode_enabled", DEFAULT_HUMANITY_DEEP_MODE_ENABLED)),
         llm_model=str(settings.get("humanity_llm_model", DEFAULT_HUMANITY_LLM_MODEL)),
-        llm_reasoning_effort=str(settings.get("humanity_llm_reasoning_effort", DEFAULT_HUMANITY_LLM_REASONING))
+        llm_reasoning_effort=str(settings.get("humanity_llm_reasoning_effort", DEFAULT_HUMANITY_LLM_REASONING)),
+        llm_api_key=settings.get("openai_api_key")
     )
     report["character_count"] = len(markdown_text)
     return report
@@ -1206,12 +1209,66 @@ def _normalize_instruction_templates(templates: Optional[list]) -> List[Dict[str
     return cleaned
 
 
+_api_keys_fernet = None
+
+
+def _build_api_keys_fernet() -> Fernet:
+    """
+    Build deterministic Fernet key from USER_API_KEYS_ENCRYPTION_KEY (preferred)
+    or SECRET_KEY fallback.
+    """
+    secret_source = (
+        os.getenv("USER_API_KEYS_ENCRYPTION_KEY")
+        or os.getenv("SECRET_KEY")
+        or "change-this-dev-key"
+    ).strip()
+
+    # Allow directly-provided Fernet key.
+    try:
+        if len(secret_source) == 44:
+            candidate = secret_source.encode("utf-8")
+            decoded = base64.urlsafe_b64decode(candidate)
+            if len(decoded) == 32:
+                return Fernet(candidate)
+    except Exception:
+        pass
+
+    digest = hashlib.sha256(secret_source.encode("utf-8")).digest()
+    fernet_key = base64.urlsafe_b64encode(digest)
+    return Fernet(fernet_key)
+
+
+def _get_api_keys_fernet() -> Fernet:
+    global _api_keys_fernet
+    if _api_keys_fernet is None:
+        _api_keys_fernet = _build_api_keys_fernet()
+    return _api_keys_fernet
+
+
+def _encrypt_user_api_key(raw_value: Optional[str]) -> Optional[str]:
+    value = (raw_value or "").strip()
+    if not value:
+        return None
+    return _get_api_keys_fernet().encrypt(value.encode("utf-8")).decode("utf-8")
+
+
+def _decrypt_user_api_key(encrypted_value: Optional[str]) -> Optional[str]:
+    if not encrypted_value:
+        return None
+    try:
+        return _get_api_keys_fernet().decrypt(encrypted_value.encode("utf-8")).decode("utf-8")
+    except (InvalidToken, ValueError, TypeError):
+        return None
+
+
 def get_user_ai_settings(user: User) -> Dict[str, Any]:
     """Return sanitized per-user AI settings."""
     return {
         "openai_model": _normalize_openai_model(getattr(user, "openai_model", None)),
         "openai_reasoning_effort": _normalize_reasoning_effort(getattr(user, "openai_reasoning_effort", None)),
         "claude_model": _normalize_claude_model(getattr(user, "claude_model", None)),
+        "openai_api_key_configured": bool(getattr(user, "openai_api_key_encrypted", None)),
+        "anthropic_api_key_configured": bool(getattr(user, "anthropic_api_key_encrypted", None)),
         "humanity_deep_mode_enabled": _normalize_bool(
             getattr(user, "humanity_deep_mode_enabled", None),
             DEFAULT_HUMANITY_DEEP_MODE_ENABLED
@@ -1226,12 +1283,69 @@ def get_user_ai_settings(user: User) -> Dict[str, Any]:
     }
 
 
+def get_user_ai_runtime_settings(user: User) -> Dict[str, Any]:
+    """
+    Return AI settings with decrypted runtime keys for internal backend use only.
+    Never expose this payload to frontend responses.
+    """
+    settings = get_user_ai_settings(user)
+    settings["openai_api_key"] = _decrypt_user_api_key(getattr(user, "openai_api_key_encrypted", None))
+    settings["anthropic_api_key"] = _decrypt_user_api_key(getattr(user, "anthropic_api_key_encrypted", None))
+    return settings
+
+
+def _ensure_required_provider_keys(
+    ai_settings: Dict[str, Any],
+    *,
+    require_openai: bool = False,
+    require_claude: bool = False
+):
+    missing = []
+    if require_openai and not ai_settings.get("openai_api_key"):
+        missing.append("OpenAI")
+    if require_claude and not ai_settings.get("anthropic_api_key"):
+        missing.append("Claude")
+    if missing:
+        joined = " and ".join(missing)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing {joined} API key. Add your key in Profile -> AI Settings."
+        )
+
+
+def _format_provider_runtime_error(provider: str, raw_error: Any) -> str:
+    error_text = str(raw_error or "").strip() or "Unknown provider error."
+    low = error_text.lower()
+
+    if any(k in low for k in ["invalid api key", "authentication", "unauthorized", "401"]):
+        reason = "API key is invalid."
+    elif any(k in low for k in ["insufficient", "quota", "billing", "credit", "rate limit", "429"]):
+        reason = "Key has quota/billing/rate-limit issue."
+    elif any(k in low for k in ["model", "not found", "permission", "access denied"]):
+        reason = "Model access is not available for this key."
+    else:
+        reason = "Provider request failed."
+
+    return f"{provider} key check failed: {reason} Details: {error_text}"
+
+
+def _raise_if_provider_failed(result: Dict[str, Any], provider: str):
+    if result.get("success"):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=_format_provider_runtime_error(provider, result.get("error"))
+    )
+
+
 def _ensure_user_ai_settings_columns():
     """Best-effort schema bootstrap so local/prod both have AI settings columns."""
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_model VARCHAR(50)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_reasoning_effort VARCHAR(20)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS claude_model VARCHAR(80)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_api_key_encrypted TEXT"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS anthropic_api_key_encrypted TEXT"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS humanity_deep_mode_enabled BOOLEAN"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS humanity_llm_model VARCHAR(50)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS humanity_llm_reasoning_effort VARCHAR(20)"))
@@ -1468,6 +1582,16 @@ def update_user_ai_settings_endpoint(
     """Update current user's AI model settings used by Tailor CV."""
     updates = settings_data.model_dump(exclude_unset=True)
 
+    if _normalize_bool(updates.get("clear_openai_api_key"), False):
+        current_user.openai_api_key_encrypted = None
+    elif "openai_api_key" in updates:
+        current_user.openai_api_key_encrypted = _encrypt_user_api_key(updates.get("openai_api_key"))
+
+    if _normalize_bool(updates.get("clear_anthropic_api_key"), False):
+        current_user.anthropic_api_key_encrypted = None
+    elif "anthropic_api_key" in updates:
+        current_user.anthropic_api_key_encrypted = _encrypt_user_api_key(updates.get("anthropic_api_key"))
+
     if "openai_model" in updates:
         current_user.openai_model = _normalize_openai_model(updates.get("openai_model"))
     if "openai_reasoning_effort" in updates:
@@ -1614,7 +1738,8 @@ def preview_profile_pool_ai_fix(
     node_path = str(node_report.get("path") or f"node-{node_id}")
     context_nodes = [_serialize_profile_node_for_ai_context(root) for root in root_nodes]
     profile_context = ai_tailor_service.profile_nodes_to_text(context_nodes)
-    ai_settings = get_user_ai_settings(current_user)
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(ai_settings, require_openai=True)
 
     result = ai_tailor_service.generate_profile_pool_node_fix_with_openai(
         node_text=original_text,
@@ -1625,12 +1750,17 @@ def preview_profile_pool_ai_fix(
         user_instructions=str(request_data.get("user_instructions", "")).strip() or None,
         model=ai_settings["openai_model"],
         reasoning_effort=ai_settings["openai_reasoning_effort"],
+        api_key=ai_settings["openai_api_key"],
         humanity_llm_enabled=ai_settings["humanity_deep_mode_enabled"],
         humanity_llm_model=ai_settings["humanity_llm_model"],
-        humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"]
+        humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"],
+        humanity_llm_api_key=ai_settings["openai_api_key"]
     )
     if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error", "AI fix preview failed"))
+        raise HTTPException(
+            status_code=400,
+            detail=_format_provider_runtime_error("OpenAI", result.get("error", "AI fix preview failed"))
+        )
 
     return {
         "success": True,
@@ -2145,7 +2275,8 @@ async def analyze_job_description(
     if not job_description or len(job_description.strip()) < 50:
         raise HTTPException(status_code=400, detail="Job description too short (minimum 50 characters)")
 
-    ai_settings = get_user_ai_settings(current_user)
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(ai_settings, require_openai=True)
 
     api_logger.step("Starting job description analysis with dual models", step_num=1)
     api_logger.parallel_execution_start(["OpenAI", "Claude"])
@@ -2158,13 +2289,15 @@ async def analyze_job_description(
             ai_tailor_service.analyze_job_with_openai,
             job_description,
             ai_settings["openai_model"],
-            ai_settings["openai_reasoning_effort"]
+            ai_settings["openai_reasoning_effort"],
+            ai_settings["openai_api_key"]
         )
         claude_future = loop.run_in_executor(
             executor,
             ai_tailor_service.analyze_job_with_claude,
             job_description,
-            ai_settings["claude_model"]
+            ai_settings["claude_model"],
+            ai_settings["anthropic_api_key"]
         )
 
         # Wait for both to complete
@@ -2175,6 +2308,9 @@ async def analyze_job_description(
         "openai": openai_result,
         "claude": claude_result
     })
+    _raise_if_provider_failed(openai_result, "OpenAI")
+    if ai_settings.get("anthropic_api_key"):
+        _raise_if_provider_failed(claude_result, "Claude")
     api_logger.success("Job analysis complete")
 
     return {
@@ -2202,7 +2338,8 @@ async def score_profile_fit(
     if (not job_requirements and not job_analysis_payload) or not profile_id:
         raise HTTPException(status_code=400, detail="Missing analysis input (job_requirements/job_analysis) or profile_id")
 
-    ai_settings = get_user_ai_settings(current_user)
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(ai_settings, require_openai=True)
 
     def get_requirements_for_provider(provider: str, fallback: dict):
         provider_payload = job_analysis_payload.get(provider) if isinstance(job_analysis_payload, dict) else None
@@ -2256,7 +2393,8 @@ async def score_profile_fit(
             profile_text,
             job_description,
             ai_settings["openai_model"],
-            ai_settings["openai_reasoning_effort"]
+            ai_settings["openai_reasoning_effort"],
+            ai_settings["openai_api_key"]
         )
         claude_future = loop.run_in_executor(
             executor,
@@ -2264,7 +2402,8 @@ async def score_profile_fit(
             claude_requirements,
             profile_text,
             job_description,
-            ai_settings["claude_model"]
+            ai_settings["claude_model"],
+            ai_settings["anthropic_api_key"]
         )
 
         # Wait for both to complete
@@ -2275,6 +2414,9 @@ async def score_profile_fit(
         "openai": openai_scores,
         "claude": claude_scores
     })
+    _raise_if_provider_failed(openai_scores, "OpenAI")
+    if ai_settings.get("anthropic_api_key"):
+        _raise_if_provider_failed(claude_scores, "Claude")
     api_logger.success("Profile scoring complete")
 
     return {
@@ -2311,7 +2453,8 @@ async def recommend_node_selection(
         print(f"❌ [RECOMMEND-NODES] Missing requirements or profile_id")
         raise HTTPException(status_code=400, detail="Missing analysis input (job_requirements/job_analysis) or profile_id")
 
-    ai_settings = get_user_ai_settings(current_user)
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(ai_settings, require_openai=True)
 
     print(f"📋 [RECOMMEND-NODES] Profile ID: {profile_id}")
 
@@ -2431,14 +2574,16 @@ async def recommend_node_selection(
             flat_nodes,
             job_description,
             ai_settings["openai_model"],
-            ai_settings["openai_reasoning_effort"]
+            ai_settings["openai_reasoning_effort"],
+            ai_settings["openai_api_key"]
         )
         claude_future = executor.submit(
             ai_tailor_service.recommend_nodes_with_claude,
             claude_requirements,
             flat_nodes,
             job_description,
-            ai_settings["claude_model"]
+            ai_settings["claude_model"],
+            ai_settings["anthropic_api_key"]
         )
 
         # Wait for OpenAI result
@@ -2552,6 +2697,9 @@ async def recommend_node_selection(
         "openai": openai_recommendations,
         "claude": claude_recommendations
     })
+    _raise_if_provider_failed(openai_recommendations, "OpenAI")
+    if ai_settings.get("anthropic_api_key"):
+        _raise_if_provider_failed(claude_recommendations, "Claude")
     api_logger.success(f"Node recommendations complete in {total_time:.2f}s")
 
     # Prepare response
@@ -2994,7 +3142,9 @@ async def check_tailored_cv_humanity(
         requested_mode = "quick"
     persist_result = bool((request_data or {}).get("persist", requested_mode == "deep"))
 
-    ai_settings = get_user_ai_settings(current_user)
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    if requested_mode == "deep" and ai_settings.get("humanity_deep_mode_enabled"):
+        _ensure_required_provider_keys(ai_settings, require_openai=True)
     humanity = _evaluate_humanity_for_nodes(nodes, mode=requested_mode, ai_settings=ai_settings)
 
     if persist_result and isinstance(incoming_snapshot, dict):
@@ -3307,17 +3457,21 @@ async def recalculate_ats_scores(
         job_title=tailored_cv.job_title or "",
         company_name=tailored_cv.company_name or ""
     )
-    ai_settings = get_user_ai_settings(current_user)
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(ai_settings, require_openai=True)
 
     humanity_report = None
     if include_humanity:
+        if ai_settings["humanity_deep_mode_enabled"]:
+            _ensure_required_provider_keys(ai_settings, require_openai=True)
         humanity_report = ai_tailor_service.evaluate_humanity_hybrid(
             text=formatted_cv,
             threshold=_humanity_threshold(),
             mode="deep",
             llm_enabled=ai_settings["humanity_deep_mode_enabled"],
             llm_model=ai_settings["humanity_llm_model"],
-            llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"]
+            llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"],
+            llm_api_key=ai_settings["openai_api_key"]
         )
 
     # Get job analysis (reuse existing one)
@@ -3352,7 +3506,8 @@ async def recalculate_ats_scores(
             formatted_cv,
             job_description,
             ai_settings["openai_model"],
-            ai_settings["openai_reasoning_effort"]
+            ai_settings["openai_reasoning_effort"],
+            ai_settings["openai_api_key"]
         )
         claude_future = loop.run_in_executor(
             executor,
@@ -3360,10 +3515,15 @@ async def recalculate_ats_scores(
             claude_requirements,
             formatted_cv,
             job_description,
-            ai_settings["claude_model"]
+            ai_settings["claude_model"],
+            ai_settings["anthropic_api_key"]
         )
 
         openai_result, claude_result = await asyncio.gather(openai_future, claude_future)
+
+    _raise_if_provider_failed(openai_result, "OpenAI")
+    if ai_settings.get("anthropic_api_key"):
+        _raise_if_provider_failed(claude_result, "Claude")
 
     # Store recalculated scores separately (don't override original scores)
     # Keep original scores from initial tailoring
@@ -3671,7 +3831,8 @@ async def refine_section(
 
     # Get node title for summary detection
     node_title = target_node.get('title', '')
-    ai_settings = get_user_ai_settings(current_user)
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(ai_settings, require_openai=True)
 
     # Call AI service with full CV context, node type, title, and reasoning effort
     result = refine_section_content_with_openai(
@@ -3682,13 +3843,20 @@ async def refine_section(
         node_type=node_type,
         node_title=node_title,
         reasoning_effort=reasoning_effort,
+        api_key=ai_settings["openai_api_key"],
         rewrite_mode=rewrite_mode,
         human_strict=human_strict,
         target_pages=target_pages,
         humanity_llm_enabled=ai_settings["humanity_deep_mode_enabled"],
         humanity_llm_model=ai_settings["humanity_llm_model"],
-        humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"]
+        humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"],
+        humanity_llm_api_key=ai_settings["openai_api_key"]
     )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=_format_provider_runtime_error("OpenAI", result.get("error"))
+        )
 
     # Add metadata to response for comparison and tracking
     result['original_content'] = node_content
@@ -4297,7 +4465,9 @@ async def preview_tailored_cv_pdf(
     sections = transform_nodes_to_sections(snapshot.get('nodes', []))
 
     if not force_export:
-        ai_settings = get_user_ai_settings(current_user)
+        ai_settings = get_user_ai_runtime_settings(current_user)
+        if ai_settings.get("humanity_deep_mode_enabled"):
+            _ensure_required_provider_keys(ai_settings, require_openai=True)
         humanity_report = _evaluate_humanity_for_nodes(
             snapshot.get('nodes', []),
             mode="deep",
@@ -4610,7 +4780,9 @@ async def export_application_pdf(
     snapshot = application.final_content_snapshot
     force_export = bool((request_data or {}).get("force_export", False))
     if not force_export:
-        ai_settings = get_user_ai_settings(current_user)
+        ai_settings = get_user_ai_runtime_settings(current_user)
+        if ai_settings.get("humanity_deep_mode_enabled"):
+            _ensure_required_provider_keys(ai_settings, require_openai=True)
         humanity_report = _evaluate_humanity_for_nodes(
             (snapshot or {}).get("nodes", []),
             mode="deep",

@@ -40,6 +40,8 @@ class User(Base):
     openai_model = Column(String, default='gpt-4o')
     openai_reasoning_effort = Column(String, default='medium')  # none, low, medium, high
     claude_model = Column(String, default='claude-sonnet-4-20250514')
+    openai_api_key_encrypted = Column(Text, nullable=True)
+    anthropic_api_key_encrypted = Column(Text, nullable=True)
     humanity_deep_mode_enabled = Column(Boolean, default=True)
     humanity_llm_model = Column(String, default='gpt-4o')
     humanity_llm_reasoning_effort = Column(String, default='low')  # none, low, medium, high
