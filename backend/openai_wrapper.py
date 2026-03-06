@@ -16,10 +16,6 @@ from logger_config import get_logger
 # Initialize logger
 logger = get_logger("OpenAI-Wrapper")
 
-# Initialize client
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
-
 # Configuration from environment variables
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")  # Default to gpt-4o for safety
 DEFAULT_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "medium")  # low, medium, high
@@ -124,6 +120,7 @@ def call_openai_for_json(
     user_prompt: str,
     model: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    api_key: Optional[str] = None,
     temperature: float = 0.3,
     timeout: int = 180
 ) -> Dict[str, Any]:
@@ -172,14 +169,16 @@ def call_openai_for_json(
             print(f"Error: {result['error']}")
     """
 
-    # Validate client initialization
-    if not openai_client:
+    # Enforce per-user BYOK usage (no shared server-key fallback).
+    if not api_key:
         logger.error("OpenAI client not initialized")
         return {
             "success": False,
-            "error": "OpenAI client not initialized. Check OPENAI_API_KEY environment variable.",
+            "error": "OpenAI API key missing. Add your key in AI Settings.",
             "model": model or DEFAULT_MODEL
         }
+
+    openai_client = OpenAI(api_key=api_key)
 
     # Use defaults if not specified
     if model is None:
@@ -211,9 +210,9 @@ def call_openai_for_json(
         start_time = time.time()
 
         if model == "gpt-5.1":
-            result = _call_gpt51(system_prompt, user_prompt, reasoning_effort, timeout)
+            result = _call_gpt51(openai_client, system_prompt, user_prompt, reasoning_effort, timeout)
         else:
-            result = _call_gpt4o(system_prompt, user_prompt, temperature, timeout)
+            result = _call_gpt4o(openai_client, system_prompt, user_prompt, temperature, timeout)
 
         duration = time.time() - start_time
 
@@ -240,6 +239,7 @@ def call_openai_for_json(
 
 
 def _call_gpt4o(
+    openai_client: OpenAI,
     system_prompt: str,
     user_prompt: str,
     temperature: float,
@@ -285,6 +285,7 @@ def _call_gpt4o(
 
 
 def _call_gpt51(
+    openai_client: OpenAI,
     system_prompt: str,
     user_prompt: str,
     reasoning_effort: str,
@@ -404,7 +405,7 @@ def get_current_model_config() -> Dict[str, str]:
     return {
         "model": DEFAULT_MODEL,
         "reasoning_effort": DEFAULT_REASONING_EFFORT,
-        "api_key_set": bool(OPENAI_API_KEY)
+        "api_key_mode": "per_user"
     }
 
 

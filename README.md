@@ -379,9 +379,11 @@ agentic_work_profile/
    ```env
    DATABASE_URL=postgresql://user:password@localhost/dbname
    SECRET_KEY=your-secret-key-here
-   OPENAI_API_KEY=sk-...
-   ANTHROPIC_API_KEY=sk-ant-...
+   USER_API_KEYS_ENCRYPTION_KEY=optional-dedicated-key
+   OPENAI_API_KEY=
+   ANTHROPIC_API_KEY=
    ```
+   BYOK mode: users add their own provider keys in `Profile -> AI Settings`.
 
 4. **Initialize Database**
    ```bash

@@ -141,10 +141,21 @@ function TailorCV() {
   const [saving, setSaving] = useState(false);
   const [cvStatus, setCvStatus] = useState('draft');
   const [recommendationsAutoApplied, setRecommendationsAutoApplied] = useState(false);
+  const [providerConfig, setProviderConfig] = useState({
+    openaiConfigured: true,
+    claudeConfigured: true
+  });
 
   useEffect(() => {
     fetchProfile();
+    fetchProviderConfig();
   }, []);
+
+  useEffect(() => {
+    if (!providerConfig.claudeConfigured && (selectedModel === 'claude' || selectedModel === 'both')) {
+      setSelectedModel('openai');
+    }
+  }, [providerConfig.claudeConfigured, selectedModel, setSelectedModel]);
 
   // Auto-trigger scoring when job analysis completes (only once)
   useEffect(() => {
@@ -258,6 +269,27 @@ function TailorCV() {
       console.error('Error fetching profile:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProviderConfig = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/user/ai-settings`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const settings = await response.json();
+      setProviderConfig({
+        openaiConfigured: !!settings?.openai_api_key_configured,
+        claudeConfigured: !!settings?.anthropic_api_key_configured
+      });
+    } catch (error) {
+      console.error('Error fetching AI provider configuration:', error);
     }
   };
 
@@ -940,6 +972,16 @@ function TailorCV() {
             </label>
           </div>
         </div>
+        {!providerConfig.openaiConfigured && (
+          <div className="provider-config-banner provider-config-banner-error">
+            OpenAI API key is not configured. Add it in Profile → AI Settings to run Tailor CV.
+          </div>
+        )}
+        {!providerConfig.claudeConfigured && (
+          <div className="provider-config-banner provider-config-banner-warning">
+            Claude API key is not configured. Running OpenAI-only mode.
+          </div>
+        )}
         <div className="wizard-progress">
           {STEPS.map((step, index) => (
             <div
@@ -1017,6 +1059,7 @@ function TailorCV() {
             onBack={() => setCurrentStep(2)}
             recommendationsAutoApplied={recommendationsAutoApplied}
             setRecommendationsAutoApplied={setRecommendationsAutoApplied}
+            claudeConfigured={providerConfig.claudeConfigured}
           />
         )}
 
@@ -1859,7 +1902,7 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
 // Step 3: Node Selection
 // ============================================================================
 
-function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, scores, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onSave, onDiscard, saving, onBack, recommendationsAutoApplied, setRecommendationsAutoApplied }) {
+function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, scores, jobAnalysis, recommendations, selectedNodes, toggleNodeSelection, selectedModel, applyModelRecommendations, loading, onSave, onDiscard, saving, onBack, recommendationsAutoApplied, setRecommendationsAutoApplied, claudeConfigured }) {
   const flattenNodes = (nodes, result = []) => {
     nodes.forEach(node => {
       result.push(node);
@@ -2013,6 +2056,8 @@ function Step3NodeSelection({ jobTitle, companyName, jobDescription, profile, sc
                   <button
                     className={`model-btn ${selectedModel === 'claude' ? 'active' : ''}`}
                     onClick={() => applyModelRecommendations('claude')}
+                    disabled={!claudeConfigured || !recommendations?.claude?.success}
+                    title={!claudeConfigured ? 'Claude API key not configured in AI Settings' : undefined}
                   >
                     Claude
                   </button>

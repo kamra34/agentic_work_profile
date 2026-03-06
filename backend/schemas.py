@@ -94,6 +94,8 @@ class UserAISettings(BaseModel):
     openai_model: str = "gpt-4o"
     openai_reasoning_effort: str = "medium"
     claude_model: str = "claude-sonnet-4-20250514"
+    openai_api_key_configured: bool = False
+    anthropic_api_key_configured: bool = False
     humanity_deep_mode_enabled: bool = True
     humanity_llm_model: str = "gpt-4o"
     humanity_llm_reasoning_effort: str = "low"
@@ -105,6 +107,10 @@ class UserAISettingsUpdate(BaseModel):
     openai_model: Optional[str] = None
     openai_reasoning_effort: Optional[str] = None
     claude_model: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    clear_openai_api_key: Optional[bool] = None
+    clear_anthropic_api_key: Optional[bool] = None
     humanity_deep_mode_enabled: Optional[bool] = None
     humanity_llm_model: Optional[str] = None
     humanity_llm_reasoning_effort: Optional[str] = None

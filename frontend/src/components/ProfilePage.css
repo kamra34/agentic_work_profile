@@ -555,6 +555,79 @@
   color: #64748b;
 }
 
+.ai-keys-note {
+  margin: 0 0 1rem 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #0f766e;
+  background: rgba(15, 118, 110, 0.08);
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+
+.ai-key-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.ai-key-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.22rem 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ai-key-badge.configured {
+  color: #065f46;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.ai-key-badge.missing {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.ai-key-clear-btn {
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 0.36rem 0.62rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ai-key-clear-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.ai-key-input {
+  min-height: 3rem;
+  border: 1.5px solid #d7e2ef;
+  border-radius: 12px;
+  background-color: #f8fbff;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.ai-key-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+  background-color: #ffffff;
+}
+
 .ai-setting-select {
   min-height: 3rem;
   border: 1.5px solid #d7e2ef;
@@ -611,8 +684,11 @@
 
 .ai-save-row {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
   padding-top: 0.25rem;
+  flex-wrap: wrap;
 }
 
 .ai-settings-save {
@@ -625,6 +701,24 @@
 
 .ai-settings-save:hover:not(:disabled) {
   box-shadow: 0 10px 22px rgba(13, 148, 136, 0.38);
+}
+
+.ai-autosave-status {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.ai-autosave-status.saving {
+  color: #1e40af;
+}
+
+.ai-autosave-status.saved {
+  color: #065f46;
+}
+
+.ai-autosave-status.error {
+  color: #b91c1c;
 }
 
 @keyframes fadeIn {
@@ -857,12 +951,17 @@
   }
 
   .ai-save-row {
-    justify-content: stretch;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .ai-settings-save {
     width: 100%;
     min-width: 0;
+  }
+
+  .ai-autosave-status {
+    width: 100%;
   }
 
   .gradient-orb {

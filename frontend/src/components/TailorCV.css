@@ -133,6 +133,27 @@
   color: #111827;
 }
 
+.provider-config-banner {
+  margin: 0 0 14px 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.provider-config-banner-error {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.provider-config-banner-warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
 .wizard-progress {
   display: flex;
   justify-content: center;
@@ -1117,6 +1138,16 @@
   border-color: #3b82f6;
   box-shadow: 0 8px 20px rgba(59, 130, 246, 0.35);
   transform: translateY(-2px);
+}
+
+.model-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  border-color: #d1d5db;
+  background: #f3f4f6;
+  color: #6b7280;
+  transform: none;
+  box-shadow: none;
 }
 
 .selection-summary {

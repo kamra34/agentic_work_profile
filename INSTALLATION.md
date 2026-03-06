@@ -196,12 +196,12 @@ DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/agentic_cv_db
 
 # Security
 SECRET_KEY=your-super-secret-key-change-this-in-production
+# Optional dedicated encryption key for user BYOK secrets at rest
+USER_API_KEYS_ENCRYPTION_KEY=your-optional-encryption-key
 
-# OpenAI Configuration
-OPENAI_API_KEY=sk-your-openai-api-key-here
-
-# Anthropic Configuration
-ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key-here
+# Optional server-level keys (leave blank in BYOK mode)
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
 
 # Optional: CORS Origins (comma-separated)
 CORS_ORIGINS=http://localhost:5174,http://localhost:3000
@@ -210,8 +210,8 @@ CORS_ORIGINS=http://localhost:5174,http://localhost:3000
 **Important:**
 - Replace `YOUR_PASSWORD` with your PostgreSQL password
 - Replace `your-super-secret-key-change-this-in-production` with a random string (e.g., `openssl rand -hex 32`)
-- Add your actual OpenAI API key (starts with `sk-`)
-- Add your actual Anthropic API key (starts with `sk-ant-`)
+- In the app, each user adds their own OpenAI/Claude keys in `Profile -> AI Settings`
+- Server-level keys are optional and not used by runtime BYOK flows
 - Use PostgreSQL only for this project (do not configure SQLite).
 
 ### **Step 5: Initialize Database Tables**
