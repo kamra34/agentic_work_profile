@@ -17,7 +17,7 @@ The Agentic CV Builder is not just another resume template tool. It's an intelli
 - **Tracks your applications** with beautiful Kanban board visualization
 - **Exports professional PDFs** in multiple ATS-optimized templates
 
-> **Core Philosophy**: AI should **intelligently select** from your real experiences, not fabricate content. Your authenticity is your strength.
+> **Core Philosophy**: Your CV is built only from experiences you actually entered. The AI (1) judges whether a role is worth applying to, (2) **selects** the most relevant pieces of your real history, and (3) optionally **polishes wording** for clarity and impact — never inventing facts, metrics, employers, or skills you didn't list. A code-level integrity guardrail flags any fabricated number/metric, and an authenticity pass keeps the writing in your voice.
 
 ---
 
@@ -217,12 +217,12 @@ Using both OpenAI GPT-4o and Anthropic Claude Sonnet 4.5 provides:
 - Excellent at identifying gaps
 - Strong strategic recommendations
 
-### **Selection Philosophy**
-- **AI NEVER generates new content**
-- **AI ONLY selects from your real experiences**
-- **Your authenticity remains intact**
-- **No fabricated achievements**
-- **100% genuine, 100% optimized**
+### **Selection & Refinement Philosophy**
+- **AI selects** the most relevant nodes from your real experiences
+- **AI may polish wording** of selected content for clarity/impact
+- **AI must not invent facts** — a code-level guardrail flags any number/metric or skill that wasn't in your profile
+- **You stay in control** — every selection and every refinement is reviewable and revertible
+- **An authenticity pass** keeps the result reading like you, not like a generator
 
 ---
 
@@ -567,6 +567,12 @@ This means:
 ### **Behavioral Invariants**
 - Keep `content_snapshot` and `selected_node_ids` synchronized.
 - Never lose or mutate `original_snapshot` after creation.
+- **Two distinct scores, two distinct inputs:**
+  - *Candidate Fit* (apply/skip verdict) is scored against the **whole profile**.
+  - *CV Optimization* (ATS/match) is scored against the **currently selected nodes only**, rendered to the exact text that goes in the CV, and recomputed each round.
+- **One renderer:** `backend/profile_render.py` is the single source of truth for turning the node tree into text the AI reads (indented, CV-like outline with `[#id type]` tags that preserves hierarchy). Selection, scoring, refinement, and exports all flow through it.
+- **Structural inclusion is derived, not guessed:** a section/entry is included iff it has a selected descendant (`compute_included_ids`).
+- **Integrity guardrail:** refinements are audited (`backend/refinement_guards.py`) and any fabricated number/metric is flagged.
 - Preserve separation of states:
   - Profile Pool = source inventory
   - Tailored CV = editable draft snapshot
