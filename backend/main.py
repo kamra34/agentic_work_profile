@@ -4608,6 +4608,17 @@ async def refine_section(
             detail=_format_provider_runtime_error("OpenAI", result.get("error"))
         )
 
+    # Integrity guardrail: enforce "polish, never invent". Flags numbers/metrics
+    # the refinement introduced that don't exist in the original node or anywhere
+    # in the CV. Soft signal (UI can warn / let the user revert); never silently
+    # rewrites the user's facts.
+    from refinement_guards import audit_refinement
+    result['integrity'] = audit_refinement(
+        node_content,
+        result.get('refined_content', '') or '',
+        profile_corpus=full_cv_content,
+    )
+
     # Add metadata to response for comparison and tracking
     result['original_content'] = node_content
     result['node_type'] = node_type
