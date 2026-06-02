@@ -15,6 +15,20 @@ from typing import Dict, Any, List
 from datetime import datetime, timezone
 from openai_wrapper import call_openai_for_json
 from logger_config import get_logger
+from profile_render import render_profile_outline, compute_included_ids
+
+
+def _render_nodes_for_prompt(profile_nodes: List[Dict]) -> str:
+    """
+    Serialize profile nodes for an AI prompt.
+
+    Accepts the hierarchical node tree and renders the CV-like indented outline
+    (with stable [#id type] tags) so the model can reason about parent->child
+    structure. Falls back to a JSON dump only if a non-tree value is passed.
+    """
+    if isinstance(profile_nodes, list):
+        return render_profile_outline(profile_nodes)
+    return json.dumps(profile_nodes, indent=2)
 
 # Initialize logger
 logger = get_logger("TailorService")
@@ -1153,8 +1167,13 @@ Raw Job Description (source of truth):
 Structured Requirements (helper extraction):
 {job_requirements}
 
-Profile Nodes:
+Profile Nodes (indented outline of the candidate's full profile tree):
 {profile_nodes}
+
+How to read the profile outline:
+- Indentation shows hierarchy: sections (§) contain entries (▸), which contain bullets (•) and paragraphs (¶).
+- Each line is tagged with its database id and type, e.g. "▸ [#34 entry] Senior Data Engineer · Acme Corp · 2021–2024".
+- Use the number after "#" as the node "id" in your output. A bullet belongs to the entry it is indented under; judge each bullet in the context of its parent role.
 
 Use BOTH inputs:
 - Raw job description is authoritative when any conflict exists.
@@ -1825,7 +1844,7 @@ def recommend_nodes_with_openai(
         prompt_content = NODE_SELECTION_PROMPT.format(
             job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
-            profile_nodes=json.dumps(profile_nodes, indent=2)
+            profile_nodes=_render_nodes_for_prompt(profile_nodes)
         )
         prompt_length = len(prompt_content)
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
@@ -1961,7 +1980,7 @@ def recommend_nodes_with_claude(
         prompt_content = NODE_SELECTION_PROMPT.format(
             job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
-            profile_nodes=json.dumps(profile_nodes, indent=2)
+            profile_nodes=_render_nodes_for_prompt(profile_nodes)
         )
         prompt_length = len(prompt_content)
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")

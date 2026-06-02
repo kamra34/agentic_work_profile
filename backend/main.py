@@ -3276,14 +3276,14 @@ async def recommend_node_selection(
         len(json.dumps({"job_requirements": claude_requirements, "profile_nodes": nodes_list}))
     )
 
-    flat_nodes = ai_tailor_service.flatten_nodes_for_analysis(nodes_list)
-    print(f"✅ [RECOMMEND-NODES] Converted to {len(flat_nodes)} flat nodes in {time.time() - convert_start:.2f}s")
+    # Render the hierarchical tree to the CV-like outline the models will read.
+    # Unlike the old flatten step, this PRESERVES parent->child structure so the
+    # model can judge each bullet in the context of its role/section.
+    outline_preview = ai_tailor_service.render_profile_outline(nodes_list)
+    print(f"✅ [RECOMMEND-NODES] Rendered profile outline in {time.time() - convert_start:.2f}s")
 
-    # Show size reduction
-    cleaned_size = max(
-        len(json.dumps({"job_requirements": openai_requirements, "profile_nodes": flat_nodes})),
-        len(json.dumps({"job_requirements": claude_requirements, "profile_nodes": flat_nodes}))
-    )
+    # Show size delta (outline vs raw JSON) for observability.
+    cleaned_size = len(outline_preview)
     reduction = original_size - cleaned_size
     reduction_pct = (reduction / original_size * 100) if original_size > 0 else 0
     print(f"📊 [RECOMMEND-NODES] Data size: {original_size:,} → {cleaned_size:,} characters ({cleaned_size/1000:.1f}K)")
@@ -3302,7 +3302,7 @@ async def recommend_node_selection(
         openai_future = executor.submit(
             ai_tailor_service.recommend_nodes_with_openai,
             openai_requirements,
-            flat_nodes,
+            nodes_list,
             job_description,
             ai_settings["openai_model"],
             ai_settings["openai_reasoning_effort"],
@@ -3311,7 +3311,7 @@ async def recommend_node_selection(
         claude_future = executor.submit(
             ai_tailor_service.recommend_nodes_with_claude,
             claude_requirements,
-            flat_nodes,
+            nodes_list,
             job_description,
             ai_settings["claude_model"],
             ai_settings["anthropic_api_key"]
@@ -3354,71 +3354,86 @@ async def recommend_node_selection(
     print(f"⚡ [RECOMMEND-NODES] Both models completed in parallel in {parallel_duration:.2f}s (vs {sequential_estimate:.2f}s estimated sequential)")
     print(f"💰 [RECOMMEND-NODES] Estimated time saved: {(sequential_estimate - parallel_duration):.2f}s")
 
-    # POST-PROCESS: Force include structural nodes (sections/entries)
-    # Build map of node_id -> node_type for quick lookup
+    # POST-PROCESS: Deterministic structural inclusion.
+    # The model now reads the full hierarchy, so it only needs to decide on the
+    # CONTENT nodes (bullets/paragraphs/leaf entries). We then include a section or
+    # entry IFF it has at least one included descendant. This avoids putting empty
+    # roles on the CV (the old code blanket-included every section/entry).
     node_type_map = {}
-    def map_node_types(nodes):
+    has_children_map = {}
+
+    def map_node_meta(nodes):
         for node in nodes:
             if node.get("id") is not None:
-                node_type_map[node["id"]] = node.get("node_type", "").lower()
+                node_type_map[node["id"]] = (node.get("node_type") or "").lower()
+                has_children_map[node["id"]] = bool(node.get("children"))
             if node.get("children"):
-                map_node_types(node["children"])
+                map_node_meta(node["children"])
 
-    map_node_types(nodes_list)
+    map_node_meta(nodes_list)
     print(f"📊 [RECOMMEND-NODES] Mapped {len(node_type_map)} node types")
 
-    def force_structural_nodes(recommendations_data):
-        """Force all section/entry nodes to include: true"""
+    def apply_structural_inclusion(recommendations_data):
+        """Rewrite include flags so parents follow their included descendants."""
         if not recommendations_data.get("success") or not recommendations_data.get("recommendations"):
             return recommendations_data
 
         selected_nodes = recommendations_data["recommendations"].get("selected_nodes", [])
-        forced_count = 0
-        added_count = 0
 
-        # Create a set of existing node IDs in recommendations
+        # The model's include decision is authoritative only for leaf/content nodes
+        # (a node with no children). Structural containers are derived below.
+        primary_ids = {
+            rec.get("id")
+            for rec in selected_nodes
+            if rec.get("include") and rec.get("id") is not None and not has_children_map.get(rec.get("id"), False)
+        }
+        included_ids = ai_tailor_service.compute_included_ids(nodes_list, primary_ids)
+
         existing_ids = {rec.get("id") for rec in selected_nodes if rec.get("id") is not None}
 
-        # Force structural nodes to include: true
+        # Reconcile existing recommendations with the computed inclusion set.
         for rec in selected_nodes:
             node_id = rec.get("id")
-            if node_id in node_type_map:
-                node_type = node_type_map[node_id]
-                if node_type in ["section", "entry"]:
-                    if not rec.get("include"):
-                        rec["include"] = True
-                        rec["confidence"] = 1.0
-                        rec["reason"] = "Structural node (auto-included to preserve CV hierarchy)"
-                        rec["relevance_tags"] = rec.get("relevance_tags", []) + ["structural"]
-                        forced_count += 1
+            if node_id is None:
+                continue
+            should_include = node_id in included_ids
+            if has_children_map.get(node_id, False):
+                # Structural node: include is derived, not model-chosen.
+                if rec.get("include") != should_include:
+                    rec["include"] = should_include
+                    if should_include:
+                        rec["reason"] = "Container kept because it has selected content."
+                        rec["relevance_tags"] = list(rec.get("relevance_tags") or []) + ["structural"]
+            else:
+                rec["include"] = should_include
 
-        # Add missing structural nodes that AI didn't return
-        for node_id, node_type in node_type_map.items():
-            if node_type in ["section", "entry"] and node_id not in existing_ids:
+        # Add any structural ancestor the model omitted entirely.
+        added_count = 0
+        for node_id in included_ids:
+            if node_id not in existing_ids and has_children_map.get(node_id, False):
                 selected_nodes.append({
                     "id": node_id,
                     "include": True,
                     "confidence": 1.0,
-                    "reason": "Structural node (auto-included to preserve CV hierarchy)",
-                    "relevance_tags": ["structural"]
+                    "reason": "Container kept because it has selected content.",
+                    "relevance_tags": ["structural"],
                 })
                 added_count += 1
 
-        if forced_count > 0 or added_count > 0:
-            print(f"   📌 Forced {forced_count} section/entry nodes to include=true, added {added_count} missing structural nodes")
-            # Update summary
-            if "selection_summary" in recommendations_data["recommendations"]:
-                summary = recommendations_data["recommendations"]["selection_summary"]
-                summary["recommended_include"] = sum(1 for rec in selected_nodes if rec.get("include"))
-                summary["recommended_exclude"] = sum(1 for rec in selected_nodes if not rec.get("include"))
-                summary["total_nodes"] = len(selected_nodes)
+        if "selection_summary" in recommendations_data["recommendations"]:
+            summary = recommendations_data["recommendations"]["selection_summary"]
+            summary["recommended_include"] = sum(1 for rec in selected_nodes if rec.get("include"))
+            summary["recommended_exclude"] = sum(1 for rec in selected_nodes if not rec.get("include"))
+            summary["total_nodes"] = len(selected_nodes)
+        if added_count:
+            print(f"   📌 Added {added_count} structural ancestors to preserve hierarchy")
 
         return recommendations_data
 
     # Apply to both models
-    print(f"🔧 [RECOMMEND-NODES] Post-processing: forcing structural nodes (sections/entries) to include=true")
-    openai_recommendations = force_structural_nodes(openai_recommendations)
-    claude_recommendations = force_structural_nodes(claude_recommendations)
+    print(f"🔧 [RECOMMEND-NODES] Post-processing: deriving structural inclusion from selected content")
+    openai_recommendations = apply_structural_inclusion(openai_recommendations)
+    claude_recommendations = apply_structural_inclusion(claude_recommendations)
 
     total_time = time.time() - start_time
     print(f"🏁 [RECOMMEND-NODES] Total request time: {total_time:.2f}s")
