@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from profile_render import (  # noqa: E402
     render_profile_outline,
+    render_cv_for_scoring,
     compute_included_ids,
     iter_nodes,
 )
@@ -101,3 +102,24 @@ def test_compute_included_ids_empty_selection():
 def test_iter_nodes_visits_everything_depth_first():
     ids = [n["id"] for n in iter_nodes(_tree())]
     assert ids == [1, 2, 3, 4, 5, 6]
+
+
+def test_cv_for_scoring_only_includes_selected_and_header():
+    snapshot = {
+        "contact_info": {"full_name": "Jane Doe", "email": "j@x.com"},
+        "nodes": _tree(),
+    }
+    out = render_cv_for_scoring(snapshot, job_title="Data Engineer", company_name="Acme")
+    assert "TAILORED CURRICULUM VITAE" in out
+    assert "Position: Data Engineer" in out
+    assert "Jane Doe" in out
+    assert "Email: j@x.com" in out
+    assert "10TB/day" in out          # selected content present
+    assert "team of 5" not in out     # unselected content absent
+    assert "[#" not in out            # ids stripped for scoring/export
+
+
+def test_cv_for_scoring_handles_missing_contact():
+    out = render_cv_for_scoring({"nodes": _tree()})
+    assert "TAILORED CURRICULUM VITAE" in out
+    assert "10TB/day" in out

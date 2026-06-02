@@ -2468,7 +2468,7 @@ def preview_profile_pool_ai_fix(
     node_report = (quality_report.get("node_reports") or {}).get(str(node_id), {})
     node_path = str(node_report.get("path") or f"node-{node_id}")
     context_nodes = [_serialize_profile_node_for_ai_context(root) for root in root_nodes]
-    profile_context = ai_tailor_service.profile_nodes_to_text(context_nodes)
+    profile_context = ai_tailor_service.render_profile_outline(context_nodes, include_ids=False)
     ai_settings = get_user_ai_runtime_settings(current_user)
     _ensure_required_provider_keys(ai_settings, require_openai=True)
 
@@ -3109,7 +3109,11 @@ async def score_profile_fit(
         }
 
     nodes_list = [node_to_dict(node) for node in profile.nodes if node.parent_id is None]
-    profile_text = ai_tailor_service.profile_nodes_to_text(nodes_list)
+    # Candidate-fit scoring runs against the WHOLE profile (this answers
+    # "should I apply?"). The CV-optimization score, by contrast, runs against
+    # only the SELECTED nodes and is recomputed each round in the Portfolio
+    # (see /api/tailor/{cv_id}/recalculate-scores). Both now share one renderer.
+    profile_text = ai_tailor_service.render_profile_outline(nodes_list, include_ids=False)
 
     api_logger.step("Starting profile scoring with dual models", step_num=1)
     api_logger.parallel_execution_start(["OpenAI", "Claude"])

@@ -139,6 +139,52 @@ def render_profile_outline(
     return "\n".join(lines)
 
 
+def render_cv_for_scoring(
+    content_snapshot: Dict[str, Any],
+    job_title: str = "",
+    company_name: str = "",
+) -> str:
+    """
+    Render the *currently selected* CV (the artifact the user will actually export)
+    to text for AI scoring / humanity checks.
+
+    This is the input to the CV-optimization score: it contains ONLY selected nodes,
+    so the score reflects the tailored CV the user is iterating on each round — not the
+    full profile. Built on the one outline renderer to keep a single source of truth.
+    """
+    lines: List[str] = ["TAILORED CURRICULUM VITAE"]
+
+    if job_title or company_name:
+        lines.append("")
+        lines.append("Tailored for:")
+        if job_title:
+            lines.append(f"  Position: {job_title}")
+        if company_name:
+            lines.append(f"  Company: {company_name}")
+
+    contact = content_snapshot.get("contact_info") or {}
+    if contact:
+        lines.append("")
+        if contact.get("full_name"):
+            lines.append(contact["full_name"])
+        details = []
+        for key, label in (("email", "Email"), ("phone", "Phone"), ("location", "Location")):
+            if contact.get(key):
+                details.append(f"{label}: {contact[key]}")
+        if details:
+            lines.append(" | ".join(details))
+
+    lines.append("")
+    body = render_profile_outline(
+        content_snapshot.get("nodes", []),
+        include_ids=False,
+        only_selected=True,
+    )
+    if body:
+        lines.append(body)
+    return "\n".join(lines)
+
+
 def iter_nodes(nodes: Iterable[Dict[str, Any]]):
     """Yield every node in the tree, depth-first (parents before children)."""
     for node in nodes:
