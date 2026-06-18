@@ -344,6 +344,12 @@ def _call_responses_api(
     # The Responses API reasoning effort does not accept "none"; treat it as minimal.
     effort = "minimal" if reasoning_effort == "none" else reasoning_effort
 
+    # Make the exact reasoning effort visible in the logs for every OpenAI call.
+    logger.info(
+        f"[OPENAI EFFORT] provider=openai | model={model} | api=responses.create | "
+        f"reasoning_effort={reasoning_effort} -> {effort}"
+    )
+
     # Ensure prompts explicitly request JSON
     enhanced_system_prompt = _ensure_json_instruction(system_prompt)
 

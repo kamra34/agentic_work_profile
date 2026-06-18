@@ -220,6 +220,7 @@ def call_claude_structured(
     max_tokens: int = 8192,
     effort: Optional[str] = None,
     timeout: float = 120.0,
+    label: str = "claude_call",
 ):
     """
     Run a Claude structured-output call using ``output_config.format`` (json_schema).
@@ -248,17 +249,38 @@ def call_claude_structured(
     }
     if resolved_effort == "off":
         create_kwargs["thinking"] = {"type": "disabled"}
+        thinking_mode = "disabled"
     else:
         create_kwargs["thinking"] = {"type": "adaptive"}
         output_config["effort"] = resolved_effort
         headroom = _CLAUDE_THINKING_HEADROOM.get(resolved_effort, 16000)
         effective_max_tokens = min(max_tokens + headroom, _CLAUDE_MAX_OUTPUT_TOKENS)
+        thinking_mode = "adaptive"
     create_kwargs["max_tokens"] = effective_max_tokens
+
+    # Make the exact thinking depth visible in the logs for every Claude call.
+    logger.info(
+        f"[CLAUDE EFFORT] {label} | provider=anthropic | model={model} | "
+        f"thinking={thinking_mode} | effort={resolved_effort} | max_tokens={effective_max_tokens}"
+    )
+    call_start = time.time()
 
     # Stream and assemble the final message (avoids request-timeout on long thinking
     # / large structured outputs, per Anthropic guidance for high max_tokens).
     with client.messages.stream(**create_kwargs) as stream:
         response = stream.get_final_message()
+
+    call_dur = time.time() - call_start
+    thinking_blocks = sum(
+        1 for b in (getattr(response, "content", None) or []) if getattr(b, "type", None) == "thinking"
+    )
+    usage = getattr(response, "usage", None)
+    out_tokens = getattr(usage, "output_tokens", "?") if usage else "?"
+    logger.info(
+        f"[CLAUDE EFFORT] {label} done | effort={resolved_effort} | "
+        f"thinking_blocks={thinking_blocks} | out_tokens={out_tokens} | "
+        f"stop={getattr(response, 'stop_reason', '?')} | {call_dur:.1f}s"
+    )
 
     if getattr(response, "stop_reason", None) == "max_tokens":
         raise ValueError(
@@ -1710,6 +1732,7 @@ def analyze_job_with_claude(job_description: str, model: str = None, api_key: st
             max_tokens=4096,
             effort=effort,
             timeout=180.0,
+            label="job_analysis",
         )
 
         finished_at = _now_iso()
@@ -1931,6 +1954,7 @@ def score_profile_with_claude(
             max_tokens=4096,
             effort=effort,
             timeout=180.0,
+            label="scoring",
         )
         result = _normalize_scores_payload(result)
 
@@ -2159,6 +2183,7 @@ def recommend_nodes_with_claude(
             max_tokens=16384,  # large responses with many nodes
             effort=effort,
             timeout=180.0,  # Claude needs more time for thinking + many nodes
+            label="node_selection",
         )
 
         request_duration = time.time() - start_ts
@@ -2452,6 +2477,7 @@ def propose_skill_weave(
                 max_tokens=8192,
                 effort=claude_effort,
                 timeout=180.0,
+                label="skill_weave",
             )
             api_name = "messages.create"
             reasoning_used = effort_used
@@ -2680,6 +2706,7 @@ def refine_full_cv(
                 max_tokens=16384,
                 effort=claude_effort,
                 timeout=240.0,
+                label="refine_all",
             )
             api_name = "messages.create"
             reasoning_used = effort_used
@@ -2718,7 +2745,11 @@ def refine_full_cv(
         }
 
         duration_ms = int((time.time() - start_ts) * 1000)
-        logger.success(f"Refine-all done: {len(payload['sections'])} sections in {duration_ms / 1000:.2f}s")
+        _eff_label = f"claude_effort={reasoning_used or 'off'}" if provider == "claude" else f"reasoning_effort={reasoning_used or 'default'}"
+        logger.success(
+            f"Refine-all done: {len(payload['sections'])} sections in {duration_ms / 1000:.2f}s "
+            f"(provider={provider}, {_eff_label})"
+        )
         payload.update({
             "success": True,
             "model": resolved_model,
@@ -2833,6 +2864,7 @@ def generate_cover_letter(
                 max_tokens=4096,
                 effort=claude_effort,
                 timeout=120.0,
+                label="cover_letter",
             )
             api_name = "messages.create"
             reasoning_used = effort_used
@@ -3316,6 +3348,7 @@ Remember: Return ONLY the JSON object, no other text."""
                 max_tokens=8192,
                 effort=claude_effort,
                 timeout=120.0,
+                label="refine_section",
             )
             result = {"success": True, "data": data, "actual_model": claude_model_resolved}
         else:
