@@ -108,13 +108,13 @@ class UserProfileInfoUpdate(BaseModel):
 
 class UserAISettings(BaseModel):
     """User-level AI model settings used by Tailor CV pipeline"""
-    openai_model: str = "gpt-4o"
+    openai_model: str = "gpt-5.5"
     openai_reasoning_effort: str = "medium"
-    claude_model: str = "claude-sonnet-4-20250514"
+    claude_model: str = "claude-opus-4-8"
     openai_api_key_configured: bool = False
     anthropic_api_key_configured: bool = False
     humanity_deep_mode_enabled: bool = True
-    humanity_llm_model: str = "gpt-4o"
+    humanity_llm_model: str = "gpt-5.5"
     humanity_llm_reasoning_effort: str = "low"
     refinement_instruction_templates: List[Dict[str, str]] = []
 

@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, Body
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, func, text
+from sqlalchemy import create_engine, func, text, bindparam
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.orm.attributes import flag_modified
 from passlib.context import CryptContext
@@ -1112,22 +1112,31 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# AI model settings defaults (used to initialize user settings and as safety fallback)
-VALID_OPENAI_MODELS = {"gpt-4o", "gpt-5.1"}
+# AI model settings defaults (used to initialize user settings and as safety fallback).
+# The list of *selectable* models is fetched live from the providers (see
+# /api/ai/available-models); we no longer hardcode a whitelist. These defaults only
+# decide which model the pipeline uses when a user hasn't picked one. gpt-4o was
+# deprecated by OpenAI in 2026-02, so the defaults below are the current flagships.
 VALID_REASONING_EFFORT = {"none", "low", "medium", "high"}
-DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
-if DEFAULT_OPENAI_MODEL not in VALID_OPENAI_MODELS:
-    DEFAULT_OPENAI_MODEL = "gpt-4o"
+# Deprecated model ids that existing users should be migrated off of.
+DEPRECATED_OPENAI_MODELS = {"gpt-4o", "gpt-4o-mini", "gpt-5.1"}
+DEPRECATED_CLAUDE_MODELS = {"claude-sonnet-4-20250514"}
+
+DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-5.5")
 
 DEFAULT_OPENAI_REASONING = os.getenv("OPENAI_REASONING_EFFORT", "medium").lower()
 if DEFAULT_OPENAI_REASONING not in VALID_REASONING_EFFORT:
     DEFAULT_OPENAI_REASONING = "medium"
 
-DEFAULT_CLAUDE_MODEL = os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+DEFAULT_CLAUDE_MODEL = os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
 DEFAULT_HUMANITY_DEEP_MODE_ENABLED = os.getenv("HUMANITY_DEEP_MODE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
-DEFAULT_HUMANITY_LLM_MODEL = os.getenv("HUMANITY_LLM_MODEL", "gpt-4o")
-if DEFAULT_HUMANITY_LLM_MODEL not in VALID_OPENAI_MODELS:
-    DEFAULT_HUMANITY_LLM_MODEL = "gpt-4o"
+DEFAULT_HUMANITY_LLM_MODEL = os.getenv("HUMANITY_LLM_MODEL", "gpt-5.5")
+
+
+def _looks_like_openai_model(model: Optional[str]) -> bool:
+    """Loose sanity check for an OpenAI model id (no hardcoded whitelist)."""
+    value = (model or "").strip().lower()
+    return value.startswith("gpt-") or value.startswith("o")
 DEFAULT_HUMANITY_LLM_REASONING = os.getenv("HUMANITY_LLM_REASONING_EFFORT", "low").lower()
 if DEFAULT_HUMANITY_LLM_REASONING not in VALID_REASONING_EFFORT:
     DEFAULT_HUMANITY_LLM_REASONING = "low"
@@ -1138,7 +1147,8 @@ PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE
 
 def _normalize_openai_model(model: Optional[str]) -> str:
     value = (model or "").strip()
-    if value in VALID_OPENAI_MODELS:
+    # Accept any plausible (non-deprecated) OpenAI id; fall back to the default otherwise.
+    if value and _looks_like_openai_model(value) and value not in DEPRECATED_OPENAI_MODELS:
         return value
     return DEFAULT_OPENAI_MODEL
 
@@ -1152,7 +1162,7 @@ def _normalize_reasoning_effort(effort: Optional[str]) -> str:
 
 def _normalize_claude_model(model: Optional[str]) -> str:
     value = (model or "").strip()
-    if value and value.startswith("claude-"):
+    if value and value.startswith("claude-") and value not in DEPRECATED_CLAUDE_MODELS:
         return value
     return DEFAULT_CLAUDE_MODEL
 
@@ -1174,7 +1184,7 @@ def _normalize_bool(value: Any, default: bool) -> bool:
 
 def _normalize_humanity_llm_model(model: Optional[str]) -> str:
     value = (model or "").strip()
-    if value in VALID_OPENAI_MODELS:
+    if value and _looks_like_openai_model(value) and value not in DEPRECATED_OPENAI_MODELS:
         return value
     return DEFAULT_HUMANITY_LLM_MODEL
 
@@ -1408,6 +1418,26 @@ def _ensure_user_ai_settings_columns():
                 "WHERE refinement_instruction_templates IS NULL"
             )
         )
+        # Migrate users off deprecated/retired model ids (e.g. gpt-4o, gpt-5.1,
+        # the old Claude Sonnet snapshot) onto the current defaults. Idempotent.
+        if DEPRECATED_OPENAI_MODELS:
+            deprecated_openai = list(DEPRECATED_OPENAI_MODELS)
+            conn.execute(
+                text("UPDATE users SET openai_model = :model WHERE openai_model IN :deprecated")
+                .bindparams(bindparam("deprecated", expanding=True)),
+                {"model": DEFAULT_OPENAI_MODEL, "deprecated": deprecated_openai},
+            )
+            conn.execute(
+                text("UPDATE users SET humanity_llm_model = :model WHERE humanity_llm_model IN :deprecated")
+                .bindparams(bindparam("deprecated", expanding=True)),
+                {"model": DEFAULT_HUMANITY_LLM_MODEL, "deprecated": deprecated_openai},
+            )
+        if DEPRECATED_CLAUDE_MODELS:
+            conn.execute(
+                text("UPDATE users SET claude_model = :model WHERE claude_model IN :deprecated")
+                .bindparams(bindparam("deprecated", expanding=True)),
+                {"model": DEFAULT_CLAUDE_MODEL, "deprecated": list(DEPRECATED_CLAUDE_MODELS)},
+            )
 
 
 _ensure_user_ai_settings_columns()
@@ -1990,6 +2020,81 @@ def update_user_ai_settings_endpoint(
     db.refresh(current_user)
 
     return get_user_ai_settings(current_user)
+
+
+# Substrings that mark a model as NOT a chat/text model (used to filter OpenAI's
+# full model list down to the chat-capable models for the settings dropdown).
+_OPENAI_NON_CHAT_MARKERS = (
+    "audio", "realtime", "transcribe", "tts", "image", "embedding",
+    "search", "moderation", "whisper", "dall-e", "codex", "instruct",
+)
+
+
+def _is_openai_chat_model(model_id: str) -> bool:
+    value = (model_id or "").strip().lower()
+    if not _looks_like_openai_model(value):
+        return False
+    return not any(marker in value for marker in _OPENAI_NON_CHAT_MARKERS)
+
+
+def _list_openai_models(api_key: Optional[str]) -> Dict[str, Any]:
+    """Fetch the live, chat-capable OpenAI models for this user's key (newest first)."""
+    if not api_key:
+        return {"configured": False, "models": [], "default": DEFAULT_OPENAI_MODEL, "error": None}
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        raw = client.models.list()
+        models = [
+            {"id": m.id, "created": getattr(m, "created", 0)}
+            for m in raw.data
+            if _is_openai_chat_model(getattr(m, "id", ""))
+        ]
+        models.sort(key=lambda m: m.get("created") or 0, reverse=True)
+        ids = [m["id"] for m in models]
+        default = DEFAULT_OPENAI_MODEL if DEFAULT_OPENAI_MODEL in ids else (ids[0] if ids else DEFAULT_OPENAI_MODEL)
+        return {"configured": True, "models": models, "default": default, "error": None}
+    except Exception as e:
+        return {"configured": True, "models": [], "default": DEFAULT_OPENAI_MODEL, "error": str(e)}
+
+
+def _list_claude_models(api_key: Optional[str]) -> Dict[str, Any]:
+    """Fetch the live Claude models for this user's key (newest first)."""
+    if not api_key:
+        return {"configured": False, "models": [], "default": DEFAULT_CLAUDE_MODEL, "error": None}
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=api_key)
+        raw = client.models.list(limit=100)
+        models = [
+            {"id": m.id, "display_name": getattr(m, "display_name", m.id)}
+            for m in raw.data
+            if str(getattr(m, "id", "")).startswith("claude-")
+        ]
+        # Anthropic returns newest-first already; keep order.
+        ids = [m["id"] for m in models]
+        default = DEFAULT_CLAUDE_MODEL if DEFAULT_CLAUDE_MODEL in ids else (ids[0] if ids else DEFAULT_CLAUDE_MODEL)
+        return {"configured": True, "models": models, "default": default, "error": None}
+    except Exception as e:
+        return {"configured": True, "models": [], "default": DEFAULT_CLAUDE_MODEL, "error": str(e)}
+
+
+@app.get("/api/ai/available-models")
+def get_available_models_endpoint(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List the AI models actually available to this user's configured API keys.
+
+    Populated live from the OpenAI / Anthropic `models.list()` APIs (no hardcoded
+    list). When a provider key is missing, that provider returns configured=false
+    with an empty list so the UI can prompt the user to add the key.
+    """
+    runtime = get_user_ai_runtime_settings(current_user)
+    return {
+        "openai": _list_openai_models(runtime.get("openai_api_key")),
+        "claude": _list_claude_models(runtime.get("anthropic_api_key")),
+    }
 
 
 # ============================================================================
@@ -3300,9 +3405,7 @@ async def recommend_node_selection(
     parallel_start = time.time()
 
     # Run both AI calls in parallel using ThreadPoolExecutor
-    # This allows both models to process simultaneously
     with ThreadPoolExecutor(max_workers=2) as executor:
-        # Submit both tasks
         openai_future = executor.submit(
             ai_tailor_service.recommend_nodes_with_openai,
             openai_requirements,
@@ -3456,7 +3559,7 @@ async def recommend_node_selection(
     response_data = {
         "openai": openai_recommendations,
         "claude": claude_recommendations,
-        "total_nodes": len(flat_nodes),
+        "total_nodes": len(node_type_map),
         "requirements_source": {
             "openai": openai_requirements_source,
             "claude": claude_requirements_source
@@ -4594,6 +4697,7 @@ async def refine_section(
         node_title=node_title,
         reasoning_effort=reasoning_effort,
         api_key=ai_settings["openai_api_key"],
+        model=ai_settings["openai_model"],
         rewrite_mode=rewrite_mode,
         human_strict=human_strict,
         target_pages=target_pages,

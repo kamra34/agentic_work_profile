@@ -181,6 +181,14 @@
   font-weight: 500;
 }
 
+.status-models {
+  font-size: 11px;
+  opacity: 0.85;
+  font-weight: 600;
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .status-right {
   display: flex;
   align-items: center;

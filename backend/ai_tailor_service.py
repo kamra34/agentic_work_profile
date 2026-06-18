@@ -11,11 +11,12 @@ import re
 from collections import Counter
 from statistics import mean, pstdev
 from anthropic import Anthropic
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from openai_wrapper import call_openai_for_json
 from logger_config import get_logger
 from profile_render import render_profile_outline, compute_included_ids
+from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, claude_tool
 
 
 def _render_nodes_for_prompt(profile_nodes: List[Dict]) -> str:
@@ -29,6 +30,38 @@ def _render_nodes_for_prompt(profile_nodes: List[Dict]) -> str:
     if isinstance(profile_nodes, list):
         return render_profile_outline(profile_nodes)
     return json.dumps(profile_nodes, indent=2)
+
+
+def _extract_claude_tool_input(response: Any) -> Dict[str, Any]:
+    """
+    Return the ``input`` dict of the first tool_use block in a Claude response.
+
+    With a forced ``tool_choice`` Claude returns a tool_use block, but it may be
+    preceded by other content blocks (e.g. a text or thinking block). Scan for
+    the tool_use block instead of assuming it is ``content[0]`` so a leading
+    non-tool block doesn't raise a misleading "Expected tool_use" error.
+    """
+    content = getattr(response, "content", None)
+    if not content:
+        raise ValueError("Claude returned empty content")
+    for block in content:
+        if getattr(block, "type", None) == "tool_use":
+            return block.input
+    block_types = [getattr(b, "type", "?") for b in content]
+    raise ValueError(f"Claude returned no tool_use block (got blocks: {block_types})")
+
+
+# Current default OpenAI model. The selectable list is fetched live from the
+# provider; this is only the fallback the pipeline uses when none is supplied.
+# gpt-4o was deprecated by OpenAI in 2026-02.
+DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-5.5")
+
+
+def _uses_reasoning(model: Optional[str]) -> bool:
+    """Whether a model id supports the reasoning-effort parameter (gpt-5.x / o-series)."""
+    value = (model or "").strip().lower()
+    return value.startswith("gpt-5") or value.startswith("o")
+
 
 # Initialize logger
 logger = get_logger("TailorService")
@@ -217,7 +250,7 @@ try:
 except (TypeError, ValueError):
     HUMANITY_DEFAULT_THRESHOLD = 70
 HUMANITY_DEFAULT_THRESHOLD = max(0, min(100, HUMANITY_DEFAULT_THRESHOLD))
-HUMANITY_LLM_MODEL = os.getenv("HUMANITY_LLM_MODEL", "gpt-4o")
+HUMANITY_LLM_MODEL = os.getenv("HUMANITY_LLM_MODEL", "gpt-5.5")
 HUMANITY_LLM_REASONING = os.getenv("HUMANITY_LLM_REASONING_EFFORT", "low")
 HUMANITY_DEEP_MODE_ENABLED = os.getenv("HUMANITY_DEEP_MODE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -1377,10 +1410,10 @@ def analyze_job_with_openai(
 
     Args:
         job_description: The job description text to analyze
-        model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+        model: Optional OpenAI model id override (e.g. "gpt-5.5"). Uses the default if not specified.
         reasoning_effort: Optional reasoning effort override for GPT-5.1.
     """
-    model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    model_name = model or DEFAULT_OPENAI_MODEL
     resolved_reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
     logger.step(f"Job analysis with OpenAI ({model_name})", step_num=1)
     started_at = _now_iso()
@@ -1391,13 +1424,15 @@ def analyze_job_with_openai(
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
         logger.info(f"Job description length: {len(job_description)} characters")
 
-        # Use the unified wrapper
+        # Use the unified wrapper with structured output schema
         result = call_openai_for_json(
             system_prompt="You are an expert job requirement analyst. Always respond with valid JSON.",
             user_prompt=user_prompt,
             model=model_name,
             reasoning_effort=resolved_reasoning_effort,
-            api_key=api_key
+            api_key=api_key,
+            schema=JOB_ANALYSIS_SCHEMA,
+            schema_name="job_analysis"
         )
 
         if not result["success"]:
@@ -1415,7 +1450,7 @@ def analyze_job_with_openai(
                     requested_model=model_name,
                     resolved_model=resolved_model,
                     api_name=result.get("api_name", ""),
-                    reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
+                    reasoning_effort=resolved_reasoning_effort if _uses_reasoning(model_name) else "",
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_ms=duration_ms
@@ -1438,7 +1473,7 @@ def analyze_job_with_openai(
                 requested_model=result.get("requested_model", model_name),
                 resolved_model=resolved_model,
                 api_name=result.get("api_name", ""),
-                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                reasoning_effort=resolved_reasoning_effort if _uses_reasoning(result.get("requested_model", model_name)) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1466,7 +1501,7 @@ def analyze_job_with_openai(
                 requested_model=model_name,
                 resolved_model=model_name,
                 api_name="",
-                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
+                reasoning_effort=resolved_reasoning_effort if _uses_reasoning(model_name) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1476,7 +1511,7 @@ def analyze_job_with_openai(
 
 def analyze_job_with_claude(job_description: str, model: str = None, api_key: str = None) -> Dict[str, Any]:
     """Analyze job description using Claude Sonnet 4.5"""
-    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
     logger.step(f"Job analysis with Claude ({requested_model})", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
@@ -1508,39 +1543,23 @@ def analyze_job_with_claude(job_description: str, model: str = None, api_key: st
         # Build the exact prompt that will be sent
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
 
-        logger.info("Calling Claude Sonnet 4.5 API...")
+        logger.info("Calling Claude Sonnet 4.5 API with tool-use...")
 
+        tool = claude_tool("job_analysis_output", "Structured job analysis output", JOB_ANALYSIS_SCHEMA)
         response = claude_client.messages.create(
             model=requested_model,
             max_tokens=4096,
+            system="You are an expert job requirement analyst.",
             messages=[
                 {"role": "user", "content": user_prompt}
             ],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "job_analysis_output"},
             temperature=0.3
         )
 
-        if not response.content or len(response.content) == 0:
-            raise ValueError("Claude returned empty content")
-
-        # Extract text and remove markdown code blocks if present
-        text = response.content[0].text.strip()
-
-        if text.startswith('```'):
-            # Remove markdown code blocks
-            lines = text.split('\n')
-            # Remove first line (```json or ```) and last line (```)
-            if len(lines) > 2:
-                text = '\n'.join(lines[1:-1])
-            else:
-                raise ValueError(f"Invalid markdown format: only {len(lines)} lines")
-
-        # Sometimes Claude adds explanatory text after the JSON - extract only the JSON
-        # Find the last closing brace
-        last_brace = text.rfind('}')
-        if last_brace != -1:
-            text = text[:last_brace + 1]
-
-        result = json.loads(text)
+        # Extract tool use result (pre-parsed dict, no JSON decode needed)
+        result = _extract_claude_tool_input(response)
 
         finished_at = _now_iso()
         duration_ms = int((time.time() - start_ts) * 1000)
@@ -1600,9 +1619,9 @@ def score_profile_with_openai(
     Args:
         job_requirements: Extracted job requirements dictionary
         profile_content: Candidate profile text
-        model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+        model: Optional OpenAI model id override (e.g. "gpt-5.5"). Uses the default if not specified.
     """
-    model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    model_name = model or DEFAULT_OPENAI_MODEL
     resolved_reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
     logger.step(f"Profile scoring with OpenAI ({model_name})", step_num=1)
     started_at = _now_iso()
@@ -1617,13 +1636,15 @@ def score_profile_with_openai(
         )
         logger.info(f"Profile content length: {len(profile_content)} characters")
 
-        # Use the unified wrapper
+        # Use the unified wrapper with structured output schema
         result = call_openai_for_json(
             system_prompt="You are an expert recruiter and ATS specialist. Always respond with valid JSON.",
             user_prompt=user_prompt,
             model=model_name,
             reasoning_effort=resolved_reasoning_effort,
-            api_key=api_key
+            api_key=api_key,
+            schema=SCORING_SCHEMA,
+            schema_name="cv_scoring"
         )
 
         if not result["success"]:
@@ -1641,7 +1662,7 @@ def score_profile_with_openai(
                     requested_model=model_name,
                     resolved_model=resolved_model,
                     api_name=result.get("api_name", ""),
-                    reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
+                    reasoning_effort=resolved_reasoning_effort if _uses_reasoning(model_name) else "",
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_ms=duration_ms
@@ -1669,7 +1690,7 @@ def score_profile_with_openai(
                 requested_model=result.get("requested_model", model_name),
                 resolved_model=resolved_model,
                 api_name=result.get("api_name", ""),
-                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                reasoning_effort=resolved_reasoning_effort if _uses_reasoning(result.get("requested_model", model_name)) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1697,7 +1718,7 @@ def score_profile_with_openai(
                 requested_model=model_name,
                 resolved_model=model_name,
                 api_name="",
-                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
+                reasoning_effort=resolved_reasoning_effort if _uses_reasoning(model_name) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1713,7 +1734,7 @@ def score_profile_with_claude(
     api_key: str = None
 ) -> Dict[str, Any]:
     """Score profile fit using Claude Sonnet 4.5"""
-    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
     logger.step(f"Profile scoring with Claude ({requested_model})", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
@@ -1749,26 +1770,23 @@ def score_profile_with_claude(
             profile_content=profile_content
         )
 
-        logger.info("Calling Claude Sonnet 4.5 API...")
+        logger.info("Calling Claude Sonnet 4.5 API with tool-use...")
 
+        tool = claude_tool("scoring_output", "Structured CV scoring output", SCORING_SCHEMA)
         response = claude_client.messages.create(
             model=requested_model,
             max_tokens=4096,
+            system="You are an expert recruiter and ATS specialist.",
             messages=[
                 {"role": "user", "content": user_prompt}
             ],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "scoring_output"},
             temperature=0.3
         )
 
-        # Extract text and remove markdown code blocks if present
-        text = response.content[0].text.strip()
-        if text.startswith('```'):
-            # Remove markdown code blocks
-            lines = text.split('\n')
-            # Remove first line (```json or ```) and last line (```)
-            text = '\n'.join(lines[1:-1])
-
-        result = json.loads(text)
+        # Extract tool use result (pre-parsed dict, no JSON decode needed)
+        result = _extract_claude_tool_input(response)
         result = _normalize_scores_payload(result)
 
         finished_at = _now_iso()
@@ -1832,9 +1850,9 @@ def recommend_nodes_with_openai(
     Args:
         job_requirements: Extracted job requirements dictionary
         profile_nodes: List of profile node dictionaries to evaluate
-        model: Optional model override ("gpt-4o" or "gpt-5.1"). Uses env var if not specified.
+        model: Optional OpenAI model id override (e.g. "gpt-5.5"). Uses the default if not specified.
     """
-    model_name = model or os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")
+    model_name = model or DEFAULT_OPENAI_MODEL
     resolved_reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
     logger.step(f"Node selection with OpenAI ({model_name}) - {len(profile_nodes)} nodes", step_num=1)
     started_at = _now_iso()
@@ -1849,14 +1867,16 @@ def recommend_nodes_with_openai(
         prompt_length = len(prompt_content)
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
 
-        # Use the unified wrapper (timing is handled in wrapper)
+        # Use the unified wrapper with structured output schema (timing is handled in wrapper)
         result = call_openai_for_json(
             system_prompt="You are an expert CV tailoring specialist. Always respond with valid JSON.",
             user_prompt=prompt_content,
             model=model_name,
             reasoning_effort=resolved_reasoning_effort,
             api_key=api_key,
-            timeout=180  # 180 second timeout (3 minutes)
+            timeout=180,  # 180 second timeout (3 minutes)
+            schema=NODE_SELECTION_SCHEMA,
+            schema_name="node_selection"
         )
 
         if not result["success"]:
@@ -1874,7 +1894,7 @@ def recommend_nodes_with_openai(
                     requested_model=model_name,
                     resolved_model=resolved_model,
                     api_name=result.get("api_name", ""),
-                    reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
+                    reasoning_effort=resolved_reasoning_effort if _uses_reasoning(model_name) else "",
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_ms=duration_ms
@@ -1900,7 +1920,7 @@ def recommend_nodes_with_openai(
                 requested_model=result.get("requested_model", model_name),
                 resolved_model=resolved_model,
                 api_name=result.get("api_name", ""),
-                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(result.get("requested_model", model_name)) else "",
+                reasoning_effort=resolved_reasoning_effort if _uses_reasoning(result.get("requested_model", model_name)) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1934,7 +1954,7 @@ def recommend_nodes_with_openai(
                 requested_model=model_name,
                 resolved_model=model_name,
                 api_name="",
-                reasoning_effort=resolved_reasoning_effort if "gpt-5.1" in str(model_name) else "",
+                reasoning_effort=resolved_reasoning_effort if _uses_reasoning(model_name) else "",
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1950,7 +1970,7 @@ def recommend_nodes_with_claude(
     api_key: str = None
 ) -> Dict[str, Any]:
     """Recommend which nodes to include using Claude Sonnet 4.5"""
-    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-sonnet-4-20250514")
+    requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
     logger.step(f"Node selection with Claude ({requested_model}) - {len(profile_nodes)} nodes", step_num=1)
     started_at = _now_iso()
     start_ts = time.time()
@@ -1984,135 +2004,24 @@ def recommend_nodes_with_claude(
         )
         prompt_length = len(prompt_content)
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
-        logger.info("Calling Claude Sonnet 4.5 API...")
+        logger.info("Calling Claude Sonnet 4.5 API with tool-use...")
 
+        tool = claude_tool("node_selection_output", "Structured node selection output", NODE_SELECTION_SCHEMA)
         response = claude_client.messages.create(
             model=requested_model,
             max_tokens=16384,  # Increased from 8192 to handle larger responses with many nodes
-            system="You are an expert CV tailoring specialist. You must respond with ONLY valid JSON, no additional text or explanation before or after the JSON. Ensure your JSON is properly formatted with no trailing commas, all strings properly quoted, and all braces/brackets balanced.",
+            system="You are an expert CV tailoring specialist.",
             messages=[
                 {"role": "user", "content": prompt_content}
             ],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "node_selection_output"},
             temperature=0.3,
             timeout=180.0  # 180 second timeout (3 minutes) - Claude needs more time
         )
 
-        request_duration = time.time() - start_ts
-        print(f"📥 [Claude-Recommend] Response received in {request_duration:.2f}s, parsing...")
-        print(f"📊 [Claude-Recommend] Response type: {type(response)}, has content: {hasattr(response, 'content')}")
-
-        # Check if response was cut off due to token limit
-        if hasattr(response, 'stop_reason'):
-            print(f"⚠️ [Claude-Recommend] Stop reason: {response.stop_reason}")
-            if response.stop_reason == "max_tokens":
-                print(f"⚠️ [Claude-Recommend] WARNING: Response hit max_tokens limit and may be incomplete!")
-
-        # Check token usage if available
-        if hasattr(response, 'usage'):
-            print(f"📊 [Claude-Recommend] Token usage: {response.usage}")
-
-        # Extract text and remove markdown code blocks if present
-        if not response.content or len(response.content) == 0:
-            raise ValueError("Claude returned empty content")
-
-        text = response.content[0].text.strip()
-        print(f"📝 [Claude-Recommend] Raw text length: {len(text)} chars")
-        print(f"📝 [Claude-Recommend] First 200 chars: {text[:200]}")
-
-        if not text:
-            raise ValueError("Claude returned empty text response")
-
-        # Try to extract JSON from the response
-        json_text = text
-
-        # Remove markdown code blocks if present
-        if text.startswith('```'):
-            lines = text.split('\n')
-            if len(lines) > 2:
-                json_text = '\n'.join(lines[1:-1])
-            else:
-                raise ValueError(f"Invalid markdown format: only {len(lines)} lines")
-            print(f"📝 [Claude-Recommend] After removing markdown: {len(json_text)} chars")
-
-        # If text doesn't start with '{', try to find the JSON object
-        if not json_text.lstrip().startswith('{'):
-            print(f"⚠️ [Claude-Recommend] Response doesn't start with JSON, attempting to extract...")
-            # Look for the first '{' and last '}'
-            start_idx = json_text.find('{')
-            end_idx = json_text.rfind('}')
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                json_text = json_text[start_idx:end_idx+1]
-                print(f"📝 [Claude-Recommend] Extracted JSON portion: {len(json_text)} chars")
-            else:
-                raise ValueError("Could not find JSON object in response")
-
-        # Try to parse JSON
-        try:
-            result = json.loads(json_text)
-        except json.JSONDecodeError as json_error:
-            # JSON is malformed - try to fix common issues
-            print(f"⚠️ [Claude-Recommend] JSONDecodeError: {str(json_error)}")
-            print(f"📝 [Claude-Recommend] Attempting to repair JSON...")
-
-            # Save the malformed JSON for debugging
-            import os
-            debug_dir = os.path.join(os.path.dirname(__file__), "debug_logs")
-            os.makedirs(debug_dir, exist_ok=True)
-            debug_file = os.path.join(debug_dir, f"claude_malformed_{int(time.time())}.json")
-            with open(debug_file, "w", encoding="utf-8") as f:
-                f.write(json_text)
-            print(f"💾 [Claude-Recommend] Saved malformed JSON to {debug_file}")
-
-            # Try to fix common JSON errors
-            import re
-            fixed_text = json_text
-
-            # Step 1: Remove trailing commas before } or ]
-            fixed_text = re.sub(r',(\s*[}\]])', r'\1', fixed_text)
-
-            # Step 2: Fix single quotes around property names (but not inside string values)
-            # This regex finds patterns like 'property': and replaces with "property":
-            fixed_text = re.sub(r"'([^'\"]+)'(\s*:)", r'"\1"\2', fixed_text)
-
-            # Step 3: Fix missing quotes around property names
-            # Pattern: word followed by colon (not already quoted)
-            fixed_text = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)', r'\1"\2"\3', fixed_text)
-
-            # Step 4: Remove control characters that might break JSON
-            fixed_text = re.sub(r'[\x00-\x1f\x7f]', '', fixed_text)
-
-            # Step 5: Fix incomplete JSON (missing closing braces)
-            # Count opening and closing braces
-            open_braces = fixed_text.count('{')
-            close_braces = fixed_text.count('}')
-            if open_braces > close_braces:
-                print(f"⚠️ [Claude-Recommend] Incomplete JSON detected: {open_braces} {{ but only {close_braces} }}")
-                fixed_text += '}' * (open_braces - close_braces)
-                print(f"📝 [Claude-Recommend] Added {open_braces - close_braces} closing braces")
-
-            # Try parsing the repaired JSON
-            try:
-                result = json.loads(fixed_text)
-                print(f"✅ [Claude-Recommend] Successfully repaired JSON!")
-
-                # Save the repaired version for comparison
-                repair_file = os.path.join(debug_dir, f"claude_repaired_{int(time.time())}.json")
-                with open(repair_file, "w", encoding="utf-8") as f:
-                    f.write(fixed_text)
-                print(f"💾 [Claude-Recommend] Saved repaired JSON to {repair_file}")
-
-            except json.JSONDecodeError as second_error:
-                # Still can't parse - give up and return error
-                print(f"❌ [Claude-Recommend] JSON repair failed: {str(second_error)}")
-                print(f"📝 [Claude-Recommend] Error location: line {second_error.lineno}, col {second_error.colno}")
-
-                # Try to show the problematic section
-                lines = fixed_text.split('\n')
-                if second_error.lineno <= len(lines):
-                    error_line = lines[second_error.lineno - 1]
-                    print(f"❌ [Claude-Recommend] Problematic line: {error_line[:200]}")
-
-                raise ValueError(f"Claude returned invalid JSON that couldn't be repaired. Error: {str(json_error)}. Debug file: {debug_file}")
+        # Extract tool use result (pre-parsed dict, no JSON decode needed)
+        result = _extract_claude_tool_input(response)
 
         request_duration = time.time() - start_ts
         normalized_result = _normalize_recommendations_payload(result)
@@ -2264,7 +2173,7 @@ def generate_profile_pool_node_fix_with_openai(
             "error": "No node text provided for AI fix."
         }
 
-    model_to_use = model if model in {"gpt-4o", "gpt-5.1"} else "gpt-4o"
+    model_to_use = model if (model and (str(model).startswith("gpt-") or str(model).startswith("o"))) else DEFAULT_OPENAI_MODEL
     normalized_reasoning = _resolve_reasoning_effort(reasoning_effort)
     issue_payload = {
         "type": str((issue or {}).get("type", "")).strip().lower(),
@@ -2385,6 +2294,7 @@ def refine_section_content_with_openai(
     node_title: str = "",
     reasoning_effort: str = None,
     api_key: str = None,
+    model: str = None,
     rewrite_mode: str = "minimal",
     human_strict: bool = True,
     target_pages: int = None,
@@ -2413,11 +2323,13 @@ def refine_section_content_with_openai(
     Returns:
         Dict with refined_content, changes_summary, stats, and prompt_sent
     """
+    model_to_use = model or DEFAULT_OPENAI_MODEL
+
     if not api_key:
         return {
             "success": False,
             "error": "OpenAI API key missing. Add your key in AI Settings.",
-            "model": "gpt-5.1"
+            "model": model_to_use
         }
 
     # Build the refinement prompt with full CV context
@@ -2621,11 +2533,8 @@ Job Description (for relevance context):
 
 Remember: Return ONLY the JSON object, no other text."""
 
-    # Always use GPT-5.1 for refinement
-    model_to_use = "gpt-5.1"
-
     # Log the refinement operation
-    logger.step(f"Refining {refinement_target_lower} with GPT-5.1", step_num=1)
+    logger.step(f"Refining {refinement_target_lower} with {model_to_use}", step_num=1)
     logger.info(f"Content length: {len(section_content)} chars | Type: {node_type}")
     logger.info(f"Rewrite mode: {normalized_rewrite_mode} | Human strict: {human_strict}")
     if target_pages in (1, 2):
@@ -2634,7 +2543,6 @@ Remember: Return ONLY the JSON object, no other text."""
         logger.info(f"Reasoning effort: {reasoning_effort}")
 
     try:
-        # Always use GPT-5.1 for refinement
         # Pass reasoning_effort directly (including "none") - wrapper will handle it
         result = call_openai_for_json(
             system_prompt="You are a senior hiring manager and CV editor. Always respond with valid JSON.",
@@ -2650,7 +2558,7 @@ Remember: Return ONLY the JSON object, no other text."""
             return {
                 "success": False,
                 "error": result["error"],
-                "model": "gpt-5.1",
+                "model": model_to_use,
                 "prompt_sent": refinement_prompt
             }
 
@@ -2690,7 +2598,7 @@ Remember: Return ONLY the JSON object, no other text."""
 
         return {
             "success": True,
-            "model": "gpt-5.1",
+            "model": model_to_use,
             "refined_content": data.get("refined_content", ""),
             "changes_summary": data.get("changes_summary", ""),
             "stats": stats,
@@ -2704,6 +2612,6 @@ Remember: Return ONLY the JSON object, no other text."""
         return {
             "success": False,
             "error": str(e),
-            "model": "gpt-5.1",
+            "model": model_to_use,
             "prompt_sent": refinement_prompt
         }

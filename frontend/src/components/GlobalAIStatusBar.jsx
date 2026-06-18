@@ -11,6 +11,10 @@ function GlobalAIStatusBar() {
     getElapsedTime,
     jobTitle,
     jobDescription,
+    openaiAnalysis,
+    claudeAnalysis,
+    scores,
+    recommendations,
   } = useAIAnalysis();
 
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -77,8 +81,22 @@ function GlobalAIStatusBar() {
     return 'Current Job';
   };
 
+  // Resolve the exact model id a provider actually ran, preferring the latest
+  // pipeline stage. Mirrors getExactModelId in TailorCV (runtime.resolved_model
+  // falls back to model).
+  const exactModel = (obj) => obj?.runtime?.resolved_model || obj?.model || null;
+  const activeModels = () => {
+    const openai = exactModel(recommendations?.openai) || exactModel(scores?.openai) || exactModel(openaiAnalysis);
+    const claude = exactModel(recommendations?.claude) || exactModel(scores?.claude) || exactModel(claudeAnalysis);
+    const parts = [];
+    if (openai) parts.push(`OpenAI: ${openai}`);
+    if (claude) parts.push(`Claude: ${claude}`);
+    return parts.join('  ·  ');
+  };
+
   const stepInfo = getStepNumber();
   const isComplete = analysisStep === 'complete';
+  const modelsLine = activeModels();
 
   return (
     <div className={`global-ai-status-bar ${analysisError ? 'error' : ''} ${isComplete ? 'complete' : ''}`}>
@@ -97,6 +115,7 @@ function GlobalAIStatusBar() {
                 <div className="status-detail">
                   {getStepLabel()} • {getJobDisplayName()}
                 </div>
+                {modelsLine && <div className="status-models">🧠 {modelsLine}</div>}
               </div>
             </>
           )}
@@ -113,6 +132,7 @@ function GlobalAIStatusBar() {
                 <div className="status-detail">
                   Go to Smart Selection (Step 3) and click "Save Tailored CV" to store your work
                 </div>
+                {modelsLine && <div className="status-models">🧠 {modelsLine}</div>}
               </div>
             </>
           )}

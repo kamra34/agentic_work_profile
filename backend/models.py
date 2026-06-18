@@ -37,13 +37,13 @@ class User(Base):
     preferred_work_mode = Column(String, default='hybrid')  # remote, onsite, hybrid
 
     # Per-user AI runtime settings
-    openai_model = Column(String, default='gpt-4o')
+    openai_model = Column(String, default='gpt-5.5')
     openai_reasoning_effort = Column(String, default='medium')  # none, low, medium, high
-    claude_model = Column(String, default='claude-sonnet-4-20250514')
+    claude_model = Column(String, default='claude-opus-4-8')
     openai_api_key_encrypted = Column(Text, nullable=True)
     anthropic_api_key_encrypted = Column(Text, nullable=True)
     humanity_deep_mode_enabled = Column(Boolean, default=True)
-    humanity_llm_model = Column(String, default='gpt-4o')
+    humanity_llm_model = Column(String, default='gpt-5.5')
     humanity_llm_reasoning_effort = Column(String, default='low')  # none, low, medium, high
     refinement_instruction_templates = Column(JSON, nullable=True, default=list)
 

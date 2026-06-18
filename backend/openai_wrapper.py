@@ -17,11 +17,31 @@ from logger_config import get_logger
 logger = get_logger("OpenAI-Wrapper")
 
 # Configuration from environment variables
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-4o")  # Default to gpt-4o for safety
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL_VERSION", "gpt-5.5")  # Latest flagship; gpt-4o was deprecated 2026-02
 DEFAULT_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "medium")  # low, medium, high
 
-ModelVersion = Literal["gpt-4o", "gpt-5.1"]
+# Model id is a free-form string (the available list is fetched live from the provider);
+# we no longer hardcode a whitelist. The only routing decision is which API surface to use.
+ModelVersion = str
 ReasoningEffort = Literal["none", "low", "medium", "high"]
+
+
+def _uses_responses_api(model: Optional[str]) -> bool:
+    """
+    Whether a given OpenAI model id should be called via the Responses API
+    (reasoning models: gpt-5.x and the o-series) vs. the legacy chat.completions
+    API (gpt-4o and older). Defaults to the Responses API for unknown/new ids.
+    """
+    value = (model or "").strip().lower()
+    if value.startswith("gpt-4") or value.startswith("gpt-3"):
+        return False
+    return True
+
+
+def _looks_like_openai_model(model: Optional[str]) -> bool:
+    """Loose sanity check for an OpenAI model id (no hardcoded whitelist)."""
+    value = (model or "").strip().lower()
+    return value.startswith("gpt-") or value.startswith("o")
 
 
 def _extract_json_and_parse(raw_text: str) -> tuple[Dict[str, Any], str]:
@@ -122,7 +142,9 @@ def call_openai_for_json(
     reasoning_effort: Optional[str] = None,
     api_key: Optional[str] = None,
     temperature: float = 0.3,
-    timeout: int = 180
+    timeout: int = 180,
+    schema: Optional[Dict[str, Any]] = None,
+    schema_name: str = "response"
 ) -> Dict[str, Any]:
     """
     Unified OpenAI API wrapper that handles both GPT-4o and GPT-5.1.
@@ -134,9 +156,9 @@ def call_openai_for_json(
     Args:
         system_prompt: System message defining the AI's role and behavior
         user_prompt: User message with the actual request
-        model: Model to use ("gpt-4o" or "gpt-5.1"). Defaults to env var OPENAI_MODEL_VERSION or "gpt-4o"
-        reasoning_effort: For GPT-5.1 only - "none", "low", "medium", or "high". Defaults to env var or "medium"
-        temperature: Sampling temperature (only used for GPT-4o, ignored for GPT-5.1)
+        model: OpenAI model id (e.g. "gpt-5.5"). Defaults to env var OPENAI_MODEL_VERSION or the flagship.
+        reasoning_effort: For reasoning models (gpt-5.x / o-series) - "none", "low", "medium", or "high".
+        temperature: Sampling temperature (only used for the legacy gpt-4o chat.completions path)
         timeout: Request timeout in seconds
 
     Returns:
@@ -186,33 +208,35 @@ def call_openai_for_json(
     if reasoning_effort is None:
         reasoning_effort = DEFAULT_REASONING_EFFORT
 
-    # Validate model
-    if model not in ["gpt-4o", "gpt-5.1"]:
+    # Sanity-check the model id (no hardcoded whitelist - the real list is fetched live).
+    if not _looks_like_openai_model(model):
         logger.error(f"Invalid model specified: {model}")
         return {
             "success": False,
-            "error": f"Invalid model: {model}. Must be 'gpt-4o' or 'gpt-5.1'",
+            "error": f"Invalid OpenAI model id: {model!r}",
             "model": model
         }
 
-    # Validate reasoning effort (GPT-5.1 supports: none, low, medium, high)
+    # Validate reasoning effort (reasoning models support: none, low, medium, high)
     if reasoning_effort not in ["none", "low", "medium", "high"]:
         logger.warning(f"Invalid reasoning_effort: {reasoning_effort}, using 'medium'")
         reasoning_effort = "medium"
 
+    use_responses_api = _uses_responses_api(model)
+
     # Log the API call
     prompt_preview = system_prompt[:50] + "..." if len(system_prompt) > 50 else system_prompt
-    reasoning_label = reasoning_effort if model == "gpt-5.1" else "n/a"
+    reasoning_label = reasoning_effort if use_responses_api else "n/a"
     logger.info(f"Preparing API call: {model} (reasoning: {reasoning_label})")
 
     try:
-        # Route to appropriate API based on model version
+        # Route to the appropriate API surface based on model family
         start_time = time.time()
 
-        if model == "gpt-5.1":
-            result = _call_gpt51(openai_client, system_prompt, user_prompt, reasoning_effort, timeout)
+        if use_responses_api:
+            result = _call_responses_api(openai_client, model, system_prompt, user_prompt, reasoning_effort, timeout, schema, schema_name)
         else:
-            result = _call_gpt4o(openai_client, system_prompt, user_prompt, temperature, timeout)
+            result = _call_gpt4o(openai_client, system_prompt, user_prompt, temperature, timeout, schema, schema_name)
 
         duration = time.time() - start_time
 
@@ -243,14 +267,29 @@ def _call_gpt4o(
     system_prompt: str,
     user_prompt: str,
     temperature: float,
-    timeout: int
+    timeout: int,
+    schema: Optional[Dict[str, Any]] = None,
+    schema_name: str = "response"
 ) -> Dict[str, Any]:
     """
     Call GPT-4o using the legacy chat.completions API.
 
-    Uses response_format={"type": "json_object"} to ensure JSON output.
+    Uses response_format with json_schema if schema provided, else loose json_object mode.
     """
     logger.model_call("gpt-4o", "chat.completions", f"temperature={temperature}")
+
+    # Build response_format based on schema presence
+    if schema:
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "schema": schema,
+                "strict": True
+            }
+        }
+    else:
+        response_format = {"type": "json_object"}
 
     response = openai_client.chat.completions.create(
         model="gpt-4o",
@@ -259,7 +298,7 @@ def _call_gpt4o(
             {"role": "user", "content": user_prompt}
         ],
         temperature=temperature,
-        response_format={"type": "json_object"},
+        response_format=response_format,
         timeout=timeout
     )
 
@@ -284,29 +323,34 @@ def _call_gpt4o(
     }
 
 
-def _call_gpt51(
+def _call_responses_api(
     openai_client: OpenAI,
+    model: str,
     system_prompt: str,
     user_prompt: str,
     reasoning_effort: str,
-    timeout: int
+    timeout: int,
+    schema: Optional[Dict[str, Any]] = None,
+    schema_name: str = "response"
 ) -> Dict[str, Any]:
     """
-    Call GPT-5.1 using the new responses API.
+    Call a reasoning model (gpt-5.x / o-series) using the Responses API.
 
-    Uses reasoning parameter and nested message structure.
-    Note: GPT-5.1 doesn't support response_format or temperature parameters.
-    JSON output must be requested in the prompt.
+    Uses the reasoning parameter and nested message structure.
+    Supports json_schema via the top-level text.format if a schema is provided.
     """
-    logger.model_call("gpt-5.1", "responses.create", f"reasoning_effort={reasoning_effort}")
+    logger.model_call(model, "responses.create", f"reasoning_effort={reasoning_effort}")
+
+    # The Responses API reasoning effort does not accept "none"; treat it as minimal.
+    effort = "minimal" if reasoning_effort == "none" else reasoning_effort
 
     # Ensure prompts explicitly request JSON
     enhanced_system_prompt = _ensure_json_instruction(system_prompt)
 
-    response = openai_client.responses.create(
-        model="gpt-5.1",
-        reasoning={"effort": reasoning_effort},
-        input=[
+    create_kwargs = {
+        "model": model,
+        "reasoning": {"effort": effort},
+        "input": [
             {
                 "role": "system",
                 "content": [
@@ -326,8 +370,22 @@ def _call_gpt51(
                 ]
             }
         ],
-        timeout=timeout
-    )
+        "timeout": timeout
+    }
+
+    # Structured outputs on the Responses API live in the top-level `text.format`
+    # argument (NOT nested inside an input_text content part).
+    if schema:
+        create_kwargs["text"] = {
+            "format": {
+                "type": "json_schema",
+                "name": schema_name,
+                "schema": schema,
+                "strict": True
+            }
+        }
+
+    response = openai_client.responses.create(**create_kwargs)
 
     # Extract + parse JSON with tolerant fallback
     json_text = _extract_responses_text(response)
@@ -347,9 +405,9 @@ def _call_gpt51(
     return {
         "success": True,
         "data": parsed_data,
-        "model": "gpt-5.1",
-        "requested_model": "gpt-5.1",
-        "actual_model": getattr(response, "model", "gpt-5.1"),
+        "model": model,
+        "requested_model": model,
+        "actual_model": getattr(response, "model", model),
         "api_name": "responses.create",
         "raw_text": json_text,
         "parsed_text": parsed_source_text,

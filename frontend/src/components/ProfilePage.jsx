@@ -32,14 +32,18 @@ const buildAISettingsPayload = (settings, openaiKey, anthropicKey, clearFlags) =
 
 function ProfilePage() {
   const defaultAISettings = {
-    openai_model: 'gpt-4o',
+    openai_model: 'gpt-5.5',
     openai_reasoning_effort: 'medium',
-    claude_model: 'claude-sonnet-4-20250514',
+    claude_model: 'claude-opus-4-8',
     openai_api_key_configured: false,
     anthropic_api_key_configured: false,
     humanity_deep_mode_enabled: true,
-    humanity_llm_model: 'gpt-4o',
+    humanity_llm_model: 'gpt-5.5',
     humanity_llm_reasoning_effort: 'low'
+  };
+  const emptyAvailableModels = {
+    openai: { configured: false, models: [], default: 'gpt-5.5', error: null },
+    claude: { configured: false, models: [], default: 'claude-opus-4-8', error: null }
   };
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -71,10 +75,13 @@ function ProfilePage() {
     preferred_work_mode: 'hybrid'
   });
   const [aiSettings, setAiSettings] = useState(defaultAISettings);
+  const [availableModels, setAvailableModels] = useState(emptyAvailableModels);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
 
   useEffect(() => {
     fetchProfileData();
     fetchAISettings();
+    fetchAvailableModels();
   }, []);
 
   const fetchProfileData = async () => {
@@ -125,6 +132,57 @@ function ProfilePage() {
     } catch (error) {
       console.error('Error fetching AI settings:', error);
     }
+  };
+
+  // Pull the live list of models available to the user's configured API keys.
+  // The dropdowns are populated purely from this (no hardcoded model list).
+  const fetchAvailableModels = async () => {
+    setIsLoadingModels(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/ai/available-models`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableModels({ ...emptyAvailableModels, ...data });
+      }
+    } catch (error) {
+      console.error('Error fetching available models:', error);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
+  // Reasoning effort applies to gpt-5.x and the o-series (mirrors the backend).
+  const modelUsesReasoning = (model) => {
+    const m = (model || '').toLowerCase();
+    return m.startsWith('gpt-5') || m.startsWith('o');
+  };
+
+  // Build <option> elements for a model select from the live list. Always keeps
+  // the currently-saved value selectable even if it isn't in the returned list.
+  const buildModelOptions = (provider, currentValue) => {
+    const info = availableModels[provider] || { configured: false, models: [], error: null };
+    const labelOf = (m) => (provider === 'claude' ? (m.display_name || m.id) : m.id);
+    const ids = info.models.map((m) => m.id);
+    const options = info.models.map((m) => (
+      <option key={m.id} value={m.id}>{labelOf(m)}</option>
+    ));
+    if (currentValue && !ids.includes(currentValue)) {
+      options.unshift(
+        <option key={currentValue} value={currentValue}>
+          {currentValue}{info.configured ? '' : ' (saved)'}
+        </option>
+      );
+    }
+    if (options.length === 0) {
+      const hint = isLoadingModels
+        ? 'Loading models…'
+        : (info.configured ? 'No models found' : 'Add your API key to load models');
+      options.push(<option key="__none" value={currentValue || ''}>{hint}</option>);
+    }
+    return options;
   };
 
   const handleSave = async () => {
@@ -786,25 +844,24 @@ function ProfilePage() {
               <div className="ai-settings-grid">
                 <div className="ai-setting-field">
                   <label className="ai-setting-label">OpenAI Model</label>
-                  <p className="ai-setting-help">Used for OpenAI job analysis, scoring, and node selection.</p>
+                  <p className="ai-setting-help">Used for OpenAI job analysis, scoring, and node selection. Loaded live from your OpenAI key.</p>
                   <select
                     className="field-input field-select ai-setting-select"
                     value={aiSettings.openai_model}
                     onChange={(e) => handleAISettingChange('openai_model', e.target.value)}
                   >
-                    <option value="gpt-4o">gpt-4o</option>
-                    <option value="gpt-5.1">gpt-5.1</option>
+                    {buildModelOptions('openai', aiSettings.openai_model)}
                   </select>
                 </div>
 
                 <div className="ai-setting-field">
                   <label className="ai-setting-label">OpenAI Reasoning Effort</label>
-                  <p className="ai-setting-help">Only applied when OpenAI model is set to gpt-5.1.</p>
+                  <p className="ai-setting-help">Only applied to reasoning models (gpt-5.x / o-series).</p>
                   <select
                     className="field-input field-select ai-setting-select"
                     value={aiSettings.openai_reasoning_effort}
                     onChange={(e) => handleAISettingChange('openai_reasoning_effort', e.target.value)}
-                    disabled={aiSettings.openai_model !== 'gpt-5.1'}
+                    disabled={!modelUsesReasoning(aiSettings.openai_model)}
                   >
                     <option value="none">none</option>
                     <option value="low">low</option>
@@ -821,10 +878,7 @@ function ProfilePage() {
                     value={aiSettings.claude_model}
                     onChange={(e) => handleAISettingChange('claude_model', e.target.value)}
                   >
-                    <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
-                    {aiSettings.claude_model !== 'claude-sonnet-4-20250514' && (
-                      <option value={aiSettings.claude_model}>{aiSettings.claude_model}</option>
-                    )}
+                    {buildModelOptions('claude', aiSettings.claude_model)}
                   </select>
                 </div>
               </div>
@@ -863,19 +917,18 @@ function ProfilePage() {
                     onChange={(e) => handleAISettingChange('humanity_llm_model', e.target.value)}
                     disabled={!aiSettings.humanity_deep_mode_enabled}
                   >
-                    <option value="gpt-4o">gpt-4o</option>
-                    <option value="gpt-5.1">gpt-5.1</option>
+                    {buildModelOptions('openai', aiSettings.humanity_llm_model)}
                   </select>
                 </div>
 
                 <div className="ai-setting-field">
                   <label className="ai-setting-label">Humanity LLM Reasoning</label>
-                  <p className="ai-setting-help">Reasoning effort for the deep-mode LLM critic (gpt-5.1 only).</p>
+                  <p className="ai-setting-help">Reasoning effort for the deep-mode LLM critic (gpt-5.x / o-series only).</p>
                   <select
                     className="field-input field-select ai-setting-select"
                     value={aiSettings.humanity_llm_reasoning_effort}
                     onChange={(e) => handleAISettingChange('humanity_llm_reasoning_effort', e.target.value)}
-                    disabled={!aiSettings.humanity_deep_mode_enabled || aiSettings.humanity_llm_model !== 'gpt-5.1'}
+                    disabled={!aiSettings.humanity_deep_mode_enabled || !modelUsesReasoning(aiSettings.humanity_llm_model)}
                   >
                     <option value="none">none</option>
                     <option value="low">low</option>
