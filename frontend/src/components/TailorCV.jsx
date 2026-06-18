@@ -1808,7 +1808,13 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
                     </div>
                   )}
                 </div>
+              </div>
+            )}
 
+            {/* Scoring insights: shown whenever scores exist for this tab,
+                independent of whether the job-analysis step succeeded. */}
+            {currentScores?.scores && (
+              <div className="requirements-panel">
                 {/* Skills Analysis Grid */}
                 <div className="skills-analysis-grid">
                   {console.log('Rendering skills grid:', {
