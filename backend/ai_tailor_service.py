@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from openai_wrapper import call_openai_for_json
 from logger_config import get_logger
 from profile_render import render_profile_outline, compute_included_ids
-from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, SKILL_WEAVE_SCHEMA, claude_tool
+from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, SKILL_WEAVE_SCHEMA, REFINE_ALL_SCHEMA, claude_tool
 from refinement_guards import audit_refinement
 
 
@@ -122,18 +122,21 @@ def strip_ai_dashes(text: str) -> str:
     }.items():
         text = text.replace(ch, repl)
 
-    # Em/en dash (spaced or tight) -> comma separator.
-    text = re.sub(r'\s*[—–]+\s*', ', ', text)
-    # ASCII double hyphen used as a dash -> comma.
-    text = re.sub(r'\s*--+\s*', ', ', text)
-    # " - " (spaced single hyphen used as a dash) -> comma. Tight hyphens
-    # inside words (data-driven) have no surrounding spaces, so they survive.
-    text = re.sub(r'\s+-\s+', ', ', text)
+    # Em/en dash used as a separator -> comma. Stay within a line so markdown
+    # structure (newlines, list markers) survives.
+    text = re.sub(r'[ \t]*[—–]+[ \t]*', ', ', text)
+    # ASCII double hyphen used as a dash -> comma. Only between non-space chars,
+    # so a line-leading "-- " is never touched.
+    text = re.sub(r'(?<=\S)[ \t]*--+[ \t]*(?=\S)', ', ', text)
+    # " - " (spaced single hyphen) -> comma, but ONLY with a space before the
+    # hyphen, so markdown list markers ("\n- item") and tight hyphens inside
+    # words ("data-driven") are both left intact.
+    text = re.sub(r'(?<=\S)[ \t]+-[ \t]+(?=\S)', ', ', text)
 
-    # Tidy up artifacts: doubled commas, space-before-punctuation, double spaces.
-    text = re.sub(r',\s*,', ',', text)
-    text = re.sub(r'\s+([,.;:!?])', r'\1', text)
-    text = re.sub(r'\s{2,}', ' ', text)
+    # Tidy up artifacts within a line (never collapse newlines).
+    text = re.sub(r'[ \t]*,[ \t]*,', ',', text)
+    text = re.sub(r'[ \t]+([,.;:!?])', r'\1', text)
+    text = re.sub(r'[ \t]{2,}', ' ', text)
     return text.strip().strip(',').strip()
 
 # Initialize AI clients
@@ -2395,6 +2398,191 @@ def propose_skill_weave(
         return payload
     except Exception as e:
         logger.error("Skill weave exception", error=e)
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# Refine-All: one holistic, deduped, tailored, human-voice rewrite of a CV
+# ============================================================================
+
+REFINE_ALL_SYSTEM = (
+    "You are a senior CV editor producing a final, apply-ready CV tailored to one job. "
+    "You write like a real person: plain first-person English, short sentences, concrete. "
+    "You never use em-dashes or double hyphens. You never use cliche AI words. "
+    "You only use facts already present in the CV. You never invent numbers, dates, "
+    "employers, tools, scope, or results."
+)
+
+REFINE_ALL_PROMPT = """Polish this whole CV into a final, tailored, apply-ready version for the job below.
+
+JOB DESCRIPTION:
+{job_description}
+
+WHAT THE ROLE NEEDS (extracted requirements):
+{requirements}
+
+THE CURRENT SELECTED CV (indented outline; each line tagged [#<id> <type>]):
+{cv_outline}
+{instructions_block}{length_block}
+Produce the final CV section by section. For each section in the CV, return one entry with:
+- node_id: the section's [#id].
+- heading: the section title (you may tidy it).
+- refined_markdown: the final content for that section as markdown:
+    * Professional summary -> ONE tight paragraph, 3 to 4 short sentences. No bullets.
+    * Skills -> short "- " bullet lines, grouped sensibly, no duplicates.
+    * Experience -> for each job a header line "### <Title> · <Company> · <dates> · <location>" then "- " bullets under it.
+
+Hard rules:
+- Tailor wording to the role, but use ONLY facts already in the CV. If a fact is not there, do not add it.
+- Remove duplicates ACROSS the whole CV. If the same point appears twice, keep the strongest once. Merge near-identical bullets.
+- Sort each section so the most role-relevant items come first. Drop weak, off-topic, or repeated items.
+- Keep it honest and human: short sentences (about 12 to 18 words), first person, plain words.
+- No em-dashes. No "--". Avoid words like leveraged, spearheaded, results-driven, passionate about, proven track record, cutting-edge, synergy, dynamic professional.
+- You may improve profile_title to fit the role (human, plain), or set it to null to leave it.
+- List in removed_or_merged the duplicates or weak items you merged or dropped.
+- Keep the whole CV within the target length."""
+
+
+def _finalize_refine_all(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize the holistic refinement payload and strip AI dashes from all text."""
+    sections = []
+    for s in (data.get("sections") or []):
+        if not isinstance(s, dict):
+            continue
+        node_id = _coerce_int_or_none(s.get("node_id"))
+        md = strip_ai_dashes(str(s.get("refined_markdown", "")).strip())
+        if node_id is None or not md:
+            continue
+        sections.append({
+            "node_id": node_id,
+            "heading": str(s.get("heading", "")).strip(),
+            "refined_markdown": md,
+        })
+    title = data.get("profile_title")
+    title = strip_ai_dashes(str(title).strip()) if title else None
+    return {
+        "profile_title": title or None,
+        "sections": sections,
+        "removed_or_merged": _safe_list_of_strings(data.get("removed_or_merged"), max_items=30, max_len=300),
+        "changes_summary": str(data.get("changes_summary", "")).strip()[:600],
+    }
+
+
+def refine_full_cv(
+    provider: str,
+    cv_outline: str,
+    full_cv_text: str,
+    job_description: str = "",
+    requirements: Optional[Dict[str, Any]] = None,
+    target_pages=None,
+    human_strict: bool = True,
+    instructions: str = "",
+    model: str = None,
+    reasoning_effort: str = None,
+    api_key: str = None,
+) -> Dict[str, Any]:
+    """
+    One holistic pass over the whole selected CV: dedup across sections, merge,
+    unify the summary, sort by relevance, tailor to the role, hit the target
+    length, in a human voice using only facts already in the CV. Uses the
+    user-selected provider ('openai'|'claude') with REFINE_ALL_SCHEMA. Returns a
+    proposal (nothing is written).
+    """
+    provider = (provider or "openai").strip().lower()
+    started_at = _now_iso()
+    start_ts = time.time()
+
+    if not api_key:
+        return {"success": False, "error": f"{'Claude' if provider == 'claude' else 'OpenAI'} API key missing. Add your key in AI Settings."}
+
+    length_block = ""
+    if target_pages in (1, 2):
+        length_block = f"\nTARGET LENGTH: the whole CV should fit about {target_pages} page(s). Be concise.\n"
+    instructions_block = ""
+    if (instructions or "").strip():
+        instructions_block = f"\nEXTRA INSTRUCTIONS FROM THE PERSON: {instructions.strip()}\n"
+
+    user_prompt = REFINE_ALL_PROMPT.format(
+        job_description=job_description or "(not provided)",
+        requirements=json.dumps(requirements or {}, indent=2),
+        cv_outline=cv_outline or "(empty)",
+        instructions_block=instructions_block,
+        length_block=length_block,
+    )
+
+    try:
+        if provider == "claude":
+            requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
+            logger.step(f"Refine-all with Claude ({requested_model})", step_num=1)
+            client = Anthropic(api_key=api_key)
+            tool = claude_tool("refine_all_output", "Holistic tailored CV refinement", REFINE_ALL_SCHEMA)
+            response = client.messages.create(
+                model=requested_model,
+                max_tokens=16384,
+                system=REFINE_ALL_SYSTEM,
+                messages=[{"role": "user", "content": user_prompt}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "refine_all_output"},
+                timeout=240.0,
+            )
+            data = _extract_claude_tool_input(response)
+            resolved_model = getattr(response, "model", requested_model)
+            api_name = "messages.create"
+            reasoning_used = ""
+        else:
+            requested_model = model or DEFAULT_OPENAI_MODEL
+            resolved_reasoning = _resolve_reasoning_effort(reasoning_effort)
+            logger.step(f"Refine-all with OpenAI ({requested_model})", step_num=1)
+            result = call_openai_for_json(
+                system_prompt=REFINE_ALL_SYSTEM,
+                user_prompt=user_prompt,
+                model=requested_model,
+                reasoning_effort=resolved_reasoning,
+                api_key=api_key,
+                timeout=240,
+                schema=REFINE_ALL_SCHEMA,
+                schema_name="refine_all",
+            )
+            if not result["success"]:
+                return {"success": False, "error": result["error"]}
+            data = result["data"]
+            resolved_model = result.get("actual_model") or result.get("model", requested_model)
+            api_name = result.get("api_name", "")
+            reasoning_used = resolved_reasoning if _uses_reasoning(requested_model) else ""
+
+        payload = _finalize_refine_all(data)
+        refined_text = "\n\n".join(f"{s['heading']}\n{s['refined_markdown']}" for s in payload["sections"])
+        payload["integrity"] = audit_refinement(full_cv_text or " ", refined_text, profile_corpus=full_cv_text)
+        hum = evaluate_humanity_hybrid(
+            refined_text, source_text=full_cv_text,
+            mode="deep" if human_strict else "quick", llm_enabled=False
+        )
+        payload["humanity"] = {
+            "score": hum.get("score"),
+            "risk_level": hum.get("risk_level"),
+            "flags": [v.get("message") for v in (hum.get("violations") or [])][:6],
+        }
+
+        duration_ms = int((time.time() - start_ts) * 1000)
+        logger.success(f"Refine-all done: {len(payload['sections'])} sections in {duration_ms / 1000:.2f}s")
+        payload.update({
+            "success": True,
+            "model": resolved_model,
+            "runtime": _build_runtime(
+                stage="refine_all",
+                provider="anthropic" if provider == "claude" else "openai",
+                requested_model=requested_model,
+                resolved_model=resolved_model,
+                api_name=api_name,
+                reasoning_effort=reasoning_used,
+                started_at=started_at,
+                finished_at=_now_iso(),
+                duration_ms=duration_ms,
+            ),
+        })
+        return payload
+    except Exception as e:
+        logger.error("Refine-all exception", error=e)
         return {"success": False, "error": str(e)}
 
 

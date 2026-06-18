@@ -4718,6 +4718,93 @@ def extract_full_cv_content_as_markdown(nodes: list) -> str:
     return "\n\n---\n\n".join(full_cv_parts)
 
 
+@app.post("/api/tailor/{cv_id}/refine-all")
+async def refine_all(
+    cv_id: int,
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Holistic Auto-Refine: ONE pass over the whole selected CV that dedups across
+    sections, merges, unifies the summary, sorts by relevance, tailors to the
+    role, hits the target length, and writes in a human voice using only facts
+    already in the CV. Uses the chosen provider (openai|claude). Returns a
+    proposal only — nothing is written until the frontend applies it.
+    """
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    content_snapshot = tailored_cv.content_snapshot
+    if not content_snapshot or not content_snapshot.get('nodes'):
+        raise HTTPException(status_code=400, detail="No content snapshot found")
+
+    provider = str(request_data.get('provider', 'openai')).strip().lower()
+    if provider not in ('openai', 'claude'):
+        provider = 'openai'
+    human_strict = bool(request_data.get('human_strict', True))
+    reasoning_effort = request_data.get('reasoning_effort', None)
+    instructions = request_data.get('instructions') or request_data.get('user_instructions') or ''
+    target_pages_raw = request_data.get('target_pages', None)
+    try:
+        target_pages = int(target_pages_raw) if target_pages_raw is not None else None
+    except (TypeError, ValueError):
+        target_pages = None
+    if target_pages not in (1, 2):
+        target_pages = None
+
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(
+        ai_settings,
+        require_openai=(provider == 'openai'),
+        require_claude=(provider == 'claude'),
+    )
+
+    # [#id]-tagged outline for the model + clean selected-CV text for the guards.
+    cv_outline = ai_tailor_service.render_profile_outline(
+        content_snapshot['nodes'], include_ids=True, only_selected=True
+    )
+    full_cv_text = format_hierarchical_cv_for_ai(
+        content_snapshot,
+        job_title=tailored_cv.job_title or "",
+        company_name=tailored_cv.company_name or ""
+    )
+
+    job_analysis = tailored_cv.job_analysis if isinstance(tailored_cv.job_analysis, dict) else {}
+
+    def _reqs(p):
+        d = job_analysis.get(p)
+        if isinstance(d, dict) and d.get("success") and isinstance(d.get("analysis"), dict):
+            return d["analysis"]
+        return None
+
+    requirements = _reqs(provider) or _reqs("openai") or _reqs("claude") or {}
+
+    result = ai_tailor_service.refine_full_cv(
+        provider=provider,
+        cv_outline=cv_outline,
+        full_cv_text=full_cv_text,
+        job_description=tailored_cv.job_description or "",
+        requirements=requirements,
+        target_pages=target_pages,
+        human_strict=human_strict,
+        instructions=instructions,
+        model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
+        reasoning_effort=ai_settings["openai_reasoning_effort"],
+        api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=_format_provider_runtime_error(provider, result.get("error"))
+        )
+    return result
+
+
 @app.post("/api/tailor/{cv_id}/refine-section")
 async def refine_section(
     cv_id: int,

@@ -263,3 +263,38 @@ SKILL_WEAVE_SCHEMA = {
         }
     }
 }
+
+
+# ============================================================================
+# Refine-All Schema (one holistic, deduped, tailored rewrite of the whole CV)
+# ============================================================================
+
+REFINE_ALL_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["profile_title", "sections", "removed_or_merged", "changes_summary"],
+    "properties": {
+        # Optional tidied headline/title for the CV; null to leave unchanged.
+        "profile_title": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["node_id", "heading", "refined_markdown"],
+                "properties": {
+                    # The existing section node id (from its [#id] tag).
+                    "node_id": {"type": "integer"},
+                    "heading": {"type": "string"},
+                    # Final content for this section as markdown: a tight paragraph
+                    # for the summary, "- bullets" for skills, or
+                    # "### Title · Company · dates\n- bullets" entries for experience.
+                    "refined_markdown": {"type": "string"}
+                }
+            }
+        },
+        # Transparency: duplicates/low-value items that were merged or dropped.
+        "removed_or_merged": {"type": "array", "items": {"type": "string"}},
+        "changes_summary": {"type": "string"}
+    }
+}

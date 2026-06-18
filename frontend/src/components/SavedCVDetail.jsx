@@ -96,6 +96,11 @@ function SavedCVDetail({ cvId, onBack }) {
   const [autoRefineTargetPages, setAutoRefineTargetPages] = useState('auto');
   const [showAutoRefineModal, setShowAutoRefineModal] = useState(false); // Modal for auto-refine settings
   const [autoRefineInstructions, setAutoRefineInstructions] = useState(''); // Optional instructions for auto-refine
+  const [autoRefineProvider, setAutoRefineProvider] = useState('openai'); // openai | claude
+  const [refineProposal, setRefineProposal] = useState(null); // holistic refine proposal (review-then-apply)
+  const [showRefineReview, setShowRefineReview] = useState(false);
+  const [refineLoading, setRefineLoading] = useState(false);
+  const [refineApplying, setRefineApplying] = useState(false);
   const [humanityReport, setHumanityReport] = useState(null);
   const [checkingHumanity, setCheckingHumanity] = useState(false);
   const [showHumanityDetails, setShowHumanityDetails] = useState(false);
@@ -1438,6 +1443,86 @@ function SavedCVDetail({ cvId, onBack }) {
   // Open auto-refine settings modal
   const openAutoRefineModal = () => {
     setShowAutoRefineModal(true);
+  };
+
+  const findNodeById = (nodes, id) => {
+    for (const n of nodes || []) {
+      if (n.id === id) return n;
+      if (n.children) {
+        const found = findNodeById(n.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  // Holistic Auto-Refine: ONE pass over the whole selected CV (dedup across
+  // sections, merge, unify the summary, tailor, human voice). Returns a proposal
+  // the user reviews/edits before applying.
+  const handleHolisticRefine = async () => {
+    if (!cvData?.content_snapshot?.nodes) return;
+    setShowAutoRefineModal(false);
+    setRefineLoading(true);
+    try {
+      await autoSave({ ...nodeSelections }); // refine exactly what's currently selected
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/tailor/${cvId}/refine-all`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: autoRefineProvider,
+          reasoning_effort: autoRefineReasoningEffort,
+          human_strict: autoRefineHumanStrict,
+          target_pages: autoRefineTargetPages === 'auto' ? null : Number(autoRefineTargetPages),
+          instructions: autoRefineInstructions || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Auto-refine failed');
+      setRefineProposal(data);
+      setShowRefineReview(true);
+    } catch (e) {
+      alert(`Auto-refine failed: ${e.message}`);
+    } finally {
+      setRefineLoading(false);
+    }
+  };
+
+  const updateProposalSection = (idx, value) => {
+    setRefineProposal((prev) => ({
+      ...prev,
+      sections: prev.sections.map((s, i) => (i === idx ? { ...s, refined_markdown: value } : s)),
+    }));
+  };
+
+  const handleApplyHolistic = async () => {
+    if (!refineProposal?.sections?.length) return;
+    setRefineApplying(true);
+    try {
+      let accumulatedSelections = { ...nodeSelections };
+      await autoSave(accumulatedSelections);
+      // Apply each section through the existing merge path (mutates the shared
+      // content_snapshot.nodes, so sequential applies accumulate).
+      for (const sec of refineProposal.sections) {
+        const node = findNodeById(cvData.content_snapshot.nodes, sec.node_id);
+        if (!node || !(sec.refined_markdown || '').trim()) continue;
+        accumulatedSelections = await autoIncludeRefinedContent(node, sec.refined_markdown, accumulatedSelections);
+      }
+      // Optional headline/title edit.
+      if (refineProposal.profile_title && refineProposal.profile_title.trim() && cvData.content_snapshot) {
+        cvData.content_snapshot.profile_title = refineProposal.profile_title.trim();
+      }
+      setNodeSelections(accumulatedSelections);
+      triggerAutoSave(accumulatedSelections, true);
+      await autoSave(accumulatedSelections);
+      setShowRefineReview(false);
+      setRefineProposal(null);
+      await recalculateScores('all'); // re-score the polished CV
+    } catch (e) {
+      alert(`Apply failed: ${e.message}`);
+    } finally {
+      setRefineApplying(false);
+    }
   };
 
   // AUTO-REFINE ALL SECTIONS - Automated workflow
@@ -3606,7 +3691,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
                   <circle cx="12" cy="12" r="3" fill="white" opacity="0.9"/>
                 </svg>
-                <span>Auto-Refine All (OpenAI)</span>
+                <span>Auto-Refine All</span>
               </>
             )}
           </button>
@@ -4904,8 +4989,35 @@ function SavedCVDetail({ cvId, onBack }) {
 
             <div className="modal-body">
               <p className="modal-description">
-                Automatically refine all selected sections in your CV using OpenAI with human-writing guardrails. Configure mode and targets below.
+                Polish your whole CV in one pass: dedup across sections, merge, unify the summary,
+                tailor to the role, and tighten to length, in a human voice using only your facts.
+                You review and edit before anything changes.
               </p>
+
+              {/* Model picker */}
+              <div className="reasoning-effort-selector">
+                <label><strong>Model</strong></label>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAutoRefineProvider('openai')}
+                    style={{
+                      flex: 1, padding: '10px', borderRadius: 8, cursor: 'pointer', fontWeight: 600,
+                      border: autoRefineProvider === 'openai' ? '2px solid #10a37f' : '1px solid #d1d5db',
+                      background: autoRefineProvider === 'openai' ? '#ecfdf5' : '#fff',
+                    }}
+                  >🤖 OpenAI</button>
+                  <button
+                    type="button"
+                    onClick={() => setAutoRefineProvider('claude')}
+                    style={{
+                      flex: 1, padding: '10px', borderRadius: 8, cursor: 'pointer', fontWeight: 600,
+                      border: autoRefineProvider === 'claude' ? '2px solid #d97757' : '1px solid #d1d5db',
+                      background: autoRefineProvider === 'claude' ? '#fff3ed' : '#fff',
+                    }}
+                  >🧠 Claude</button>
+                </div>
+              </div>
 
               {/* Reasoning Effort Selector */}
               <div className="reasoning-effort-selector">
@@ -4994,11 +5106,97 @@ function SavedCVDetail({ cvId, onBack }) {
                 Cancel
               </button>
               <button
-                onClick={handleAutoRefineAllSections}
+                onClick={handleHolisticRefine}
                 className="btn-start-refine"
               >
                 <span className="btn-icon">✨</span>
                 <span>Start Auto-Refine</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Holistic Auto-Refine: loading overlay (generate / apply) */}
+      {(refineLoading || refineApplying) && (
+        <div className="modal-overlay" style={{ zIndex: 1300 }}>
+          <div className="modal" style={{ maxWidth: 420, textAlign: 'center', padding: '2rem' }}>
+            <div className="spinner" style={{ margin: '0 auto 1rem' }} />
+            <h3 style={{ margin: '0 0 0.4rem' }}>
+              {refineApplying ? 'Applying polished CV…' : 'Polishing your whole CV…'}
+            </h3>
+            <p style={{ color: '#64748b', fontSize: 14, margin: 0 }}>
+              {refineApplying
+                ? 'Writing the changes and recalculating your scores.'
+                : `Reading the whole CV and the role with ${autoRefineProvider === 'claude' ? 'Claude' : 'OpenAI'}. This can take a moment.`}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Holistic Auto-Refine: review-then-apply */}
+      {showRefineReview && refineProposal && (
+        <div className="modal-overlay" onClick={() => setShowRefineReview(false)}>
+          <div className="modal" style={{ maxWidth: 760, width: '94%', maxHeight: '90vh', overflowY: 'auto' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0 }}>✨ Review polished CV</h2>
+              <button className="modal-close" onClick={() => setShowRefineReview(false)}
+                style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>✕</button>
+            </div>
+            <div className="modal-body" style={{ padding: '0.5rem 0' }}>
+              <p style={{ color: '#475569', fontSize: 14, marginTop: 0 }}>
+                Edit anything below, untick nothing is removed unintentionally, then apply. Your
+                original is kept so you can always restore it.
+                {refineProposal?.runtime?.resolved_model ? ` (via ${refineProposal.runtime.resolved_model})` : ''}
+              </p>
+
+              {refineProposal.changes_summary && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#334155', marginBottom: 12 }}>
+                  {refineProposal.changes_summary}
+                </div>
+              )}
+
+              {(refineProposal.removed_or_merged || []).length > 0 && (
+                <details style={{ marginBottom: 12 }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#0e7490' }}>
+                    Merged / removed ({refineProposal.removed_or_merged.length})
+                  </summary>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13, color: '#475569' }}>
+                    {refineProposal.removed_or_merged.map((r, i) => <li key={i}>{r}</li>)}
+                  </ul>
+                </details>
+              )}
+
+              {refineProposal.humanity && refineProposal.humanity.risk_level && refineProposal.humanity.risk_level !== 'low' && (
+                <div style={{ background: '#fef3c7', color: '#92400e', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>
+                  ⚠ This reads a little AI-ish (humanity {refineProposal.humanity.score}). Tweak any line that feels off.
+                </div>
+              )}
+
+              {refineProposal.profile_title && (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Profile title</label>
+                  <input value={refineProposal.profile_title}
+                    onChange={(e) => setRefineProposal((p) => ({ ...p, profile_title: e.target.value }))}
+                    style={{ width: '100%', padding: '9px 11px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+              )}
+
+              {refineProposal.sections.map((s, i) => (
+                <div key={i} style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 4, color: '#0f172a' }}>{s.heading}</label>
+                  <textarea value={s.refined_markdown}
+                    onChange={(e) => updateProposalSection(i, e.target.value)}
+                    style={{ width: '100%', minHeight: 120, padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 10, fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }} />
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn-cancel" onClick={() => setShowRefineReview(false)}>Cancel</button>
+              <button className="btn-start-refine" onClick={handleApplyHolistic} disabled={refineApplying}>
+                <span className="btn-icon">✓</span>
+                <span>Apply polished CV</span>
               </button>
             </div>
           </div>

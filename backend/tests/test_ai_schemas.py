@@ -8,6 +8,7 @@ from ai_schemas import (
     SCORING_SCHEMA,
     NODE_SELECTION_SCHEMA,
     SKILL_WEAVE_SCHEMA,
+    REFINE_ALL_SCHEMA,
     claude_tool
 )
 
@@ -186,6 +187,31 @@ class TestOpenAIStrictMode:
         """SKILL_WEAVE_SCHEMA must meet strict-mode requirements."""
         issues = self._check_strict_mode(SKILL_WEAVE_SCHEMA, "SKILL_WEAVE_SCHEMA")
         assert not issues, f"Strict-mode issues: {issues}"
+
+    def test_refine_all_strict_mode(self):
+        """REFINE_ALL_SCHEMA must meet strict-mode requirements."""
+        issues = self._check_strict_mode(REFINE_ALL_SCHEMA, "REFINE_ALL_SCHEMA")
+        assert not issues, f"Strict-mode issues: {issues}"
+
+
+class TestRefineAllSchema:
+    """Validate REFINE_ALL_SCHEMA structure."""
+
+    def test_top_level_fields(self):
+        required = REFINE_ALL_SCHEMA.get("required", [])
+        for field in ["profile_title", "sections", "removed_or_merged", "changes_summary"]:
+            assert field in required
+
+    def test_section_item_fields(self):
+        item = REFINE_ALL_SCHEMA["properties"]["sections"]["items"]
+        assert item.get("additionalProperties") is False
+        for field in ["node_id", "heading", "refined_markdown"]:
+            assert field in item["properties"]
+            assert field in item["required"]
+        assert item["properties"]["node_id"]["type"] == "integer"
+
+    def test_profile_title_nullable(self):
+        assert "anyOf" in REFINE_ALL_SCHEMA["properties"]["profile_title"]
 
 
 class TestSkillWeaveSchema:
