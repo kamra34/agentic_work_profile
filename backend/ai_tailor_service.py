@@ -1543,7 +1543,7 @@ def analyze_job_with_claude(job_description: str, model: str = None, api_key: st
         # Build the exact prompt that will be sent
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
 
-        logger.info("Calling Claude Sonnet 4.5 API with tool-use...")
+        logger.info(f"Calling Claude API ({requested_model}) with tool-use...")
 
         tool = claude_tool("job_analysis_output", "Structured job analysis output", JOB_ANALYSIS_SCHEMA)
         response = claude_client.messages.create(
@@ -1554,8 +1554,7 @@ def analyze_job_with_claude(job_description: str, model: str = None, api_key: st
                 {"role": "user", "content": user_prompt}
             ],
             tools=[tool],
-            tool_choice={"type": "tool", "name": "job_analysis_output"},
-            temperature=0.3
+            tool_choice={"type": "tool", "name": "job_analysis_output"}
         )
 
         # Extract tool use result (pre-parsed dict, no JSON decode needed)
@@ -1770,7 +1769,7 @@ def score_profile_with_claude(
             profile_content=profile_content
         )
 
-        logger.info("Calling Claude Sonnet 4.5 API with tool-use...")
+        logger.info(f"Calling Claude API ({requested_model}) with tool-use...")
 
         tool = claude_tool("scoring_output", "Structured CV scoring output", SCORING_SCHEMA)
         response = claude_client.messages.create(
@@ -1781,8 +1780,7 @@ def score_profile_with_claude(
                 {"role": "user", "content": user_prompt}
             ],
             tools=[tool],
-            tool_choice={"type": "tool", "name": "scoring_output"},
-            temperature=0.3
+            tool_choice={"type": "tool", "name": "scoring_output"}
         )
 
         # Extract tool use result (pre-parsed dict, no JSON decode needed)
@@ -2004,7 +2002,7 @@ def recommend_nodes_with_claude(
         )
         prompt_length = len(prompt_content)
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
-        logger.info("Calling Claude Sonnet 4.5 API with tool-use...")
+        logger.info(f"Calling Claude API ({requested_model}) with tool-use...")
 
         tool = claude_tool("node_selection_output", "Structured node selection output", NODE_SELECTION_SCHEMA)
         response = claude_client.messages.create(
@@ -2016,7 +2014,6 @@ def recommend_nodes_with_claude(
             ],
             tools=[tool],
             tool_choice={"type": "tool", "name": "node_selection_output"},
-            temperature=0.3,
             timeout=180.0  # 180 second timeout (3 minutes) - Claude needs more time
         )
 
