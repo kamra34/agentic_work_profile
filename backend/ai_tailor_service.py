@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 from openai_wrapper import call_openai_for_json
 from logger_config import get_logger
 from profile_render import render_profile_outline, compute_included_ids
-from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, claude_tool
+from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, SKILL_WEAVE_SCHEMA, claude_tool
+from refinement_guards import audit_refinement
 
 
 def _render_nodes_for_prompt(profile_nodes: List[Dict]) -> str:
@@ -101,6 +102,39 @@ def sanitize_unicode_for_pdf(text: str) -> str:
             pass
 
     return ''.join(cleaned_chars)
+
+
+def strip_ai_dashes(text: str) -> str:
+    """
+    Remove the em/en dashes and double hyphens that read as 'AI writing'.
+
+    A dash used as a clause separator becomes a comma; real hyphenated words
+    ('data-driven') are left intact. Smart quotes/ellipsis are normalized to
+    ASCII, but unlike sanitize_unicode_for_pdf the em-dash is NOT turned into
+    '--' (which the user explicitly does not want).
+    """
+    if not text:
+        return text
+
+    for ch, repl in {
+        '‘': "'", '’': "'", '“': '"', '”': '"',
+        '…': '...', ' ': ' ', '−': '-',
+    }.items():
+        text = text.replace(ch, repl)
+
+    # Em/en dash (spaced or tight) -> comma separator.
+    text = re.sub(r'\s*[—–]+\s*', ', ', text)
+    # ASCII double hyphen used as a dash -> comma.
+    text = re.sub(r'\s*--+\s*', ', ', text)
+    # " - " (spaced single hyphen used as a dash) -> comma. Tight hyphens
+    # inside words (data-driven) have no surrounding spaces, so they survive.
+    text = re.sub(r'\s+-\s+', ', ', text)
+
+    # Tidy up artifacts: doubled commas, space-before-punctuation, double spaces.
+    text = re.sub(r',\s*,', ',', text)
+    text = re.sub(r'\s+([,.;:!?])', r'\1', text)
+    text = re.sub(r'\s{2,}', ' ', text)
+    return text.strip().strip(',').strip()
 
 # Initialize AI clients
 VALID_REASONING_EFFORT = {"none", "low", "medium", "high"}
@@ -2142,6 +2176,226 @@ def profile_nodes_to_text(nodes: List[Dict]) -> str:
             text_parts.append(profile_nodes_to_text(node["children"]))
 
     return "".join(text_parts)
+
+
+# ============================================================================
+# Skill Weave: add a new skill across the whole profile (clarify -> propose)
+# ============================================================================
+
+SKILL_WEAVE_SYSTEM = (
+    "You help a real job seeker add a skill to their CV in their own honest voice. "
+    "You only use facts the person gives you. You never invent numbers, dates, "
+    "employers, tools, scope, or results. You write like a real person typing fast: "
+    "plain words, short sentences, first person. You never use em-dashes or double "
+    "hyphens. You never use cliche AI words."
+)
+
+SKILL_WEAVE_PROMPT = """The person wants to add the following skill(s) to their CV, in their own words.
+
+SKILLS AND CONTEXT (the person's own words):
+{skills_block}
+{answers_block}
+Here is their current profile as an indented outline. Each line is tagged [#<id> <type>]. Use those ids to reference existing nodes.
+PROFILE OUTLINE:
+{profile_outline}
+
+Your job:
+1. If the person's words are missing detail needed to write honest, specific lines (for example: which role or company they used it in, roughly when, or what they actually did with it), set needs_clarification=true and put 1 to 4 short, plain questions in clarifying_questions. Return no injections.
+2. Otherwise set needs_clarification=false and propose how to weave the skill across the CV:
+   - the professional summary (lightly edit it to mention the skill, or add one short line),
+   - the most relevant work experience entries (add a short bullet, or lightly edit an existing one),
+   - the core skills / skills section (add the skill).
+   Only target places where the skill genuinely fits based on the person's words.
+3. For each change return one injection:
+   - action "edit": set node_id to the existing node's [#id] and original_text to its current text.
+   - action "add": set parent_node_id to the [#id] of the section or entry to add under, and new_node_type to "bullet" (under a job), "item" (a skill), or "paragraph".
+   - proposed_text: the new human-voice text.
+   - rationale: one short reason.
+   Set the unused id field to null. original_text is "" for adds.
+4. List in facts_used the concrete facts you took from the person's words.
+
+Hard rules for every proposed_text:
+- Use ONLY facts the person gave. If you are tempted to add a number, metric, date, employer, or tool they did not state, do not. Ask a question instead.
+- Plain spoken English, first person. Short sentences, about 12 to 18 words each.
+- No em-dashes. No "--". Avoid words like leveraged, spearheaded, results-driven, passionate about, proven track record, cutting-edge, synergy, dynamic professional.
+- It should read like the person quickly wrote it themselves."""
+
+
+def _coerce_int_or_none(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_skill_weave_prompt(skills: List[Dict[str, str]], profile_outline: str,
+                              answers: Optional[List[Dict[str, str]]]) -> str:
+    skills_block = "\n".join(
+        f"- {str((s or {}).get('name', '')).strip()}: {str((s or {}).get('context', '')).strip()}"
+        for s in (skills or []) if str((s or {}).get('name', '')).strip()
+    ) or "- (none provided)"
+
+    answers_block = ""
+    if answers:
+        lines = []
+        for qa in answers:
+            q = str((qa or {}).get("question", "")).strip()
+            a = str((qa or {}).get("answer", "")).strip()
+            if q or a:
+                lines.append(f"- Q: {q}\n  A: {a}")
+        if lines:
+            answers_block = "\nPREVIOUS CLARIFYING ANSWERS:\n" + "\n".join(lines) + "\n"
+
+    return SKILL_WEAVE_PROMPT.format(
+        skills_block=skills_block,
+        answers_block=answers_block,
+        profile_outline=profile_outline or "(empty profile)"
+    )
+
+
+def _finalize_skill_weave(data: Dict[str, Any], profile_corpus: str) -> Dict[str, Any]:
+    """Normalize the model payload, strip AI dashes, attach warn-level guards."""
+    needs = bool(data.get("needs_clarification"))
+    questions = _safe_list_of_strings(data.get("clarifying_questions"), max_items=6, max_len=300)
+    facts = _safe_list_of_strings(data.get("facts_used"), max_items=20, max_len=300)
+
+    injections = []
+    for inj in (data.get("injections") or []):
+        if not isinstance(inj, dict):
+            continue
+        proposed = strip_ai_dashes(str(inj.get("proposed_text", "")).strip())
+        if not proposed:
+            continue
+        original = str(inj.get("original_text", "")).strip()
+        action = "edit" if str(inj.get("action", "")).strip().lower() == "edit" else "add"
+        new_type = inj.get("new_node_type")
+        new_type = str(new_type).strip() if new_type else None
+
+        humanity = evaluate_humanity_hybrid(
+            proposed, source_text=profile_corpus, mode="quick", llm_enabled=False
+        )
+        injections.append({
+            "target_kind": str(inj.get("target_kind", "other")).strip() or "other",
+            "action": action,
+            "node_id": _coerce_int_or_none(inj.get("node_id")) if action == "edit" else None,
+            "parent_node_id": _coerce_int_or_none(inj.get("parent_node_id")) if action == "add" else None,
+            "new_node_type": new_type if action == "add" else None,
+            "original_text": original if action == "edit" else "",
+            "proposed_text": proposed,
+            "rationale": str(inj.get("rationale", "")).strip()[:300],
+            "integrity": audit_refinement(original, proposed, profile_corpus=profile_corpus),
+            "humanity": {
+                "score": humanity.get("score"),
+                "risk_level": humanity.get("risk_level"),
+                "flags": [v.get("message") for v in (humanity.get("violations") or [])][:4],
+            },
+        })
+
+    # If the model proposed nothing usable and didn't ask, surface a clarify state.
+    if not needs and not injections:
+        needs = True
+        if not questions:
+            questions = ["Can you tell me a bit more about when and where you used this skill?"]
+
+    return {
+        "needs_clarification": needs,
+        "clarifying_questions": questions if needs else [],
+        "facts_used": facts,
+        "injections": [] if needs else injections,
+    }
+
+
+def propose_skill_weave(
+    provider: str,
+    skills: List[Dict[str, str]],
+    profile_outline: str,
+    profile_corpus: str = "",
+    answers: Optional[List[Dict[str, str]]] = None,
+    model: str = None,
+    reasoning_effort: str = None,
+    api_key: str = None,
+) -> Dict[str, Any]:
+    """
+    Ask clarifying questions (if facts are missing) or propose how to weave a new
+    skill across the profile. Uses the user-selected provider ('openai'|'claude')
+    with the shared SKILL_WEAVE_SCHEMA structured output.
+    """
+    provider = (provider or "openai").strip().lower()
+    user_prompt = _build_skill_weave_prompt(skills, profile_outline, answers)
+    started_at = _now_iso()
+    start_ts = time.time()
+
+    if not api_key:
+        return {
+            "success": False,
+            "error": f"{'Claude' if provider == 'claude' else 'OpenAI'} API key missing. Add your key in AI Settings.",
+        }
+
+    try:
+        if provider == "claude":
+            requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
+            logger.step(f"Skill weave with Claude ({requested_model})", step_num=1)
+            claude_client = Anthropic(api_key=api_key)
+            tool = claude_tool("skill_weave_output", "Structured skill weave proposal", SKILL_WEAVE_SCHEMA)
+            response = claude_client.messages.create(
+                model=requested_model,
+                max_tokens=8192,
+                system=SKILL_WEAVE_SYSTEM,
+                messages=[{"role": "user", "content": user_prompt}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "skill_weave_output"},
+                timeout=180.0,
+            )
+            data = _extract_claude_tool_input(response)
+            resolved_model = getattr(response, "model", requested_model)
+            api_name = "messages.create"
+            reasoning_used = ""
+        else:
+            requested_model = model or DEFAULT_OPENAI_MODEL
+            resolved_reasoning = _resolve_reasoning_effort(reasoning_effort)
+            logger.step(f"Skill weave with OpenAI ({requested_model})", step_num=1)
+            result = call_openai_for_json(
+                system_prompt=SKILL_WEAVE_SYSTEM,
+                user_prompt=user_prompt,
+                model=requested_model,
+                reasoning_effort=resolved_reasoning,
+                api_key=api_key,
+                timeout=180,
+                schema=SKILL_WEAVE_SCHEMA,
+                schema_name="skill_weave",
+            )
+            if not result["success"]:
+                return {"success": False, "error": result["error"]}
+            data = result["data"]
+            resolved_model = result.get("actual_model") or result.get("model", requested_model)
+            api_name = result.get("api_name", "")
+            reasoning_used = resolved_reasoning if _uses_reasoning(requested_model) else ""
+
+        payload = _finalize_skill_weave(data, profile_corpus)
+        duration_ms = int((time.time() - start_ts) * 1000)
+        logger.success(
+            f"Skill weave done: needs_clarification={payload['needs_clarification']}, "
+            f"injections={len(payload['injections'])} in {duration_ms / 1000:.2f}s"
+        )
+        payload.update({
+            "success": True,
+            "model": resolved_model,
+            "runtime": _build_runtime(
+                stage="skill_weave",
+                provider="anthropic" if provider == "claude" else "openai",
+                requested_model=requested_model,
+                resolved_model=resolved_model,
+                api_name=api_name,
+                reasoning_effort=reasoning_used,
+                started_at=started_at,
+                finished_at=_now_iso(),
+                duration_ms=duration_ms,
+            ),
+        })
+        return payload
+    except Exception as e:
+        logger.error("Skill weave exception", error=e)
+        return {"success": False, "error": str(e)}
 
 
 def generate_profile_pool_node_fix_with_openai(

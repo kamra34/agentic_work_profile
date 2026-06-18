@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import './MasterProfile.css';
+import SkillWeaveModal from './SkillWeaveModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -27,6 +28,7 @@ function MasterProfile() {
   const [qualityFixError, setQualityFixError] = useState('');
   const [qualityFixPreview, setQualityFixPreview] = useState(null);
   const [qualityFixEditedText, setQualityFixEditedText] = useState('');
+  const [showSkillWeave, setShowSkillWeave] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -1057,6 +1059,13 @@ function MasterProfile() {
             <h2>Profile Structure</h2>
             <div className="editor-header-actions">
               <button
+                className="btn-secondary"
+                onClick={() => setShowSkillWeave(true)}
+                title="Add a skill in your own words and let AI weave it across your profile"
+              >
+                ✨ Add Skill (AI)
+              </button>
+              <button
                 className="btn-primary"
                 onClick={() => handleAddNode(null)}
               >
@@ -1261,6 +1270,14 @@ function MasterProfile() {
           parentLevel={editingNode.level}
           editMode={true}
           existingData={editingNode}
+        />
+      )}
+
+      {showSkillWeave && profile && (
+        <SkillWeaveModal
+          profileId={profile.id}
+          onClose={() => setShowSkillWeave(false)}
+          onApplied={() => fetchProfile(true)}
         />
       )}
     </div>

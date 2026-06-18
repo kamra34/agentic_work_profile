@@ -2881,6 +2881,151 @@ def update_node(
     return node
 
 
+@app.post("/api/profile/{profile_id}/skill-weave/propose")
+async def skill_weave_propose(
+    profile_id: int,
+    request: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Profile Pool "Add Skill (AI)": ask clarifying questions when the person's
+    words are incomplete, otherwise propose how to weave the skill across the
+    summary, relevant experiences, and core skills. Nothing is written here.
+    """
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    provider = str(request.get("provider", "openai")).strip().lower()
+    if provider not in ("openai", "claude"):
+        provider = "openai"
+    skills = request.get("skills") or []
+    if not isinstance(skills, list) or not any(str((s or {}).get("name", "")).strip() for s in skills):
+        raise HTTPException(status_code=400, detail="Add at least one skill name.")
+    answers = request.get("answers") or []
+
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(
+        ai_settings,
+        require_openai=(provider == "openai"),
+        require_claude=(provider == "claude"),
+    )
+
+    root_nodes = db.query(ProfileNode).filter(
+        ProfileNode.profile_id == profile_id,
+        ProfileNode.parent_id.is_(None)
+    ).order_by(ProfileNode.order).all()
+    context_nodes = [_serialize_profile_node_for_ai_context(root) for root in root_nodes]
+    outline = ai_tailor_service.render_profile_outline(context_nodes, include_ids=True)
+    plain_profile = ai_tailor_service.render_profile_outline(context_nodes, include_ids=False)
+
+    # Corpus for fact-grounding: the existing profile + the person's own words.
+    user_words = " ".join(
+        f"{str((s or {}).get('name', ''))} {str((s or {}).get('context', ''))}" for s in skills
+    )
+    for qa in answers:
+        user_words += " " + str((qa or {}).get("answer", ""))
+    profile_corpus = (plain_profile or "") + "\n" + user_words
+
+    result = ai_tailor_service.propose_skill_weave(
+        provider=provider,
+        skills=skills,
+        profile_outline=outline,
+        profile_corpus=profile_corpus,
+        answers=answers,
+        model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
+        reasoning_effort=ai_settings["openai_reasoning_effort"],
+        api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=_format_provider_runtime_error(provider, result.get("error"))
+        )
+    return result
+
+
+@app.post("/api/profile/{profile_id}/skill-weave/apply")
+def skill_weave_apply(
+    profile_id: int,
+    request: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Apply the user-approved skill-weave injections. `edit` updates an existing
+    node's content/title; `add` creates a new child node. Every node id is
+    re-validated against this user's profile; nothing is ever deleted.
+    """
+    profile = db.query(Profile).filter(
+        Profile.id == profile_id,
+        Profile.user_id == current_user.id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    injections = request.get("injections") or []
+    if not isinstance(injections, list) or not injections:
+        raise HTTPException(status_code=400, detail="No changes to apply.")
+
+    applied = []
+    now_iso = datetime.utcnow().isoformat()
+    for inj in injections:
+        if not isinstance(inj, dict):
+            continue
+        action = str(inj.get("action", "add")).strip().lower()
+        text = ai_tailor_service.strip_ai_dashes(str(inj.get("proposed_text", "")).strip())
+        if not text:
+            continue
+        skill_meta = {"at": now_iso, "source": "skill_weave", "model": str(inj.get("model", ""))}
+
+        if action == "edit":
+            node = db.query(ProfileNode).filter(ProfileNode.id == inj.get("node_id")).first()
+            if not node or node.profile_id != profile_id:
+                continue  # skip anything not in this user's profile
+            if (node.content or "").strip():
+                node.content = text
+                field = "content"
+            else:
+                node.title = text
+                field = "title"
+            meta = dict(node.meta_info or {})
+            meta["skill_weave"] = skill_meta
+            node.meta_info = meta
+            applied.append({"action": "edit", "node_id": node.id, "field": field})
+        else:  # add
+            parent = db.query(ProfileNode).filter(ProfileNode.id == inj.get("parent_node_id")).first()
+            if not parent or parent.profile_id != profile_id:
+                continue
+            new_type = str(inj.get("new_node_type") or "bullet").strip() or "bullet"
+            max_order = db.query(func.max(ProfileNode.order)).filter(
+                ProfileNode.profile_id == profile_id,
+                ProfileNode.parent_id == parent.id
+            ).scalar()
+            node = ProfileNode(
+                global_id=str(uuid.uuid4()),
+                profile_id=profile_id,
+                parent_id=parent.id,
+                level=parent.level + 1,
+                root_id=parent.root_id if parent.root_id is not None else parent.id,
+                order=0 if max_order is None else max_order + 1,
+                node_type=new_type,
+                content=text,
+                content_type="text",
+                meta_info={"skill_weave": skill_meta},
+            )
+            db.add(node)
+            db.flush()
+            applied.append({"action": "add", "node_id": node.id, "parent_node_id": parent.id})
+
+    db.commit()
+    return {"success": True, "applied": applied, "count": len(applied)}
+
+
 @app.delete("/nodes/{node_id}")
 def delete_node(
     node_id: int,

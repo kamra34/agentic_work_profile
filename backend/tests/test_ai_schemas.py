@@ -7,6 +7,7 @@ from ai_schemas import (
     JOB_ANALYSIS_SCHEMA,
     SCORING_SCHEMA,
     NODE_SELECTION_SCHEMA,
+    SKILL_WEAVE_SCHEMA,
     claude_tool
 )
 
@@ -180,3 +181,35 @@ class TestOpenAIStrictMode:
         """NODE_SELECTION_SCHEMA must meet strict-mode requirements."""
         issues = self._check_strict_mode(NODE_SELECTION_SCHEMA, "NODE_SELECTION_SCHEMA")
         assert not issues, f"Strict-mode issues: {issues}"
+
+    def test_skill_weave_strict_mode(self):
+        """SKILL_WEAVE_SCHEMA must meet strict-mode requirements."""
+        issues = self._check_strict_mode(SKILL_WEAVE_SCHEMA, "SKILL_WEAVE_SCHEMA")
+        assert not issues, f"Strict-mode issues: {issues}"
+
+
+class TestSkillWeaveSchema:
+    """Validate SKILL_WEAVE_SCHEMA structure."""
+
+    def test_top_level_fields(self):
+        required = SKILL_WEAVE_SCHEMA.get("required", [])
+        for field in ["needs_clarification", "clarifying_questions", "facts_used", "injections"]:
+            assert field in required
+
+    def test_injection_item_fields(self):
+        item = SKILL_WEAVE_SCHEMA["properties"]["injections"]["items"]
+        assert item.get("additionalProperties") is False
+        for field in ["target_kind", "action", "node_id", "parent_node_id",
+                      "new_node_type", "original_text", "proposed_text", "rationale"]:
+            assert field in item["properties"]
+            assert field in item["required"]
+
+    def test_action_and_kind_enums(self):
+        item = SKILL_WEAVE_SCHEMA["properties"]["injections"]["items"]
+        assert set(item["properties"]["action"]["enum"]) == {"add", "edit"}
+        assert "summary" in item["properties"]["target_kind"]["enum"]
+
+    def test_nullable_ids_use_anyof(self):
+        item = SKILL_WEAVE_SCHEMA["properties"]["injections"]["items"]
+        for field in ["node_id", "parent_node_id", "new_node_type"]:
+            assert "anyOf" in item["properties"][field]

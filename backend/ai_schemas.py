@@ -213,3 +213,53 @@ NODE_SELECTION_SCHEMA = {
         "tailoring_strategy": {"type": "string"}
     }
 }
+
+
+# ============================================================================
+# Skill Weave Schema (add a new skill across the profile, with a clarify step)
+# ============================================================================
+
+SKILL_WEAVE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["needs_clarification", "clarifying_questions", "facts_used", "injections"],
+    "properties": {
+        # When True, the model is asking for more detail and injections is empty.
+        "needs_clarification": {"type": "boolean"},
+        "clarifying_questions": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        # The concrete facts the model took from the person's own words.
+        "facts_used": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        "injections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "target_kind", "action", "node_id", "parent_node_id",
+                    "new_node_type", "original_text", "proposed_text", "rationale"
+                ],
+                "properties": {
+                    "target_kind": {
+                        "type": "string",
+                        "enum": ["summary", "work_experience", "core_skills", "other"]
+                    },
+                    "action": {"type": "string", "enum": ["add", "edit"]},
+                    # Existing node to edit (for action "edit").
+                    "node_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                    # Section/entry to add a new node under (for action "add").
+                    "parent_node_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                    "new_node_type": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "original_text": {"type": "string"},
+                    "proposed_text": {"type": "string"},
+                    "rationale": {"type": "string"}
+                }
+            }
+        }
+    }
+}
