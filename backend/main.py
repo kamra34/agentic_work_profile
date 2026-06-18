@@ -4768,10 +4768,8 @@ async def refine_all(
     cv_outline = ai_tailor_service.render_profile_outline(
         content_snapshot['nodes'], include_ids=True, only_selected=True
     )
-    full_cv_text = format_hierarchical_cv_for_ai(
-        content_snapshot,
-        job_title=tailored_cv.job_title or "",
-        company_name=tailored_cv.company_name or ""
+    full_cv_text = ai_tailor_service.render_profile_outline(
+        content_snapshot['nodes'], include_ids=False, only_selected=True
     )
 
     job_analysis = tailored_cv.job_analysis if isinstance(tailored_cv.job_analysis, dict) else {}
