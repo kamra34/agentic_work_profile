@@ -21,6 +21,63 @@ def safe_escape(value: Any, default: str = '') -> str:
     return html_lib.escape(str(value))
 
 
+def cover_letter_to_pdf(
+    letter_text: str,
+    name: str = "",
+    email: str = "",
+    phone: str = "",
+    location: str = "",
+    company: str = "",
+    date_str: str = "",
+) -> BytesIO:
+    """
+    Render a cover letter (plain text, already containing greeting -> body -> sign-off)
+    as a clean business-letter PDF: a name + contact letterhead, the date, an
+    optional company line, then the letter body. Uses xhtml2pdf (pisa).
+    """
+    if not date_str:
+        date_str = datetime.now().strftime("%B %d, %Y")
+
+    contact_bits = [b for b in [email, phone, location] if (b or "").strip()]
+    contact_line = "  &middot;  ".join(safe_escape(b.strip()) for b in contact_bits)
+
+    # Body: blank-line-separated paragraphs; single newlines become <br/>.
+    paragraphs = [p for p in (letter_text or "").replace("\r\n", "\n").split("\n\n") if p.strip()]
+    body_html = "".join(
+        "<p>" + safe_escape(p.strip()).replace("\n", "<br/>") + "</p>" for p in paragraphs
+    ) or "<p></p>"
+
+    company_block = f'<div class="meta">{safe_escape(company.strip())}</div>' if (company or "").strip() else ""
+    name_html = safe_escape(name.strip()) if (name or "").strip() else ""
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/>
+<style>
+@page {{ size: A4; margin: 2.4cm 2.2cm; }}
+body {{ font-family: Helvetica, Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.55; }}
+.name {{ font-size: 17pt; font-weight: bold; margin: 0 0 3pt 0; color: #111; }}
+.contact {{ font-size: 9.5pt; color: #555; margin: 0; }}
+hr {{ border: none; border-top: 0.75pt solid #d0d0d0; margin: 12pt 0 16pt 0; }}
+.meta {{ font-size: 10.5pt; color: #333; margin: 0 0 12pt 0; }}
+.letter p {{ margin: 0 0 11pt 0; text-align: left; }}
+</style></head>
+<body>
+  {f'<div class="name">{name_html}</div>' if name_html else ''}
+  {f'<div class="contact">{contact_line}</div>' if contact_line else ''}
+  <hr/>
+  <div class="meta">{safe_escape(date_str)}</div>
+  {company_block}
+  <div class="letter">{body_html}</div>
+</body></html>"""
+
+    pdf_buffer = BytesIO()
+    status = pisa.CreatePDF(src=html_content, dest=pdf_buffer)
+    if status.err:
+        raise Exception(f"Error generating cover letter PDF: {status.err}")
+    pdf_buffer.seek(0)
+    return pdf_buffer
+
+
 class WeasyPrintCVGenerator:
     """
     Generate CVs using WeasyPrint (HTML/CSS to PDF)

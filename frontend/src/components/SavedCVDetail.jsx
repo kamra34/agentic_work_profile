@@ -2635,7 +2635,40 @@ function SavedCVDetail({ cvId, onBack }) {
     } catch (e) { /* ignore */ }
   };
 
-  const downloadCoverLetter = () => {
+  const [coverPdfLoading, setCoverPdfLoading] = useState(false);
+  const downloadCoverLetterPdf = async () => {
+    if (!coverLetter.trim()) return;
+    setCoverPdfLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/tailor/${cvId}/cover-letter/pdf`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cover_letter: coverLetter }),
+      });
+      if (!res.ok) {
+        let msg = 'Failed to export PDF';
+        try { const e = await res.json(); msg = e.detail || msg; } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const slug = (cvData?.company_name || cvData?.job_title || 'job').toString().replace(/\s+/g, '-').toLowerCase();
+      a.download = `cover-letter-${slug}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('PDF export failed: ' + e.message);
+    } finally {
+      setCoverPdfLoading(false);
+    }
+  };
+
+  const downloadCoverLetterTxt = () => {
     const blob = new Blob([coverLetter], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -5482,7 +5515,11 @@ function SavedCVDetail({ cvId, onBack }) {
                       <button onClick={copyCoverLetter} style={{ ...SW.btnGhost, padding: '6px 12px', fontSize: 13 }}>
                         {coverCopied ? '✓ Copied' : 'Copy'}
                       </button>
-                      <button onClick={downloadCoverLetter} style={{ ...SW.btnGhost, padding: '6px 12px', fontSize: 13 }}>Download</button>
+                      <button onClick={downloadCoverLetterTxt} style={{ ...SW.btnGhost, padding: '6px 12px', fontSize: 13 }}>.txt</button>
+                      <button onClick={downloadCoverLetterPdf} disabled={coverPdfLoading}
+                        style={{ ...SW.btnPrimary, padding: '6px 14px', fontSize: 13, boxShadow: 'none' }}>
+                        {coverPdfLoading ? 'Exporting…' : '↓ PDF'}
+                      </button>
                     </div>
                   </div>
                   <textarea value={coverLetter} onChange={(e) => setCoverLetter(e.target.value)}

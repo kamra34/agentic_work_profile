@@ -4866,6 +4866,55 @@ async def cover_letter_endpoint(
     return result
 
 
+@app.post("/api/tailor/{cv_id}/cover-letter/pdf")
+async def cover_letter_pdf_endpoint(
+    cv_id: int,
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Render a (possibly user-edited) cover letter as a formatted business-letter
+    PDF using the candidate's contact details as the letterhead.
+    """
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    letter_text = str(request_data.get('cover_letter', '') or '').strip()
+    if not letter_text:
+        raise HTTPException(status_code=400, detail="No cover letter text provided")
+
+    content_snapshot = tailored_cv.content_snapshot or {}
+    contact = content_snapshot.get('contact_info') or content_snapshot.get('profile_contact_info') or {}
+    name = (contact.get('full_name') or contact.get('name') or getattr(current_user, 'full_name', '') or '').strip()
+    email = (contact.get('email') or getattr(current_user, 'email', '') or '').strip()
+    phone = (contact.get('phone') or contact.get('phone_number') or '').strip()
+    location = (contact.get('location') or contact.get('city') or '').strip()
+
+    from weasyprint_service import cover_letter_to_pdf
+    try:
+        pdf_buffer = cover_letter_to_pdf(
+            letter_text=letter_text,
+            name=name, email=email, phone=phone, location=location,
+            company=tailored_cv.company_name or "",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate cover letter PDF: {str(e)}")
+
+    def _slug(value):
+        return re.sub(r'[^A-Za-z0-9]+', '_', str(value or '')).strip('_') or 'job'
+    filename = f"Cover_Letter_{_slug(tailored_cv.company_name)}_{_slug(name)}.pdf"
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
 @app.post("/api/tailor/{cv_id}/refine-section")
 async def refine_section(
     cv_id: int,
