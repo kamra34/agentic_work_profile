@@ -4925,7 +4925,10 @@ async def refine_section(
     )
 
     # Call AI service with full CV context, node type, title, and reasoning effort.
-    # The humanity LLM critic always runs on OpenAI (when a key + deep mode exist).
+    # NOTE: the deep humanity critic is OpenAI-based, so we do NOT run it here -
+    # otherwise refining with Claude would fire a second, surprising OpenAI call
+    # (and require an OpenAI key). The humanity score still comes from the built-in
+    # heuristic + stylometric checks. Auto-Refine All behaves the same way.
     result = refine_section_content_with_openai(
         section_content=node_content,
         full_cv_content=full_cv_content,
@@ -4940,10 +4943,7 @@ async def refine_section(
         rewrite_mode=rewrite_mode,
         human_strict=human_strict,
         target_pages=target_pages,
-        humanity_llm_enabled=ai_settings["humanity_deep_mode_enabled"] and bool(ai_settings["openai_api_key"]),
-        humanity_llm_model=ai_settings["humanity_llm_model"],
-        humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"],
-        humanity_llm_api_key=ai_settings["openai_api_key"]
+        humanity_llm_enabled=False,
     )
     if not result.get("success"):
         raise HTTPException(
