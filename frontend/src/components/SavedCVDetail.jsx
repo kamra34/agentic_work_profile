@@ -158,6 +158,16 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refineApplying, setRefineApplying] = useState(false);
   const [previousSnapshot, setPreviousSnapshot] = useState(null); // one-step undo (this session)
   const [undoing, setUndoing] = useState(false);
+  // Cover letter
+  const [showCoverLetter, setShowCoverLetter] = useState(false);
+  const [coverProvider, setCoverProvider] = useState('openai');
+  const [coverMotivation, setCoverMotivation] = useState('');
+  const [coverEmphasis, setCoverEmphasis] = useState('');
+  const [coverHiringManager, setCoverHiringManager] = useState('');
+  const [coverLetter, setCoverLetter] = useState('');
+  const [coverInfo, setCoverInfo] = useState(null);
+  const [coverLoading, setCoverLoading] = useState(false);
+  const [coverCopied, setCoverCopied] = useState(false);
   const [humanityReport, setHumanityReport] = useState(null);
   const [checkingHumanity, setCheckingHumanity] = useState(false);
   const [showHumanityDetails, setShowHumanityDetails] = useState(false);
@@ -2590,6 +2600,54 @@ function SavedCVDetail({ cvId, onBack }) {
     }
   };
 
+  // Cover letter: generate a short, human-voice letter from the JD + profile.
+  const generateCoverLetter = async () => {
+    setCoverLoading(true);
+    setCoverCopied(false);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/tailor/${cvId}/cover-letter`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: coverProvider,
+          motivation: coverMotivation,
+          emphasis: coverEmphasis,
+          hiring_manager: coverHiringManager,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to generate cover letter');
+      setCoverLetter(data.cover_letter || '');
+      setCoverInfo({ humanity: data.humanity, model: data?.runtime?.resolved_model || data.model });
+    } catch (e) {
+      alert('Cover letter failed: ' + e.message);
+    } finally {
+      setCoverLoading(false);
+    }
+  };
+
+  const copyCoverLetter = async () => {
+    try {
+      await navigator.clipboard.writeText(coverLetter);
+      setCoverCopied(true);
+      setTimeout(() => setCoverCopied(false), 1800);
+    } catch (e) { /* ignore */ }
+  };
+
+  const downloadCoverLetter = () => {
+    const blob = new Blob([coverLetter], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const slug = (cvData?.company_name || cvData?.job_title || 'job').toString().replace(/\s+/g, '-').toLowerCase();
+    a.download = `cover-letter-${slug}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   // Preview PDF directly from current CV (without saving to tracker)
   // Open template selection modal
   const openPreviewTemplateModal = () => {
@@ -3800,6 +3858,17 @@ function SavedCVDetail({ cvId, onBack }) {
                 <span>Auto-Refine All</span>
               </>
             )}
+          </button>
+
+          {/* Cover Letter Button */}
+          <button
+            onClick={() => { setShowCoverLetter(true); setCoverCopied(false); }}
+            className="btn-auto-refine-modern"
+            title="Write a short, human-voice cover letter from this job + your profile"
+            style={{ background: 'linear-gradient(135deg, #0ea5e9, #6366f1)' }}
+          >
+            <span style={{ fontSize: 18 }}>✍️</span>
+            <span>Cover Letter</span>
           </button>
 
           {/* Unified Finalize Application Button */}
@@ -5344,6 +5413,93 @@ function SavedCVDetail({ cvId, onBack }) {
               <button onClick={() => setShowRefineReview(false)} style={SW.btnGhost}>Cancel</button>
               <button onClick={handleApplyHolistic} disabled={refineApplying} style={SW.btnPrimary}>
                 ✓ Apply polished CV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cover Letter modal */}
+      {showCoverLetter && (
+        <div style={SW.backdrop} onClick={() => setShowCoverLetter(false)}>
+          <div style={{ ...SW.card, maxWidth: 720, width: '94%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ ...SW.header, background: 'linear-gradient(135deg, #0ea5e9, #6366f1)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={SW.chip}>✍️</div>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>Cover letter</div>
+                  <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.9)' }}>
+                    Short, human, from this job and your profile
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowCoverLetter(false)} style={SW.close} aria-label="Close">✕</button>
+            </div>
+
+            <div style={{ padding: '16px 20px', overflowY: 'auto' }}>
+              {/* Model picker */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={SW.sectionHead}>Model</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={() => setCoverProvider('openai')}
+                    style={{ flex: 1, padding: 10, borderRadius: 9, cursor: 'pointer', fontWeight: 600,
+                      border: coverProvider === 'openai' ? '2px solid #10a37f' : '1px solid #d1d5db',
+                      background: coverProvider === 'openai' ? '#ecfdf5' : '#fff' }}>🤖 OpenAI</button>
+                  <button type="button" onClick={() => setCoverProvider('claude')}
+                    style={{ flex: 1, padding: 10, borderRadius: 9, cursor: 'pointer', fontWeight: 600,
+                      border: coverProvider === 'claude' ? '2px solid #d97757' : '1px solid #d1d5db',
+                      background: coverProvider === 'claude' ? '#fff3ed' : '#fff' }}>🧠 Claude</button>
+                </div>
+              </div>
+
+              <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 12px', lineHeight: 1.5 }}>
+                These are optional — it works from the job + your profile alone. Adding them keeps it
+                personal and honest (the AI won't invent why you want the role).
+              </p>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={SW.sectionHead}>Why you want this role (optional)</div>
+                <textarea value={coverMotivation} onChange={(e) => setCoverMotivation(e.target.value)}
+                  placeholder="In your own words…" style={{ ...SW.input, minHeight: 56, resize: 'vertical' }} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={SW.sectionHead}>Anything to emphasize (optional)</div>
+                <input value={coverEmphasis} onChange={(e) => setCoverEmphasis(e.target.value)}
+                  placeholder="e.g. my AWS and mentoring work" style={SW.input} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={SW.sectionHead}>Hiring manager name (optional)</div>
+                <input value={coverHiringManager} onChange={(e) => setCoverHiringManager(e.target.value)}
+                  placeholder="Leave blank to greet the hiring team" style={SW.input} />
+              </div>
+
+              {coverLetter && (
+                <div style={{ ...SW.sectionCard, marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={SW.sectionHead}>Your cover letter</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={copyCoverLetter} style={{ ...SW.btnGhost, padding: '6px 12px', fontSize: 13 }}>
+                        {coverCopied ? '✓ Copied' : 'Copy'}
+                      </button>
+                      <button onClick={downloadCoverLetter} style={{ ...SW.btnGhost, padding: '6px 12px', fontSize: 13 }}>Download</button>
+                    </div>
+                  </div>
+                  <textarea value={coverLetter} onChange={(e) => setCoverLetter(e.target.value)}
+                    style={{ ...SW.input, minHeight: 240, lineHeight: 1.6, resize: 'vertical' }} />
+                  {coverInfo?.humanity?.risk_level && coverInfo.humanity.risk_level !== 'low' && (
+                    <div style={{ ...SW.warn, marginTop: 8, marginBottom: 0 }}>
+                      ⚠ Reads a little AI-ish (humanity {coverInfo.humanity.score}). Edit any line that feels off.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={SW.footer}>
+              <button onClick={() => setShowCoverLetter(false)} style={SW.btnGhost}>Close</button>
+              <button onClick={generateCoverLetter} disabled={coverLoading} style={SW.btnPrimary}>
+                {coverLoading ? 'Writing…' : (coverLetter ? '↻ Regenerate' : '✍️ Generate')}
               </button>
             </div>
           </div>

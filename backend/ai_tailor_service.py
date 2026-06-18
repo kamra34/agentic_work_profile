@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from openai_wrapper import call_openai_for_json
 from logger_config import get_logger
 from profile_render import render_profile_outline, compute_included_ids
-from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, SKILL_WEAVE_SCHEMA, REFINE_ALL_SCHEMA, REFINE_SECTION_SCHEMA, claude_tool
+from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, SKILL_WEAVE_SCHEMA, REFINE_ALL_SCHEMA, REFINE_SECTION_SCHEMA, COVER_LETTER_SCHEMA, claude_tool
 from refinement_guards import audit_refinement
 
 
@@ -2583,6 +2583,159 @@ def refine_full_cv(
         return payload
     except Exception as e:
         logger.error("Refine-all exception", error=e)
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# Cover Letter: short, human-voice letter from the JD + the candidate's profile
+# ============================================================================
+
+COVER_LETTER_SYSTEM = (
+    "You write short, honest cover letters in the candidate's own voice. Plain "
+    "first-person English, short sentences, concrete. You never use em-dashes or "
+    "double hyphens, and you avoid cliche AI words. You use only facts from the CV "
+    "and the candidate's own words. You never invent achievements, numbers, tools, "
+    "or reasons for wanting the job."
+)
+
+COVER_LETTER_PROMPT = """Write a short cover letter for this job, in the candidate's own honest voice.
+
+CANDIDATE NAME: {candidate_name}
+JOB TITLE: {job_title}
+COMPANY: {company}
+
+JOB DESCRIPTION:
+{job_description}
+
+THE CANDIDATE'S CV (use ONLY these facts):
+{cv_text}
+{extra_block}
+Rules:
+- Greeting: "Dear {greeting_name}," then 2 to 3 short paragraphs, then sign off with the candidate's name.
+- Plain spoken English, first person. Short sentences, about 12 to 18 words each.
+- Paragraph 1: why I am a fit for this specific role. Paragraph 2: one or two concrete things I have done that match. Paragraph 3: a brief, grounded close.
+- Use ONLY facts from the CV and the person's own words above. Do not invent achievements, numbers, tools, or motivation.
+- If the person did not say why they want the role, keep the motivation simple and grounded in the work itself. Do not gush.
+- No em-dashes. No "--". Avoid words like leveraged, spearheaded, results-driven, passionate about, proven track record, cutting-edge, synergy, dynamic professional.
+- Keep the whole letter under about 250 words.
+
+Return cover_letter (the full letter text) and highlights_used (the CV facts you leaned on)."""
+
+
+def generate_cover_letter(
+    provider: str,
+    job_description: str = "",
+    job_title: str = "",
+    company: str = "",
+    candidate_name: str = "",
+    cv_text: str = "",
+    motivation: str = "",
+    emphasis: str = "",
+    hiring_manager: str = "",
+    model: str = None,
+    reasoning_effort: str = None,
+    api_key: str = None,
+) -> Dict[str, Any]:
+    """
+    Generate a short, human-voice cover letter from the job description and the
+    candidate's profile, using the chosen provider (openai|claude). Optional
+    motivation / emphasis / hiring_manager personalize it without inventing facts.
+    """
+    provider = (provider or "openai").strip().lower()
+    started_at = _now_iso()
+    start_ts = time.time()
+    if not api_key:
+        return {"success": False, "error": f"{'Claude' if provider == 'claude' else 'OpenAI'} API key missing. Add your key in AI Settings."}
+
+    extra_lines = []
+    if (motivation or "").strip():
+        extra_lines.append(f"WHY THE PERSON WANTS THIS ROLE (their words): {motivation.strip()}")
+    if (emphasis or "").strip():
+        extra_lines.append(f"THINGS TO EMPHASIZE (their words): {emphasis.strip()}")
+    extra_block = ("\n" + "\n".join(extra_lines) + "\n") if extra_lines else ""
+    greeting_name = hiring_manager.strip() if (hiring_manager or "").strip() else "Hiring Team"
+
+    user_prompt = COVER_LETTER_PROMPT.format(
+        candidate_name=candidate_name or "the candidate",
+        job_title=job_title or "(not provided)",
+        company=company or "(not provided)",
+        job_description=job_description or "(not provided)",
+        cv_text=cv_text or "(empty)",
+        extra_block=extra_block,
+        greeting_name=greeting_name,
+    )
+
+    try:
+        if provider == "claude":
+            requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
+            logger.step(f"Cover letter with Claude ({requested_model})", step_num=1)
+            client = Anthropic(api_key=api_key)
+            tool = claude_tool("cover_letter_output", "Cover letter", COVER_LETTER_SCHEMA)
+            response = client.messages.create(
+                model=requested_model,
+                max_tokens=4096,
+                system=COVER_LETTER_SYSTEM,
+                messages=[{"role": "user", "content": user_prompt}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "cover_letter_output"},
+                timeout=120.0,
+            )
+            data = _extract_claude_tool_input(response)
+            resolved_model = getattr(response, "model", requested_model)
+            api_name = "messages.create"
+            reasoning_used = ""
+        else:
+            requested_model = model or DEFAULT_OPENAI_MODEL
+            resolved_reasoning = _resolve_reasoning_effort(reasoning_effort)
+            logger.step(f"Cover letter with OpenAI ({requested_model})", step_num=1)
+            result = call_openai_for_json(
+                system_prompt=COVER_LETTER_SYSTEM,
+                user_prompt=user_prompt,
+                model=requested_model,
+                reasoning_effort=resolved_reasoning,
+                api_key=api_key,
+                timeout=120,
+                schema=COVER_LETTER_SCHEMA,
+                schema_name="cover_letter",
+            )
+            if not result["success"]:
+                return {"success": False, "error": result["error"]}
+            data = result["data"]
+            resolved_model = result.get("actual_model") or result.get("model", requested_model)
+            api_name = result.get("api_name", "")
+            reasoning_used = resolved_reasoning if _uses_reasoning(requested_model) else ""
+
+        letter = strip_ai_dashes(str(data.get("cover_letter", "")).strip())
+        highlights = _safe_list_of_strings(data.get("highlights_used"), max_items=12, max_len=300)
+        corpus = " ".join([cv_text or "", motivation or "", emphasis or ""])
+        hum = evaluate_humanity_hybrid(letter, source_text=corpus, mode="quick", llm_enabled=False)
+        duration_ms = int((time.time() - start_ts) * 1000)
+        logger.success(f"Cover letter done ({len(letter)} chars) in {duration_ms / 1000:.2f}s")
+        return {
+            "success": True,
+            "model": resolved_model,
+            "cover_letter": letter,
+            "highlights_used": highlights,
+            "integrity": audit_refinement(corpus or " ", letter, profile_corpus=corpus),
+            "humanity": {
+                "score": hum.get("score"),
+                "risk_level": hum.get("risk_level"),
+                "flags": [v.get("message") for v in (hum.get("violations") or [])][:4],
+            },
+            "runtime": _build_runtime(
+                stage="cover_letter",
+                provider="anthropic" if provider == "claude" else "openai",
+                requested_model=requested_model,
+                resolved_model=resolved_model,
+                api_name=api_name,
+                reasoning_effort=reasoning_used,
+                started_at=started_at,
+                finished_at=_now_iso(),
+                duration_ms=duration_ms,
+            ),
+        }
+    except Exception as e:
+        logger.error("Cover letter exception", error=e)
         return {"success": False, "error": str(e)}
 
 

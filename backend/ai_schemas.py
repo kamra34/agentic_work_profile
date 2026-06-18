@@ -333,3 +333,20 @@ REFINE_SECTION_SCHEMA = {
         }
     }
 }
+
+
+# ============================================================================
+# Cover Letter Schema (short, human-voice letter from JD + profile)
+# ============================================================================
+
+COVER_LETTER_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["cover_letter", "highlights_used"],
+    "properties": {
+        # The full letter text (greeting -> short paragraphs -> sign-off).
+        "cover_letter": {"type": "string"},
+        # The concrete CV facts / user's own words the letter leaned on.
+        "highlights_used": {"type": "array", "items": {"type": "string"}}
+    }
+}

@@ -4803,6 +4803,69 @@ async def refine_all(
     return result
 
 
+@app.post("/api/tailor/{cv_id}/cover-letter")
+async def cover_letter_endpoint(
+    cv_id: int,
+    request_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a short, human-voice cover letter for this saved CV from the job
+    description + the candidate's selected profile. Optional motivation / emphasis
+    / hiring_manager personalize it without inventing facts. Returns the letter
+    (nothing is persisted).
+    """
+    tailored_cv = db.query(TailoredCV).filter(
+        TailoredCV.id == cv_id,
+        TailoredCV.user_id == current_user.id
+    ).first()
+    if not tailored_cv:
+        raise HTTPException(status_code=404, detail="Tailored CV not found")
+
+    content_snapshot = tailored_cv.content_snapshot
+    if not content_snapshot or not content_snapshot.get('nodes'):
+        raise HTTPException(status_code=400, detail="No content snapshot found")
+
+    provider = str(request_data.get('provider', 'openai')).strip().lower()
+    if provider not in ('openai', 'claude'):
+        provider = 'openai'
+
+    ai_settings = get_user_ai_runtime_settings(current_user)
+    _ensure_required_provider_keys(
+        ai_settings,
+        require_openai=(provider == 'openai'),
+        require_claude=(provider == 'claude'),
+    )
+
+    cv_text = ai_tailor_service.render_profile_outline(
+        content_snapshot['nodes'], include_ids=False, only_selected=True
+    )
+    contact = content_snapshot.get('contact_info') or content_snapshot.get('profile_contact_info') or {}
+    candidate_name = (contact.get('full_name') or contact.get('name') or '').strip()
+
+    result = ai_tailor_service.generate_cover_letter(
+        provider=provider,
+        job_description=tailored_cv.job_description or "",
+        job_title=tailored_cv.job_title or "",
+        company=tailored_cv.company_name or "",
+        candidate_name=candidate_name,
+        cv_text=cv_text,
+        motivation=request_data.get('motivation', '') or '',
+        emphasis=request_data.get('emphasis', '') or '',
+        hiring_manager=request_data.get('hiring_manager', '') or '',
+        model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
+        reasoning_effort=ai_settings["openai_reasoning_effort"],
+        api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=_format_provider_runtime_error("Claude" if provider == "claude" else "OpenAI", result.get("error"))
+        )
+    return result
+
+
 @app.post("/api/tailor/{cv_id}/refine-section")
 async def refine_section(
     cv_id: int,

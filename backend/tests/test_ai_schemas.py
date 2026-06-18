@@ -10,6 +10,7 @@ from ai_schemas import (
     SKILL_WEAVE_SCHEMA,
     REFINE_ALL_SCHEMA,
     REFINE_SECTION_SCHEMA,
+    COVER_LETTER_SCHEMA,
     claude_tool
 )
 
@@ -197,6 +198,11 @@ class TestOpenAIStrictMode:
     def test_refine_section_strict_mode(self):
         """REFINE_SECTION_SCHEMA must meet strict-mode requirements."""
         issues = self._check_strict_mode(REFINE_SECTION_SCHEMA, "REFINE_SECTION_SCHEMA")
+        assert not issues, f"Strict-mode issues: {issues}"
+
+    def test_cover_letter_strict_mode(self):
+        """COVER_LETTER_SCHEMA must meet strict-mode requirements."""
+        issues = self._check_strict_mode(COVER_LETTER_SCHEMA, "COVER_LETTER_SCHEMA")
         assert not issues, f"Strict-mode issues: {issues}"
 
 
