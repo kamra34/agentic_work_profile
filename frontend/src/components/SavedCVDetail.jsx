@@ -127,7 +127,8 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refining, setRefining] = useState(false);
   const [refinementResult, setRefinementResult] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [reasoningEffort, setReasoningEffort] = useState('low'); // none, low, medium, high (default: low)
+  const [reasoningEffort, setReasoningEffort] = useState('medium'); // OpenAI: none/low/medium/high (initialized from AI Settings)
+  const [claudeEffort, setClaudeEffort] = useState('high'); // Claude thinking: off/low/medium/high/max (initialized from AI Settings)
   const [refineProvider, setRefineProvider] = useState('openai'); // openai | claude (single-section refine)
   const [rewriteMode, setRewriteMode] = useState('minimal'); // minimal | standard
   const [humanStrictMode, setHumanStrictMode] = useState(true);
@@ -145,7 +146,8 @@ function SavedCVDetail({ cvId, onBack }) {
   const [autoRefining, setAutoRefining] = useState(false);
   const [autoRefineProgress, setAutoRefineProgress] = useState({ current: 0, total: 0, currentSection: '' });
   const [autoRefineLog, setAutoRefineLog] = useState([]);
-  const [autoRefineReasoningEffort, setAutoRefineReasoningEffort] = useState('low'); // none, low, medium, high (default: low for auto-refine)
+  const [autoRefineReasoningEffort, setAutoRefineReasoningEffort] = useState('medium'); // OpenAI reasoning (initialized from AI Settings)
+  const [autoRefineClaudeEffort, setAutoRefineClaudeEffort] = useState('high'); // Claude thinking effort (initialized from AI Settings)
   const [autoRefineRewriteMode, setAutoRefineRewriteMode] = useState('minimal');
   const [autoRefineHumanStrict, setAutoRefineHumanStrict] = useState(true);
   const [autoRefineTargetPages, setAutoRefineTargetPages] = useState('auto');
@@ -1114,7 +1116,8 @@ function SavedCVDetail({ cvId, onBack }) {
           node_type: refinementModal.nodeType,
           user_instructions: userInstructions || null,
           provider: refineProvider,
-          reasoning_effort: reasoningEffort,  // Send "none", "low", "medium", or "high" directly
+          reasoning_effort: reasoningEffort,  // OpenAI: none/low/medium/high (used when provider=openai)
+          claude_effort: claudeEffort,        // Claude: off/low/medium/high/max (used when provider=claude)
           rewrite_mode: rewriteMode,
           human_strict: humanStrictMode,
           target_pages: targetPages === 'auto' ? null : Number(targetPages)
@@ -1540,7 +1543,8 @@ function SavedCVDetail({ cvId, onBack }) {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: autoRefineProvider,
-          reasoning_effort: autoRefineReasoningEffort,
+          reasoning_effort: autoRefineReasoningEffort,  // used when provider=openai
+          claude_effort: autoRefineClaudeEffort,        // used when provider=claude
           human_strict: autoRefineHumanStrict,
           target_pages: autoRefineTargetPages === 'auto' ? null : Number(autoRefineTargetPages),
           instructions: autoRefineInstructions || '',
@@ -1688,8 +1692,10 @@ function SavedCVDetail({ cvId, onBack }) {
             body: JSON.stringify({
               node_id: section.id,
               node_type: 'section',
+              provider: autoRefineProvider,
               user_instructions: autoRefineInstructions || null,
-              reasoning_effort: autoRefineReasoningEffort,  // Use auto-refine reasoning effort
+              reasoning_effort: autoRefineReasoningEffort,  // used when provider=openai
+              claude_effort: autoRefineClaudeEffort,        // used when provider=claude
               rewrite_mode: autoRefineRewriteMode,
               human_strict: autoRefineHumanStrict,
               target_pages: autoRefineTargetPages === 'auto' ? null : Number(autoRefineTargetPages)
@@ -3736,6 +3742,16 @@ function SavedCVDetail({ cvId, onBack }) {
       if (!response.ok) return;
       const data = await response.json();
       setUserInstructionTemplates(normalizeInstructionTemplates(data.refinement_instruction_templates));
+      // Initialize the refine modals' effort selectors from the user's AI Settings.
+      // The user can still override per-run in the modal; we only seed the default.
+      if (data.openai_reasoning_effort) {
+        setReasoningEffort(data.openai_reasoning_effort);
+        setAutoRefineReasoningEffort(data.openai_reasoning_effort);
+      }
+      if (data.claude_effort) {
+        setClaudeEffort(data.claude_effort);
+        setAutoRefineClaudeEffort(data.claude_effort);
+      }
     } catch (error) {
       console.error('Error fetching instruction templates:', error);
     }
@@ -4543,29 +4559,46 @@ function SavedCVDetail({ cvId, onBack }) {
                 </div>
               </div>
 
-              {/* Reasoning Effort Selector (OpenAI only) */}
+              {/* Effort: OpenAI reasoning OR Claude thinking, depending on the model.
+                  Seeded from AI Settings; the user can override it for this run. */}
               <div className="reasoning-effort-selector">
                 <label htmlFor="reasoning-effort">
                   <span className="reasoning-label-icon">🧠</span>
-                  <strong>AI Reasoning Mode</strong>
+                  <strong>{refineProvider === 'claude' ? 'Claude Thinking Effort' : 'AI Reasoning Mode'}</strong>
                 </label>
                 <div className="reasoning-help-text">
                   {refineProvider === 'claude'
-                    ? 'Not used for Claude (Claude does not take a reasoning-effort setting).'
-                    : 'Control how deeply OpenAI thinks before responding'}
+                    ? 'How deeply Claude thinks before writing (same levels as claude.ai). Defaults to your AI Settings.'
+                    : 'Control how deeply OpenAI thinks before responding. Defaults to your AI Settings.'}
                 </div>
-                <select
-                  id="reasoning-effort"
-                  value={reasoningEffort}
-                  onChange={(e) => setReasoningEffort(e.target.value)}
-                  disabled={refining || refineProvider === 'claude'}
-                  className="reasoning-effort-dropdown"
-                >
-                  <option value="none">⚡ None - Fastest (No reasoning)</option>
-                  <option value="low">🔸 Low - Quick reasoning</option>
-                  <option value="medium">⭐ Medium - Balanced (Recommended)</option>
-                  <option value="high">💎 High - Deep thinking</option>
-                </select>
+                {refineProvider === 'claude' ? (
+                  <select
+                    id="reasoning-effort"
+                    value={claudeEffort}
+                    onChange={(e) => setClaudeEffort(e.target.value)}
+                    disabled={refining}
+                    className="reasoning-effort-dropdown"
+                  >
+                    <option value="off">⚡ Off - No thinking (fastest)</option>
+                    <option value="low">🔸 Low - Quick thinking</option>
+                    <option value="medium">⭐ Medium - Balanced</option>
+                    <option value="high">💎 High - Deep thinking</option>
+                    <option value="max">🚀 Max - Most thorough (slowest)</option>
+                  </select>
+                ) : (
+                  <select
+                    id="reasoning-effort"
+                    value={reasoningEffort}
+                    onChange={(e) => setReasoningEffort(e.target.value)}
+                    disabled={refining}
+                    className="reasoning-effort-dropdown"
+                  >
+                    <option value="none">⚡ None - Fastest (No reasoning)</option>
+                    <option value="low">🔸 Low - Quick reasoning</option>
+                    <option value="medium">⭐ Medium - Balanced (Recommended)</option>
+                    <option value="high">💎 High - Deep thinking</option>
+                  </select>
+                )}
               </div>
 
               <div className="reasoning-effort-selector">
@@ -4802,9 +4835,9 @@ function SavedCVDetail({ cvId, onBack }) {
                     <span className="refining-status">
                       <span className="refining-spinner"></span>
                       <span className="refining-text">
-                        OpenAI {reasoningEffort === 'none' ? '' : 'Thinking'}<br/>
+                        {refineProvider === 'claude' ? 'Claude' : 'OpenAI'} {(refineProvider === 'claude' ? claudeEffort === 'off' : reasoningEffort === 'none') ? '' : 'Thinking'}<br/>
                         <small style={{fontSize: '0.85em', opacity: 0.9}}>
-                          Reasoning: {reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1)}
+                          {refineProvider === 'claude' ? 'Effort' : 'Reasoning'}: {(() => { const v = refineProvider === 'claude' ? claudeEffort : reasoningEffort; return v.charAt(0).toUpperCase() + v.slice(1); })()}
                         </small>
                       </span>
                     </span>
@@ -5256,29 +5289,44 @@ function SavedCVDetail({ cvId, onBack }) {
                 </div>
               </div>
 
-              {/* Reasoning Effort Selector */}
+              {/* Effort: OpenAI reasoning OR Claude thinking, depending on the model.
+                  Seeded from AI Settings; the user can override it for this run. */}
               <div className="reasoning-effort-selector">
                 <label htmlFor="auto-refine-reasoning-effort">
                   <span className="reasoning-label-icon">🧠</span>
-                  <strong>AI Reasoning Mode</strong>
+                  <strong>{autoRefineProvider === 'claude' ? 'Claude Thinking Effort' : 'AI Reasoning Mode'}</strong>
                 </label>
                 <div className="reasoning-help-text">
                   {autoRefineProvider === 'claude'
-                    ? 'Not used for Claude (Claude has no reasoning-effort setting).'
-                    : 'Control how deeply OpenAI thinks before responding'}
+                    ? 'How deeply Claude thinks before writing (same levels as claude.ai). Defaults to your AI Settings.'
+                    : 'Control how deeply OpenAI thinks before responding. Defaults to your AI Settings.'}
                 </div>
-                <select
-                  id="auto-refine-reasoning-effort"
-                  value={autoRefineReasoningEffort}
-                  onChange={(e) => setAutoRefineReasoningEffort(e.target.value)}
-                  disabled={autoRefineProvider === 'claude'}
-                  className="reasoning-effort-dropdown"
-                >
-                  <option value="none">⚡ None - Fastest (No reasoning)</option>
-                  <option value="low">🔸 Low - Quick reasoning (Recommended for batch)</option>
-                  <option value="medium">⭐ Medium - Balanced</option>
-                  <option value="high">💎 High - Deep thinking (Slower)</option>
-                </select>
+                {autoRefineProvider === 'claude' ? (
+                  <select
+                    id="auto-refine-reasoning-effort"
+                    value={autoRefineClaudeEffort}
+                    onChange={(e) => setAutoRefineClaudeEffort(e.target.value)}
+                    className="reasoning-effort-dropdown"
+                  >
+                    <option value="off">⚡ Off - No thinking (fastest)</option>
+                    <option value="low">🔸 Low - Quick thinking</option>
+                    <option value="medium">⭐ Medium - Balanced</option>
+                    <option value="high">💎 High - Deep thinking</option>
+                    <option value="max">🚀 Max - Most thorough (slowest)</option>
+                  </select>
+                ) : (
+                  <select
+                    id="auto-refine-reasoning-effort"
+                    value={autoRefineReasoningEffort}
+                    onChange={(e) => setAutoRefineReasoningEffort(e.target.value)}
+                    className="reasoning-effort-dropdown"
+                  >
+                    <option value="none">⚡ None - Fastest (No reasoning)</option>
+                    <option value="low">🔸 Low - Quick reasoning</option>
+                    <option value="medium">⭐ Medium - Balanced (Recommended)</option>
+                    <option value="high">💎 High - Deep thinking (Slower)</option>
+                  </select>
+                )}
               </div>
 
               <div className="reasoning-effort-selector">

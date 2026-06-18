@@ -1180,6 +1180,29 @@ def _normalize_claude_effort(effort: Optional[str]) -> str:
     return DEFAULT_CLAUDE_EFFORT
 
 
+def _effective_reasoning_effort(request_data: Dict[str, Any], ai_settings: Dict[str, Any]) -> str:
+    """
+    Resolve the OpenAI reasoning effort for a request: use the value the user
+    picked in the request (a per-call selector) when present, otherwise fall back
+    to the user's saved AI Settings value. Never silently floors to a low default.
+    """
+    raw = (request_data or {}).get("reasoning_effort")
+    if raw is None or str(raw).strip() == "":
+        return ai_settings["openai_reasoning_effort"]
+    return _normalize_reasoning_effort(raw)
+
+
+def _effective_claude_effort(request_data: Dict[str, Any], ai_settings: Dict[str, Any]) -> str:
+    """
+    Resolve the Claude thinking effort for a request: use the value the user picked
+    in the request when present, otherwise fall back to the saved AI Settings value.
+    """
+    raw = (request_data or {}).get("claude_effort")
+    if raw is None or str(raw).strip() == "":
+        return ai_settings["claude_effort"]
+    return _normalize_claude_effort(raw)
+
+
 def _normalize_bool(value: Any, default: bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -4776,7 +4799,6 @@ async def refine_all(
     if provider not in ('openai', 'claude'):
         provider = 'openai'
     human_strict = bool(request_data.get('human_strict', True))
-    reasoning_effort = request_data.get('reasoning_effort', None)
     instructions = request_data.get('instructions') or request_data.get('user_instructions') or ''
     target_pages_raw = request_data.get('target_pages', None)
     try:
@@ -4792,6 +4814,9 @@ async def refine_all(
         require_openai=(provider == 'openai'),
         require_claude=(provider == 'claude'),
     )
+    # Effort: use the value the user picked in the modal if present, else AI Settings.
+    effective_reasoning = _effective_reasoning_effort(request_data, ai_settings)
+    effective_claude_effort = _effective_claude_effort(request_data, ai_settings)
 
     # [#id]-tagged outline for the model + clean selected-CV text for the guards.
     cv_outline = ai_tailor_service.render_profile_outline(
@@ -4821,8 +4846,8 @@ async def refine_all(
         human_strict=human_strict,
         instructions=instructions,
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
-        reasoning_effort=ai_settings["openai_reasoning_effort"],
-        claude_effort=ai_settings["claude_effort"],
+        reasoning_effort=effective_reasoning,
+        claude_effort=effective_claude_effort,
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
     )
     if not result.get("success"):
@@ -4867,6 +4892,8 @@ async def cover_letter_endpoint(
         require_openai=(provider == 'openai'),
         require_claude=(provider == 'claude'),
     )
+    effective_reasoning = _effective_reasoning_effort(request_data, ai_settings)
+    effective_claude_effort = _effective_claude_effort(request_data, ai_settings)
 
     cv_text = ai_tailor_service.render_profile_outline(
         content_snapshot['nodes'], include_ids=False, only_selected=True
@@ -4885,8 +4912,8 @@ async def cover_letter_endpoint(
         emphasis=request_data.get('emphasis', '') or '',
         hiring_manager=request_data.get('hiring_manager', '') or '',
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
-        reasoning_effort=ai_settings["openai_reasoning_effort"],
-        claude_effort=ai_settings["claude_effort"],
+        reasoning_effort=effective_reasoning,
+        claude_effort=effective_claude_effort,
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
     )
     if not result.get("success"):
@@ -4990,7 +5017,6 @@ async def refine_section(
 
     requested_node_type = request_data.get('node_type')
     user_instructions = request_data.get('user_instructions', None)
-    reasoning_effort = request_data.get('reasoning_effort', None)  # User's choice: none, low, medium, high
     rewrite_mode = request_data.get('rewrite_mode', 'minimal')
     human_strict = bool(request_data.get('human_strict', True))
     target_pages_raw = request_data.get('target_pages', None)
@@ -5066,6 +5092,9 @@ async def refine_section(
         require_openai=(provider == 'openai'),
         require_claude=(provider == 'claude'),
     )
+    # Effort: use the value the user picked in the modal if present, else AI Settings.
+    effective_reasoning = _effective_reasoning_effort(request_data, ai_settings)
+    effective_claude_effort = _effective_claude_effort(request_data, ai_settings)
 
     # Call AI service with full CV context, node type, title, and reasoning effort.
     # NOTE: the deep humanity critic is OpenAI-based, so we do NOT run it here -
@@ -5079,8 +5108,8 @@ async def refine_section(
         user_instructions=user_instructions,
         node_type=node_type,
         node_title=node_title,
-        reasoning_effort=reasoning_effort,
-        claude_effort=ai_settings["claude_effort"],
+        reasoning_effort=effective_reasoning,
+        claude_effort=effective_claude_effort,
         provider=provider,
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
@@ -5114,20 +5143,27 @@ async def refine_section(
     # Keep backward compatibility
     result['section_title'] = result['node_title']
 
-    # Add AI model information for UI display
-    import os
-    # Determine actual reasoning effort used (only use .env if reasoning_effort is None/empty)
-    actual_reasoning = reasoning_effort if reasoning_effort is not None else os.getenv('OPENAI_REASONING_EFFORT', 'medium')
-
-    # Always GPT-5.1, but display reasoning mode
-    if actual_reasoning and actual_reasoning.lower() == 'none':
-        model_name = 'GPT-5.1 (No Reasoning)'
+    # Add AI model information for UI display (actual model id + the effort that ran).
+    actual_model = result.get('model') or (
+        ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"]
+    )
+    if provider == "claude":
+        if effective_claude_effort == "off":
+            model_display = f"{actual_model} (no thinking)"
+            effort_display = "Off"
+        else:
+            effort_display = effective_claude_effort.title()
+            model_display = f"{actual_model} (thinking: {effort_display})"
     else:
-        model_name = 'GPT-5.1 Thinking'
+        effort_display = (effective_reasoning or "medium").title()
+        if (effective_reasoning or "").lower() == "none":
+            model_display = f"{actual_model} (no reasoning)"
+        else:
+            model_display = f"{actual_model} (reasoning: {effort_display})"
 
     result['ai_info'] = {
-        'model': model_name,
-        'reasoning_effort': actual_reasoning.title() if actual_reasoning else 'Medium',
+        'model': model_display,
+        'reasoning_effort': effort_display,
         'reasoning_tokens': result.get('reasoning_tokens', 0),
         'rewrite_mode': rewrite_mode,
         'human_strict': human_strict,
