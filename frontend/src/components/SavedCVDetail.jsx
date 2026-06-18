@@ -7,6 +7,60 @@ import './refinement-status.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+// Self-contained styles for the holistic Auto-Refine review/loading modals
+// (so they box cleanly regardless of the global modal CSS).
+const SW = {
+  backdrop: {
+    position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(5px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300, padding: 20,
+  },
+  card: {
+    background: '#fff', borderRadius: 18, overflow: 'hidden',
+    boxShadow: '0 30px 60px -15px rgba(15,23,42,0.45), 0 0 0 1px rgba(15,23,42,0.04)',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px',
+    color: '#fff', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%)',
+  },
+  chip: {
+    width: 40, height: 40, display: 'grid', placeItems: 'center', fontSize: 20, borderRadius: 12,
+    background: 'rgba(255,255,255,0.18)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)',
+  },
+  close: {
+    width: 30, height: 30, border: 'none', borderRadius: 8, background: 'rgba(255,255,255,0.16)',
+    color: '#fff', fontSize: 16, cursor: 'pointer', lineHeight: 1,
+  },
+  note: {
+    background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px',
+    fontSize: 13, color: '#334155', marginBottom: 14, lineHeight: 1.5,
+  },
+  warn: {
+    background: '#fef3c7', color: '#92400e', borderRadius: 8, padding: '8px 12px',
+    fontSize: 13, marginBottom: 14,
+  },
+  sectionCard: {
+    border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, marginBottom: 12, background: '#fff',
+  },
+  sectionHead: { fontWeight: 700, fontSize: 13.5, color: '#0f172a', marginBottom: 8 },
+  input: {
+    width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 9, fontSize: 13.5,
+    fontFamily: 'inherit', boxSizing: 'border-box', color: '#0f172a',
+  },
+  footer: {
+    display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 20px',
+    borderTop: '1px solid #f1f5f9',
+  },
+  btnGhost: {
+    padding: '10px 18px', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer',
+    border: 'none', background: '#f1f5f9', color: '#475569',
+  },
+  btnPrimary: {
+    padding: '10px 18px', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer',
+    border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+    boxShadow: '0 8px 18px -8px rgba(99,102,241,0.7)',
+  },
+};
+
 function SavedCVDetail({ cvId, onBack }) {
   const [cvData, setCvData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -102,6 +156,8 @@ function SavedCVDetail({ cvId, onBack }) {
   const [showRefineReview, setShowRefineReview] = useState(false);
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineApplying, setRefineApplying] = useState(false);
+  const [previousSnapshot, setPreviousSnapshot] = useState(null); // one-step undo (this session)
+  const [undoing, setUndoing] = useState(false);
   const [humanityReport, setHumanityReport] = useState(null);
   const [checkingHumanity, setCheckingHumanity] = useState(false);
   const [showHumanityDetails, setShowHumanityDetails] = useState(false);
@@ -1264,6 +1320,7 @@ function SavedCVDetail({ cvId, onBack }) {
     if (!refinementResult || !refinementResult.refined_content) {
       return;
     }
+    captureUndoPoint(); // allow one-step undo of this section change
 
     if (refinementResult?.humanity?.requires_confirmation) {
       const proceed = window.confirm(
@@ -1499,8 +1556,10 @@ function SavedCVDetail({ cvId, onBack }) {
 
   const handleApplyHolistic = async () => {
     if (!refineProposal?.sections?.length) return;
+    captureUndoPoint(); // so the whole auto-refine can be undone in one step
     setRefineApplying(true);
     try {
+      // Phase 1 (fast): write the polished content into the CV. No LLM calls here.
       let accumulatedSelections = { ...nodeSelections };
       await autoSave(accumulatedSelections);
       // Apply each section through the existing merge path (mutates the shared
@@ -1515,14 +1574,16 @@ function SavedCVDetail({ cvId, onBack }) {
         cvData.content_snapshot.profile_title = refineProposal.profile_title.trim();
       }
       setNodeSelections(accumulatedSelections);
-      triggerAutoSave(accumulatedSelections, true);
       await autoSave(accumulatedSelections);
       setShowRefineReview(false);
       setRefineProposal(null);
-      await recalculateScores('all'); // re-score the polished CV
+      setRefineApplying(false);
+      // Phase 2 (slower, optional): re-score the polished CV. This runs the AI
+      // scoring models and shows its OWN step-by-step progress panel, so the user
+      // sees exactly what is happening (and the write above already feels instant).
+      recalculateScores('all').catch(() => {});
     } catch (e) {
       alert(`Apply failed: ${e.message}`);
-    } finally {
       setRefineApplying(false);
     }
   };
@@ -2483,6 +2544,49 @@ function SavedCVDetail({ cvId, onBack }) {
       alert('Failed to restore original: ' + err.message);
     } finally {
       setRestoring(false);
+    }
+  };
+
+  // One-step undo (this session): captured right before a refine / apply so the
+  // user can revert just the last change without going all the way to original.
+  const captureUndoPoint = () => {
+    if (cvData?.content_snapshot) {
+      try {
+        setPreviousSnapshot(JSON.parse(JSON.stringify(cvData.content_snapshot)));
+      } catch (e) { /* ignore */ }
+    }
+  };
+
+  const undoPrevious = async () => {
+    if (!previousSnapshot) return;
+    setUndoing(true);
+    try {
+      const token = localStorage.getItem('token');
+      const selectedNodeIds = [];
+      const collect = (nodes) => (nodes || []).forEach((n) => {
+        if (n.global_id && n.is_selected !== false) selectedNodeIds.push({ id: n.id, global_id: n.global_id });
+        if (n.children) collect(n.children);
+      });
+      collect(previousSnapshot.nodes);
+      const res = await fetch(`${API_URL}/api/tailor/${cvId}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content_snapshot: previousSnapshot, selected_node_ids: selectedNodeIds }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Undo failed'); }
+      setCvData((prev) => ({ ...prev, content_snapshot: previousSnapshot }));
+      const sel = {};
+      const build = (nodes) => (nodes || []).forEach((n) => {
+        if (n.global_id) sel[n.global_id] = n.is_selected !== false;
+        if (n.children) build(n.children);
+      });
+      build(previousSnapshot.nodes);
+      setNodeSelections(sel);
+      setPreviousSnapshot(null);
+    } catch (err) {
+      alert('Undo failed: ' + err.message);
+    } finally {
+      setUndoing(false);
     }
   };
 
@@ -4044,6 +4148,18 @@ function SavedCVDetail({ cvId, onBack }) {
                   Update Humanity Guard
                 </button>
 
+                {previousSnapshot && (
+                  <button
+                    onClick={undoPrevious}
+                    className="btn-reevaluate-secondary"
+                    disabled={undoing || restoring || recalculating || checkingHumanity}
+                    title="Revert just the last refine or edit"
+                  >
+                    {undoing ? <span className="spinner-medium"></span> : <span>↶</span>}
+                    Undo last change
+                  </button>
+                )}
+
                 {cvData.original_snapshot && (
                   <button
                     onClick={restoreOriginal}
@@ -5045,12 +5161,15 @@ function SavedCVDetail({ cvId, onBack }) {
                   <strong>AI Reasoning Mode</strong>
                 </label>
                 <div className="reasoning-help-text">
-                  Control how deeply OpenAI thinks before responding
+                  {autoRefineProvider === 'claude'
+                    ? 'Not used for Claude (Claude has no reasoning-effort setting).'
+                    : 'Control how deeply OpenAI thinks before responding'}
                 </div>
                 <select
                   id="auto-refine-reasoning-effort"
                   value={autoRefineReasoningEffort}
                   onChange={(e) => setAutoRefineReasoningEffort(e.target.value)}
+                  disabled={autoRefineProvider === 'claude'}
                   className="reasoning-effort-dropdown"
                 >
                   <option value="none">⚡ None - Fastest (No reasoning)</option>
@@ -5136,17 +5255,17 @@ function SavedCVDetail({ cvId, onBack }) {
         </div>
       )}
 
-      {/* Holistic Auto-Refine: loading overlay (generate / apply) */}
+      {/* Holistic Auto-Refine: loading overlay (generate / write) */}
       {(refineLoading || refineApplying) && (
-        <div className="modal-overlay" style={{ zIndex: 1300 }}>
-          <div className="modal" style={{ maxWidth: 420, textAlign: 'center', padding: '2rem' }}>
+        <div style={SW.backdrop}>
+          <div style={{ ...SW.card, maxWidth: 440, textAlign: 'center', padding: '2.2rem 2rem' }}>
             <div className="spinner" style={{ margin: '0 auto 1rem' }} />
-            <h3 style={{ margin: '0 0 0.4rem' }}>
-              {refineApplying ? 'Applying polished CV…' : 'Polishing your whole CV…'}
+            <h3 style={{ margin: '0 0 0.4rem', fontSize: 18 }}>
+              {refineApplying ? 'Saving the polished CV…' : 'Polishing your whole CV…'}
             </h3>
             <p style={{ color: '#64748b', fontSize: 14, margin: 0 }}>
               {refineApplying
-                ? 'Writing the changes and recalculating your scores.'
+                ? 'Writing the changes to your CV. Scores will update next.'
                 : `Reading the whole CV and the role with ${autoRefineProvider === 'claude' ? 'Claude' : 'OpenAI'}. This can take a moment.`}
             </p>
           </div>
@@ -5155,67 +5274,76 @@ function SavedCVDetail({ cvId, onBack }) {
 
       {/* Holistic Auto-Refine: review-then-apply */}
       {showRefineReview && refineProposal && (
-        <div className="modal-overlay" onClick={() => setShowRefineReview(false)}>
-          <div className="modal" style={{ maxWidth: 760, width: '94%', maxHeight: '90vh', overflowY: 'auto' }}
+        <div style={SW.backdrop} onClick={() => setShowRefineReview(false)}>
+          <div style={{ ...SW.card, maxWidth: 800, width: '94%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
             onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0 }}>✨ Review polished CV</h2>
-              <button className="modal-close" onClick={() => setShowRefineReview(false)}
-                style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>✕</button>
+            {/* Header */}
+            <div style={SW.header}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={SW.chip}>✨</div>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>Review polished CV</div>
+                  <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.9)' }}>
+                    {refineProposal.sections.length} section{refineProposal.sections.length === 1 ? '' : 's'} updated
+                    {refineProposal?.runtime?.resolved_model ? ` · via ${refineProposal.runtime.resolved_model}` : ''}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowRefineReview(false)} style={SW.close} aria-label="Close">✕</button>
             </div>
-            <div className="modal-body" style={{ padding: '0.5rem 0' }}>
-              <p style={{ color: '#475569', fontSize: 14, marginTop: 0 }}>
-                Edit anything below, untick nothing is removed unintentionally, then apply. Your
-                original is kept so you can always restore it.
-                {refineProposal?.runtime?.resolved_model ? ` (via ${refineProposal.runtime.resolved_model})` : ''}
+
+            {/* Scrollable body */}
+            <div style={{ padding: '16px 20px', overflowY: 'auto' }}>
+              <p style={{ color: '#475569', fontSize: 13.5, margin: '0 0 14px', lineHeight: 1.5 }}>
+                Edit any wording below, then apply. Nothing is written until you click Apply, and your
+                original is always kept so you can restore or undo.
               </p>
 
               {refineProposal.changes_summary && (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#334155', marginBottom: 12 }}>
-                  {refineProposal.changes_summary}
-                </div>
+                <div style={SW.note}>{refineProposal.changes_summary}</div>
               )}
 
               {(refineProposal.removed_or_merged || []).length > 0 && (
-                <details style={{ marginBottom: 12 }}>
+                <details style={{ marginBottom: 14 }}>
                   <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#0e7490' }}>
                     Merged / removed ({refineProposal.removed_or_merged.length})
                   </summary>
-                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13, color: '#475569' }}>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
                     {refineProposal.removed_or_merged.map((r, i) => <li key={i}>{r}</li>)}
                   </ul>
                 </details>
               )}
 
               {refineProposal.humanity && refineProposal.humanity.risk_level && refineProposal.humanity.risk_level !== 'low' && (
-                <div style={{ background: '#fef3c7', color: '#92400e', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 12 }}>
+                <div style={SW.warn}>
                   ⚠ This reads a little AI-ish (humanity {refineProposal.humanity.score}). Tweak any line that feels off.
                 </div>
               )}
 
               {refineProposal.profile_title && (
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Profile title</label>
+                <div style={SW.sectionCard}>
+                  <div style={SW.sectionHead}>Profile title</div>
                   <input value={refineProposal.profile_title}
                     onChange={(e) => setRefineProposal((p) => ({ ...p, profile_title: e.target.value }))}
-                    style={{ width: '100%', padding: '9px 11px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }} />
+                    style={SW.input} />
                 </div>
               )}
 
               {refineProposal.sections.map((s, i) => (
-                <div key={i} style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 4, color: '#0f172a' }}>{s.heading}</label>
+                <div key={i} style={SW.sectionCard}>
+                  <div style={SW.sectionHead}>{s.heading || `Section ${i + 1}`}</div>
                   <textarea value={s.refined_markdown}
                     onChange={(e) => updateProposalSection(i, e.target.value)}
-                    style={{ width: '100%', minHeight: 120, padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 10, fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }} />
+                    style={{ ...SW.input, minHeight: 130, lineHeight: 1.55, fontFamily: 'ui-monospace, Menlo, monospace', resize: 'vertical' }} />
                 </div>
               ))}
             </div>
-            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn-cancel" onClick={() => setShowRefineReview(false)}>Cancel</button>
-              <button className="btn-start-refine" onClick={handleApplyHolistic} disabled={refineApplying}>
-                <span className="btn-icon">✓</span>
-                <span>Apply polished CV</span>
+
+            {/* Footer */}
+            <div style={SW.footer}>
+              <button onClick={() => setShowRefineReview(false)} style={SW.btnGhost}>Cancel</button>
+              <button onClick={handleApplyHolistic} disabled={refineApplying} style={SW.btnPrimary}>
+                ✓ Apply polished CV
               </button>
             </div>
           </div>
