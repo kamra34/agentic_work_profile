@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './SkillWeaveModal.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -12,6 +12,10 @@ const STEP_INDEX = { model: 0, input: 1, clarify: 1, review: 2 };
 function SkillWeaveModal({ profileId, onClose, onApplied }) {
   const [stage, setStage] = useState('model'); // model | input | clarify | review
   const [provider, setProvider] = useState(null);
+  // Effort: OpenAI reasoning (none/low/medium/high) and Claude thinking (off/low/medium/high/max).
+  // Seeded from the user's AI Settings; the user can override here for this run.
+  const [openaiReasoning, setOpenaiReasoning] = useState('medium');
+  const [claudeEffort, setClaudeEffort] = useState('high');
   const [skills, setSkills] = useState([{ name: '', context: '' }]);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState([]); // accumulated [{question, answer}]
@@ -28,6 +32,19 @@ function SkillWeaveModal({ profileId, onClose, onApplied }) {
     'Content-Type': 'application/json',
   });
 
+  // Seed the effort selectors from the user's saved AI Settings.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/user/ai-settings`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.openai_reasoning_effort) setOpenaiReasoning(data.openai_reasoning_effort);
+        if (data.claude_effort) setClaudeEffort(data.claude_effort);
+      } catch { /* keep defaults */ }
+    })();
+  }, []);
+
   const callPropose = async (allAnswers) => {
     setLoading(true);
     setError('');
@@ -39,6 +56,8 @@ function SkillWeaveModal({ profileId, onClose, onApplied }) {
           provider,
           skills: skills.filter((s) => s.name.trim()),
           answers: allAnswers || [],
+          reasoning_effort: openaiReasoning,  // used when provider=openai
+          claude_effort: claudeEffort,        // used when provider=claude
         }),
       });
       const data = await res.json();
@@ -126,27 +145,62 @@ function SkillWeaveModal({ profileId, onClose, onApplied }) {
 
         {error && <div className="sw-error">⚠️ {error}</div>}
 
-        {/* Stage 1: model */}
+        {/* Stage 1: model + effort */}
         {stage === 'model' && (
           <>
             <div className="sw-body">
               <p className="sw-lead">Which model should weave this skill into your profile?</p>
               <div className="sw-models">
-                <button className="sw-model openai" onClick={() => { setProvider('openai'); setStage('input'); }}>
+                <button className={`sw-model openai ${provider === 'openai' ? 'is-selected' : ''}`}
+                  onClick={() => setProvider('openai')}
+                  style={provider === 'openai' ? { outline: '2px solid #10a37f', outlineOffset: '2px' } : undefined}>
                   <div className="sw-model__icon">🤖</div>
                   <span className="sw-model__name">OpenAI</span>
                   <span className="sw-model__desc">Your OpenAI model</span>
                 </button>
-                <button className="sw-model claude" onClick={() => { setProvider('claude'); setStage('input'); }}>
+                <button className={`sw-model claude ${provider === 'claude' ? 'is-selected' : ''}`}
+                  onClick={() => setProvider('claude')}
+                  style={provider === 'claude' ? { outline: '2px solid #d97757', outlineOffset: '2px' } : undefined}>
                   <div className="sw-model__icon">🧠</div>
                   <span className="sw-model__name">Claude</span>
                   <span className="sw-model__desc">Your Claude model</span>
                 </button>
               </div>
+
+              {provider && (
+                <div className="sw-skill" style={{ marginTop: '1rem' }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                    🧠 {provider === 'claude' ? 'Claude Thinking Effort' : 'OpenAI Reasoning Effort'}
+                  </label>
+                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: '0.25rem 0 0.4rem' }}>
+                    {provider === 'claude'
+                      ? 'How deeply Claude thinks (same levels as claude.ai). Defaults to your AI Settings.'
+                      : 'How deeply OpenAI reasons before responding. Defaults to your AI Settings.'}
+                  </p>
+                  {provider === 'claude' ? (
+                    <select className="sw-input" value={claudeEffort} onChange={(e) => setClaudeEffort(e.target.value)}>
+                      <option value="off">Off - No thinking (fastest)</option>
+                      <option value="low">Low - Quick thinking</option>
+                      <option value="medium">Medium - Balanced</option>
+                      <option value="high">High - Deep thinking</option>
+                      <option value="max">Max - Most thorough (slowest)</option>
+                    </select>
+                  ) : (
+                    <select className="sw-input" value={openaiReasoning} onChange={(e) => setOpenaiReasoning(e.target.value)}>
+                      <option value="none">None - Fastest (no reasoning)</option>
+                      <option value="low">Low - Quick reasoning</option>
+                      <option value="medium">Medium - Balanced</option>
+                      <option value="high">High - Deep thinking</option>
+                    </select>
+                  )}
+                </div>
+              )}
             </div>
             <div className="sw-footer">
-              <span />
               <button className="sw-btn sw-btn--ghost" onClick={onClose}>Cancel</button>
+              <button className="sw-btn sw-btn--primary" disabled={!provider} onClick={() => setStage('input')}>
+                Continue →
+              </button>
             </div>
           </>
         )}

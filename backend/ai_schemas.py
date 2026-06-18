@@ -266,8 +266,13 @@ SKILL_WEAVE_SCHEMA = {
 
 
 # ============================================================================
-# Refine-All Schema (one holistic, deduped, tailored rewrite of the whole CV)
+# Refine-All Schema (holistic, deduped, tailored rewrite that PRESERVES structure)
 # ============================================================================
+# The model returns structured edits keyed by existing node ids, never free-form
+# markdown. We keep every section title and every entry header (job title, employer,
+# dates, location) EXACTLY as they are and only swap in refined bullet/paragraph
+# content. This guarantees the rendered formatting of experience/education/etc.
+# stays identical; the model can still merge, edit, sort, drop, and add items.
 
 REFINE_ALL_SCHEMA = {
     "type": "object",
@@ -281,15 +286,32 @@ REFINE_ALL_SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["node_id", "heading", "refined_markdown"],
+                "required": ["node_id", "direct_kind", "direct_items", "entries"],
                 "properties": {
-                    # The existing section node id (from its [#id] tag).
+                    # Existing SECTION node id (from its [#id section] tag).
                     "node_id": {"type": "integer"},
-                    "heading": {"type": "string"},
-                    # Final content for this section as markdown: a tight paragraph
-                    # for the summary, "- bullets" for skills, or
-                    # "### Title · Company · dates\n- bullets" entries for experience.
-                    "refined_markdown": {"type": "string"}
+                    # Shape of this section's DIRECT content (content not inside an entry):
+                    #   "paragraph" -> direct_items holds ONE tight paragraph (e.g. a summary)
+                    #   "bullets"   -> direct_items holds bullet lines (e.g. core skills)
+                    #   "none"      -> the section's content lives in `entries` instead
+                    "direct_kind": {"type": "string", "enum": ["paragraph", "bullets", "none"]},
+                    "direct_items": {"type": "array", "items": {"type": "string"}},
+                    # Entry-bearing sections (experience/education/projects). Each entry's
+                    # header is kept verbatim; only its bullets are refined. Order here is
+                    # the final order; omit an entry to drop it.
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["node_id", "bullets"],
+                            "properties": {
+                                # Existing ENTRY node id (from its [#id entry] tag).
+                                "node_id": {"type": "integer"},
+                                "bullets": {"type": "array", "items": {"type": "string"}}
+                            }
+                        }
+                    }
                 }
             }
         },

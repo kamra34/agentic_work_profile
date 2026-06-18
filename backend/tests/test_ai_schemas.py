@@ -207,7 +207,7 @@ class TestOpenAIStrictMode:
 
 
 class TestRefineAllSchema:
-    """Validate REFINE_ALL_SCHEMA structure."""
+    """Validate REFINE_ALL_SCHEMA structure (structure-preserving, node-id keyed)."""
 
     def test_top_level_fields(self):
         required = REFINE_ALL_SCHEMA.get("required", [])
@@ -217,10 +217,22 @@ class TestRefineAllSchema:
     def test_section_item_fields(self):
         item = REFINE_ALL_SCHEMA["properties"]["sections"]["items"]
         assert item.get("additionalProperties") is False
-        for field in ["node_id", "heading", "refined_markdown"]:
+        for field in ["node_id", "direct_kind", "direct_items", "entries"]:
             assert field in item["properties"]
             assert field in item["required"]
         assert item["properties"]["node_id"]["type"] == "integer"
+
+    def test_direct_kind_enum(self):
+        direct_kind = REFINE_ALL_SCHEMA["properties"]["sections"]["items"]["properties"]["direct_kind"]
+        assert set(direct_kind["enum"]) == {"paragraph", "bullets", "none"}
+
+    def test_entry_item_fields(self):
+        entry = REFINE_ALL_SCHEMA["properties"]["sections"]["items"]["properties"]["entries"]["items"]
+        assert entry.get("additionalProperties") is False
+        for field in ["node_id", "bullets"]:
+            assert field in entry["properties"]
+            assert field in entry["required"]
+        assert entry["properties"]["node_id"]["type"] == "integer"
 
     def test_profile_title_nullable(self):
         assert "anyOf" in REFINE_ALL_SCHEMA["properties"]["profile_title"]

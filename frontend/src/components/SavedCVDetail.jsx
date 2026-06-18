@@ -428,15 +428,17 @@ function SavedCVDetail({ cvId, onBack }) {
   };
 
   // Autosave function
-  const autoSave = async (selectionsToSave = null) => {
+  const autoSave = async (selectionsToSave = null, snapshotToSave = null) => {
     try {
       const selections = selectionsToSave || nodeSelections;
 
-      // CRITICAL: Use the current nodes from cvData (which includes edits)
-      // and only update the is_selected property, preserving all other changes
+      // CRITICAL: Use the current nodes (which include edits). Callers that just
+      // rebuilt the tree (e.g. holistic apply) pass it explicitly to avoid relying
+      // on async setCvData having flushed yet.
+      const baseSnapshot = snapshotToSave || cvData.content_snapshot;
       const updatedSnapshot = {
-        ...cvData.content_snapshot,
-        nodes: updateNodesWithSelections(cvData.content_snapshot.nodes, selections)
+        ...baseSnapshot,
+        nodes: updateNodesWithSelections(baseSnapshot.nodes, selections)
       };
 
       // Count selected nodes for verification
@@ -464,7 +466,7 @@ function SavedCVDetail({ cvId, onBack }) {
           }
         });
       };
-      collectSelectedIds(cvData.content_snapshot.nodes);
+      collectSelectedIds(baseSnapshot.nodes);
 
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/tailor/${cvId}`, {
@@ -1528,6 +1530,21 @@ function SavedCVDetail({ cvId, onBack }) {
     return null;
   };
 
+  // Read-only entry header label for the review UI (matches the backend renderer).
+  const formatEntryHeader = (n) => {
+    if (!n) return '';
+    const parts = [];
+    if (n.title) parts.push(n.title);
+    if (n.subtitle) parts.push(n.subtitle);
+    const s = (n.start_date || '').trim();
+    const e = (n.end_date || '').trim();
+    if (s && e) parts.push(`${s}–${e}`);
+    else if (s) parts.push(`${s}–Present`);
+    else if (e) parts.push(e);
+    if (n.location) parts.push(n.location);
+    return parts.join(' · ');
+  };
+
   // Holistic Auto-Refine: ONE pass over the whole selected CV (dedup across
   // sections, merge, unify the summary, tailor, human voice). Returns a proposal
   // the user reviews/edits before applying.
@@ -1552,7 +1569,7 @@ function SavedCVDetail({ cvId, onBack }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Auto-refine failed');
-      setRefineProposal(data);
+      setRefineProposal(prepareProposalForEdit(data));
       setShowRefineReview(true);
     } catch (e) {
       alert(`Auto-refine failed: ${e.message}`);
@@ -1561,40 +1578,143 @@ function SavedCVDetail({ cvId, onBack }) {
     }
   };
 
-  const updateProposalSection = (idx, value) => {
-    setRefineProposal((prev) => ({
-      ...prev,
-      sections: prev.sections.map((s, i) => (i === idx ? { ...s, refined_markdown: value } : s)),
+  // Seed editable text fields on the structured proposal so the review UI can edit
+  // bullets/paragraphs as plain text while we keep the underlying node structure.
+  const prepareProposalForEdit = (data) => {
+    if (!data || !Array.isArray(data.sections)) return data;
+    return {
+      ...data,
+      sections: data.sections.map((s) => ({
+        ...s,
+        direct_text: (s.direct_items || []).join('\n'),
+        entries: (s.entries || []).map((e) => ({ ...e, bullets_text: (e.bullets || []).join('\n') })),
+      })),
+    };
+  };
+
+  const updateProposalDirectText = (sIdx, value) => {
+    setRefineProposal((p) => ({
+      ...p,
+      sections: p.sections.map((s, i) => (i === sIdx ? { ...s, direct_text: value } : s)),
     }));
   };
 
+  const updateProposalEntryText = (sIdx, eIdx, value) => {
+    setRefineProposal((p) => ({
+      ...p,
+      sections: p.sections.map((s, i) => (i !== sIdx ? s : {
+        ...s,
+        entries: s.entries.map((e, j) => (j === eIdx ? { ...e, bullets_text: value } : e)),
+      })),
+    }));
+  };
+
+  // Split an edited textarea into clean bullet lines (drop list markers + blanks).
+  const splitBulletLines = (txt) =>
+    String(txt || '')
+      .split('\n')
+      .map((l) => l.replace(/^\s*[-*•]\s*/, '').trim())
+      .filter(Boolean);
+
+  // Apply the structure-preserving proposal. We KEEP every section title and every
+  // entry header (job title, employer, dates, location) exactly as they are now, and
+  // only swap in the refined bullets/paragraphs. Entries are matched to the existing
+  // snapshot by node_id; entries the model omitted are dropped.
   const handleApplyHolistic = async () => {
     if (!refineProposal?.sections?.length) return;
     captureUndoPoint(); // so the whole auto-refine can be undone in one step
     setRefineApplying(true);
     try {
-      // Phase 1 (fast): write the polished content into the CV. No LLM calls here.
-      let accumulatedSelections = { ...nodeSelections };
-      await autoSave(accumulatedSelections);
-      // Apply each section through the existing merge path (mutates the shared
-      // content_snapshot.nodes, so sequential applies accumulate).
+      let idSeed = Date.now();
+      const nextId = () => (idSeed += 1);
+      const bulletNode = (content) => {
+        const id = nextId();
+        return { id, global_id: `ai-refined-bullet-${id}`, node_type: 'bullet', content, is_selected: true, ai_refined: true, children: [] };
+      };
+      const paragraphNode = (content) => {
+        const id = nextId();
+        return { id, global_id: `ai-refined-paragraph-${id}`, node_type: 'paragraph', content, is_selected: true, ai_refined: true, children: [] };
+      };
+
+      // Work on a deep copy of the snapshot so headers stay intact and we never mutate
+      // shared state mid-flight.
+      const snapshot = JSON.parse(JSON.stringify(cvData.content_snapshot));
+      const origById = {};
+      const indexNodes = (nodes) => (nodes || []).forEach((n) => {
+        if (n.id != null) origById[n.id] = n;
+        if (n.children) indexNodes(n.children);
+      });
+      indexNodes(snapshot.nodes);
+
+      // A node the user has deselected (not shown to the model) — preserve it as-is.
+      const isUnselected = (c) =>
+        c.is_selected === false || (c.global_id && nodeSelections[c.global_id] === false);
+      const isContent = (c) => ['bullet', 'paragraph', 'item'].includes(c.node_type);
+
       for (const sec of refineProposal.sections) {
-        const node = findNodeById(cvData.content_snapshot.nodes, sec.node_id);
-        if (!node || !(sec.refined_markdown || '').trim()) continue;
-        accumulatedSelections = await autoIncludeRefinedContent(node, sec.refined_markdown, accumulatedSelections);
+        const sectionNode = findNodeById(snapshot.nodes, sec.node_id);
+        if (!sectionNode) continue;
+        const originalChildren = sectionNode.children || [];
+
+        let newChildren = [];
+        if ((sec.entries || []).length > 0) {
+          const usedIds = new Set();
+          for (const e of sec.entries) {
+            const orig = origById[e.node_id];
+            if (!orig || orig.node_type !== 'entry') continue; // never invent an entry header
+            usedIds.add(e.node_id);
+            const bullets = splitBulletLines(e.bullets_text != null ? e.bullets_text : (e.bullets || []).join('\n'));
+            const origKids = orig.children || [];
+            newChildren.push({
+              ...orig, // keep id/global_id/title/subtitle/dates/location verbatim
+              ai_refined: true,
+              is_selected: true,
+              children: [
+                ...origKids.filter((c) => !isContent(c)),                 // nested structure kept
+                ...bullets.map(bulletNode),                               // refined selected bullets
+                ...origKids.filter((c) => isContent(c) && isUnselected(c)), // deselected bullets preserved
+              ],
+            });
+          }
+          // Preserve deselected entries (and any deselected non-entry children) the model didn't touch.
+          const preserved = originalChildren.filter((c) => !usedIds.has(c.id) && isUnselected(c));
+          newChildren = [...newChildren, ...preserved];
+        } else if (sec.direct_kind === 'bullets') {
+          const refined = splitBulletLines(sec.direct_text != null ? sec.direct_text : (sec.direct_items || []).join('\n')).map(bulletNode);
+          newChildren = [...refined, ...originalChildren.filter(isUnselected)];
+        } else if (sec.direct_kind === 'paragraph') {
+          const text = String(sec.direct_text != null ? sec.direct_text : (sec.direct_items || []).join('\n')).trim();
+          const refined = text ? [paragraphNode(text)] : [];
+          newChildren = [...refined, ...originalChildren.filter(isUnselected)];
+        } else {
+          continue; // nothing usable for this section
+        }
+
+        if (newChildren.length === 0) continue;
+        sectionNode.children = newChildren;
+        sectionNode.is_selected = true;
       }
+
       // Optional headline/title edit.
-      if (refineProposal.profile_title && refineProposal.profile_title.trim() && cvData.content_snapshot) {
-        cvData.content_snapshot.profile_title = refineProposal.profile_title.trim();
+      if (refineProposal.profile_title && refineProposal.profile_title.trim()) {
+        snapshot.profile_title = refineProposal.profile_title.trim();
       }
-      setNodeSelections(accumulatedSelections);
-      await autoSave(accumulatedSelections);
+
+      // Everything remaining in the tree is part of the polished CV -> selected.
+      const newSelections = {};
+      const collect = (nodes) => (nodes || []).forEach((n) => {
+        if (n.global_id) newSelections[n.global_id] = n.is_selected !== false;
+        if (n.children) collect(n.children);
+      });
+      collect(snapshot.nodes);
+
+      setCvData((prev) => ({ ...prev, content_snapshot: snapshot }));
+      setNodeSelections(newSelections);
+      await autoSave(newSelections, snapshot); // persist the rebuilt tree explicitly
       setShowRefineReview(false);
       setRefineProposal(null);
       setRefineApplying(false);
-      // Phase 2 (slower, optional): re-score the polished CV. This runs the AI
-      // scoring models and shows its OWN step-by-step progress panel, so the user
-      // sees exactly what is happening (and the write above already feels instant).
+      // Phase 2 (optional): re-score the polished CV with its own progress panel.
       recalculateScores('all').catch(() => {});
     } catch (e) {
       alert(`Apply failed: ${e.message}`);
@@ -5479,14 +5599,42 @@ function SavedCVDetail({ cvId, onBack }) {
                 </div>
               )}
 
-              {refineProposal.sections.map((s, i) => (
-                <div key={i} style={SW.sectionCard}>
-                  <div style={SW.sectionHead}>{s.heading || `Section ${i + 1}`}</div>
-                  <textarea value={s.refined_markdown}
-                    onChange={(e) => updateProposalSection(i, e.target.value)}
-                    style={{ ...SW.input, minHeight: 130, lineHeight: 1.55, fontFamily: 'ui-monospace, Menlo, monospace', resize: 'vertical' }} />
-                </div>
-              ))}
+              {refineProposal.sections.map((s, i) => {
+                const sectionNode = cvData?.content_snapshot ? findNodeById(cvData.content_snapshot.nodes, s.node_id) : null;
+                const hasEntries = Array.isArray(s.entries) && s.entries.length > 0;
+                return (
+                  <div key={i} style={SW.sectionCard}>
+                    <div style={SW.sectionHead}>{sectionNode?.title || `Section ${i + 1}`}</div>
+                    {hasEntries ? (
+                      s.entries.map((e, j) => {
+                        const entryNode = cvData?.content_snapshot ? findNodeById(cvData.content_snapshot.nodes, e.node_id) : null;
+                        return (
+                          <div key={j} style={{ marginBottom: 12 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a', marginBottom: 4 }}>
+                              {formatEntryHeader(entryNode) || `Entry ${j + 1}`}
+                              <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: 11 }}> · header kept as-is</span>
+                            </div>
+                            <textarea value={e.bullets_text}
+                              onChange={(ev) => updateProposalEntryText(i, j, ev.target.value)}
+                              placeholder="One bullet per line"
+                              style={{ ...SW.input, minHeight: 88, lineHeight: 1.55, resize: 'vertical' }} />
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <textarea value={s.direct_text}
+                        onChange={(ev) => updateProposalDirectText(i, ev.target.value)}
+                        placeholder={s.direct_kind === 'paragraph' ? 'Summary paragraph' : 'One item per line'}
+                        style={{ ...SW.input, minHeight: s.direct_kind === 'paragraph' ? 90 : 110, lineHeight: 1.55, resize: 'vertical' }} />
+                    )}
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                      {hasEntries
+                        ? 'Edit the bullets. Job title, employer, dates and location stay exactly as they are.'
+                        : (s.direct_kind === 'paragraph' ? 'Edit the summary paragraph.' : 'Edit the items, one per line.')}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Footer */}

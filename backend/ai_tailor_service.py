@@ -2517,6 +2517,10 @@ REFINE_ALL_SYSTEM = (
 
 REFINE_ALL_PROMPT = """Polish this whole CV into a final, tailored, apply-ready version for the job below.
 
+You return STRUCTURED edits, not free text. We keep every section title and every entry
+header (job title, employer, dates, location) EXACTLY as they are now. You only refine the
+bullet / paragraph CONTENT, and decide what to keep, merge, drop, add, and in what order.
+
 JOB DESCRIPTION:
 {job_description}
 
@@ -2526,18 +2530,25 @@ WHAT THE ROLE NEEDS (extracted requirements):
 THE CURRENT SELECTED CV (indented outline; each line tagged [#<id> <type>]):
 {cv_outline}
 {instructions_block}{length_block}
-Produce the final CV section by section. For each section in the CV, return one entry with:
-- node_id: the section's [#id].
-- heading: the section title (you may tidy it).
-- refined_markdown: the final content for that section as markdown:
-    * Professional summary -> ONE tight paragraph, 3 to 4 short sentences. No bullets.
-    * Skills -> short "- " bullet lines, grouped sensibly, no duplicates.
-    * Experience -> for each job a header line "### <Title> · <Company> · <dates> · <location>" then "- " bullets under it.
+Return a "sections" list. For EACH section node ([#<id> section]) in the CV add one object:
+- node_id: that section's [#id].
+- If the section is built from ENTRIES ([#<id> entry], e.g. work experience, education, projects):
+    * set direct_kind = "none" and direct_items = [].
+    * set entries = the entries to KEEP, in their final order, each as:
+        {{ "node_id": the entry's [#id], "bullets": [the entry's final bullet lines] }}
+    * To DROP an entry, leave it out. To REORDER, change the order in the list.
+    * NEVER restate or change an entry header; we keep its title, employer, dates, and location as-is.
+    * Refine each entry's bullets: tighten, merge near-duplicates, sort strongest first, drop weak or
+      off-topic ones, and you MAY move a bullet to a more fitting entry. Use ONLY facts already in the CV.
+- If the section is a SUMMARY / PROFILE paragraph:
+    * set direct_kind = "paragraph", direct_items = [ONE tight paragraph, 3 to 4 short sentences], entries = [].
+- If the section is a list of SKILLS / short bullet lines:
+    * set direct_kind = "bullets", direct_items = [the final, deduped, sorted bullet lines], entries = [].
 
 Hard rules:
-- Tailor wording to the role, but use ONLY facts already in the CV. If a fact is not there, do not add it.
-- Remove duplicates ACROSS the whole CV. If the same point appears twice, keep the strongest once. Merge near-identical bullets.
-- Sort each section so the most role-relevant items come first. Drop weak, off-topic, or repeated items.
+- Use ONLY facts already in the CV. Never invent a number, date, employer, tool, or scope.
+- Remove duplicates ACROSS the whole CV. Keep the strongest once. Merge near-identical bullets.
+- Sort items so the most role-relevant come first. Drop weak, off-topic, or repeated items.
 - Keep it honest and human: short sentences (about 12 to 18 words), first person, plain words.
 - No em-dashes. No "--". Avoid words like leveraged, spearheaded, results-driven, passionate about, proven track record, cutting-edge, synergy, dynamic professional.
 - You may improve profile_title to fit the role (human, plain), or set it to null to leave it.
@@ -2546,20 +2557,53 @@ Hard rules:
 
 
 def _finalize_refine_all(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize the holistic refinement payload and strip AI dashes from all text."""
+    """
+    Normalize the structure-preserving holistic payload: keep node ids, strip AI
+    dashes from every bullet/paragraph, and drop empty items. Section and entry
+    headers are intentionally NOT carried here, the frontend keeps them verbatim
+    from the existing snapshot by node_id so formatting never changes.
+    """
     sections = []
     for s in (data.get("sections") or []):
         if not isinstance(s, dict):
             continue
         node_id = _coerce_int_or_none(s.get("node_id"))
-        md = strip_ai_dashes(str(s.get("refined_markdown", "")).strip())
-        if node_id is None or not md:
+        if node_id is None:
+            continue
+
+        direct_kind = str(s.get("direct_kind", "none")).strip().lower()
+        if direct_kind not in {"paragraph", "bullets", "none"}:
+            direct_kind = "none"
+        direct_items = [
+            strip_ai_dashes(x)
+            for x in _safe_list_of_strings(s.get("direct_items"), max_items=80, max_len=800)
+        ]
+        direct_items = [x for x in direct_items if x.strip()]
+
+        entries = []
+        for e in (s.get("entries") or []):
+            if not isinstance(e, dict):
+                continue
+            entry_id = _coerce_int_or_none(e.get("node_id"))
+            if entry_id is None:
+                continue
+            bullets = [
+                strip_ai_dashes(b)
+                for b in _safe_list_of_strings(e.get("bullets"), max_items=40, max_len=800)
+            ]
+            bullets = [b for b in bullets if b.strip()]
+            entries.append({"node_id": entry_id, "bullets": bullets})
+
+        # Skip a section that produced nothing usable.
+        if not direct_items and not entries:
             continue
         sections.append({
             "node_id": node_id,
-            "heading": str(s.get("heading", "")).strip(),
-            "refined_markdown": md,
+            "direct_kind": direct_kind,
+            "direct_items": direct_items,
+            "entries": entries,
         })
+
     title = data.get("profile_title")
     title = strip_ai_dashes(str(title).strip()) if title else None
     return {
@@ -2568,6 +2612,16 @@ def _finalize_refine_all(data: Dict[str, Any]) -> Dict[str, Any]:
         "removed_or_merged": _safe_list_of_strings(data.get("removed_or_merged"), max_items=30, max_len=300),
         "changes_summary": str(data.get("changes_summary", "")).strip()[:600],
     }
+
+
+def _refine_all_text_for_guards(payload: Dict[str, Any]) -> str:
+    """Flatten refined bullets/paragraphs into plain text for humanity/integrity checks."""
+    parts: List[str] = []
+    for s in payload.get("sections", []):
+        parts.extend(s.get("direct_items", []))
+        for entry in s.get("entries", []):
+            parts.extend(entry.get("bullets", []))
+    return "\n".join(p for p in parts if p)
 
 
 def refine_full_cv(
@@ -2651,7 +2705,7 @@ def refine_full_cv(
             reasoning_used = resolved_reasoning if _uses_reasoning(requested_model) else ""
 
         payload = _finalize_refine_all(data)
-        refined_text = "\n\n".join(f"{s['heading']}\n{s['refined_markdown']}" for s in payload["sections"])
+        refined_text = _refine_all_text_for_guards(payload)
         payload["integrity"] = audit_refinement(full_cv_text or " ", refined_text, profile_corpus=full_cv_text)
         hum = evaluate_humanity_hybrid(
             refined_text, source_text=full_cv_text,

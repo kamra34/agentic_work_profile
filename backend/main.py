@@ -2961,6 +2961,8 @@ async def skill_weave_propose(
         require_openai=(provider == "openai"),
         require_claude=(provider == "claude"),
     )
+    effective_reasoning = _effective_reasoning_effort(request, ai_settings)
+    effective_claude_effort = _effective_claude_effort(request, ai_settings)
 
     root_nodes = db.query(ProfileNode).filter(
         ProfileNode.profile_id == profile_id,
@@ -2985,8 +2987,8 @@ async def skill_weave_propose(
         profile_corpus=profile_corpus,
         answers=answers,
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
-        reasoning_effort=ai_settings["openai_reasoning_effort"],
-        claude_effort=ai_settings["claude_effort"],
+        reasoning_effort=effective_reasoning,
+        claude_effort=effective_claude_effort,
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
     )
     if not result.get("success"):
