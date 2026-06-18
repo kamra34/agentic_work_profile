@@ -862,18 +862,18 @@ function CVDetailView({ cv, onBack, onUpdate }) {
     if (hasOpenAI && hasClaude) {
       return (
         <span className="ai-badge ai-badge-both" title="Recommended by both AI models">
-          🟢 OpenAI GPT-5.1 + 🔵 Claude
+          🟢 OpenAI + 🔵 Claude
         </span>
       );
     } else if (hasOpenAI) {
       return (
-        <span className="ai-badge ai-badge-openai" title="Recommended by OpenAI GPT-5.1">
-          🟢 OpenAI GPT-5.1
+        <span className="ai-badge ai-badge-openai" title="Recommended by OpenAI">
+          🟢 OpenAI
         </span>
       );
     } else if (hasClaude) {
       return (
-        <span className="ai-badge ai-badge-claude" title="Recommended by Claude Sonnet">
+        <span className="ai-badge ai-badge-claude" title="Recommended by Claude">
           🔵 Claude
         </span>
       );
@@ -1045,7 +1045,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
               <div className="ai-reasoning-section">
                 {entry.reasoning.openai && (
                   <div className="ai-reasoning-item">
-                    <strong>🟢 OpenAI GPT-5.1:</strong> {entry.reasoning.openai}
+                    <strong>🟢 OpenAI:</strong> {entry.reasoning.openai}
                   </div>
                 )}
                 {entry.reasoning.claude && (
@@ -1260,7 +1260,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
             <h3>Selected Content for This CV</h3>
             <p className="content-subtitle">Only showing AI-recommended items for this job</p>
             <div className="ai-legend">
-              <span className="legend-compact">🟢 OpenAI GPT-5.1</span>
+              <span className="legend-compact">🟢 OpenAI</span>
               <span className="legend-compact">🔵 Claude</span>
               <span className="legend-compact">🟢🔵 Both agree</span>
             </div>
@@ -1321,7 +1321,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 transition: 'all 0.3s ease'
               }}
             >
-              🟢 OpenAI GPT-5.1 Analysis
+              🟢 OpenAI Analysis
             </button>
             <button
               onClick={() => setPreviewMode('claude')}
@@ -1364,7 +1364,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 return (
                   <div>
                     <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.5rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      🟢 OpenAI GPT-5.1 Job Requirements Analysis
+                      🟢 {(openaiAnalysis?.runtime?.resolved_model || openaiAnalysis?.model || 'OpenAI').replace(/^openai-/i, '')} Job Requirements Analysis
                     </h3>
                     {renderAnalysisSection('Job Category & Level',
                       `${openaiAnalysis.analysis.job_category || openaiAnalysis.analysis['Job Category'] || 'N/A'} - ${openaiAnalysis.analysis.job_level || openaiAnalysis.analysis['Job Level'] || 'N/A'}`
@@ -1402,7 +1402,7 @@ function CVDetailView({ cv, onBack, onUpdate }) {
                 return (
                   <div>
                     <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.5rem', fontWeight: 700, color: '#4f46e5', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      🔵 Anthropic Claude Sonnet 4.5 Job Requirements Analysis
+                      🔵 {(claudeAnalysis?.runtime?.resolved_model || claudeAnalysis?.model || 'Claude').replace(/^anthropic-/i, '')} Job Requirements Analysis
                     </h3>
                     {renderAnalysisSection('Job Category & Level',
                       `${claudeAnalysis.analysis.job_category || claudeAnalysis.analysis['Job Category'] || 'N/A'} - ${claudeAnalysis.analysis.job_level || claudeAnalysis.analysis['Job Level'] || 'N/A'}`

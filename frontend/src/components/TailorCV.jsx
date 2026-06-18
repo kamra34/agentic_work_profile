@@ -1387,13 +1387,11 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
   // Helper functions for model info display
   const getModelDisplayName = (analysisOrScore) => {
     if (!analysisOrScore) return 'Loading...';
-    const model = analysisOrScore.model || '';
-
-    if (model.includes('gpt-5.1') || model.includes('gpt5.1')) return 'GPT-5.1 Thinking';
-    if (model.includes('gpt-4o')) return 'GPT-4o';
-    if (model.includes('claude')) return 'Claude Sonnet 4.5';
-
-    return model || 'AI Model';
+    // Show the actual model that ran (resolved snapshot), minus any provider
+    // prefix like "openai-" / "anthropic-". No hardcoded brand names.
+    const model = analysisOrScore?.runtime?.resolved_model || analysisOrScore.model || '';
+    if (!model) return 'AI Model';
+    return model.replace(/^(openai|anthropic)-/i, '');
   };
 
   const hasReasoningTokens = (analysisOrScore) => {
@@ -1679,7 +1677,7 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
               <div className="activity-log-card claude-activity">
                 <div className="activity-header">
                   <span className="activity-icon">🔷</span>
-                  <strong>Claude Sonnet 4.5</strong>
+                  <strong>{getModelDisplayName(claudeAnalysis) || 'Claude'}</strong>
                 </div>
                 <div className="activity-status">
                   <div className="spinner-small" />
@@ -1705,7 +1703,7 @@ function Step2AIAnalysis({ jobDescription, openaiAnalysis, claudeAnalysis, score
               <div className="activity-log-card claude-activity">
                 <div className="activity-header">
                   <span className="activity-icon">🔷</span>
-                  <strong>Claude Sonnet 4.5</strong>
+                  <strong>{getModelDisplayName(claudeAnalysis) || 'Claude'}</strong>
                 </div>
                 <div className="activity-status">
                   <div className="spinner-small" />

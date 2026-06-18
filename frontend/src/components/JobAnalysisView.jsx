@@ -141,7 +141,7 @@ function JobAnalysisView() {
           <AIAnalysisTab
             application={application}
             provider="openai"
-            modelName="OpenAI GPT-4"
+            modelName="OpenAI"
             modelIcon="🤖"
           />
         )}
@@ -149,7 +149,7 @@ function JobAnalysisView() {
           <AIAnalysisTab
             application={application}
             provider="claude"
-            modelName="Claude Sonnet"
+            modelName="Claude"
             modelIcon="🧠"
           />
         )}

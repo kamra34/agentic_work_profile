@@ -2175,7 +2175,11 @@ function AIAnalysisModal({ app, provider, onClose }) {
   // The analysis is inside the 'scores' object
   const analysis = fitScoreData.scores || atsScoreData.scores || {};
 
-  const modelName = provider === 'openai' ? 'OpenAI (GPT-5.1)' : 'Claude (Sonnet)';
+  // Show the actual model that ran, if recorded; else a generic provider label.
+  const rawModel = fitScoreData?.runtime?.resolved_model || fitScoreData?.model
+    || atsScoreData?.runtime?.resolved_model || atsScoreData?.model || '';
+  const cleanModel = rawModel ? String(rawModel).replace(/^(openai|anthropic)-/i, '') : '';
+  const modelName = cleanModel || (provider === 'openai' ? 'OpenAI' : 'Claude');
   const modelIcon = provider === 'openai' ? '🟢' : '🔵';
 
   // Extract analysis fields

@@ -3078,7 +3078,7 @@ function SavedCVDetail({ cvId, onBack }) {
     if (!modelData || !modelData.success || !modelData.analysis) {
       return (
         <div className="analysis-empty">
-          <p>No job analysis available from {modelName === 'openai' ? 'GPT-5.1' : 'Claude'}</p>
+          <p>No job analysis available from {modelName === 'openai' ? 'OpenAI' : 'Claude'}</p>
         </div>
       );
     }
@@ -3093,7 +3093,7 @@ function SavedCVDetail({ cvId, onBack }) {
         {/* Model Badge */}
         <div className="analysis-model-badge">
           <span className={`model-badge ${modelName}`}>
-            {modelName === 'openai' ? '🤖 GPT-5.1' : '🧠 Claude Sonnet'}
+            {(modelName === 'openai' ? '🤖 ' : '🧠 ') + normalizeModelId(modelData, modelName)}
           </span>
         </div>
 
@@ -3481,12 +3481,8 @@ function SavedCVDetail({ cvId, onBack }) {
   }
 
   const getModelLabel = (payload, provider) => {
-    const modelId = normalizeModelId(payload, provider);
-    const lower = modelId.toLowerCase();
-    if (lower.includes('gpt-5.1')) return 'GPT-5.1';
-    if (lower.includes('gpt-4o')) return 'GPT-4o';
-    if (lower.includes('claude-sonnet')) return 'Claude Sonnet';
-    return modelId;
+    // Show the actual model id that ran (no hardcoded brand names).
+    return normalizeModelId(payload, provider);
   };
 
   const initialOpenAIModelLabel = getModelLabel(cvData.fit_scores?.openai, 'openai');
