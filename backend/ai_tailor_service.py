@@ -150,6 +150,126 @@ def _resolve_reasoning_effort(reasoning_effort: str = None) -> str:
     return value
 
 
+# Claude "thinking" levels. claude.ai exposes low/medium/high/max for Opus 4.8;
+# these map to output_config.effort. "off" disables extended thinking entirely.
+# Effort is a separate axis from OpenAI's reasoning_effort and applies only to
+# Claude calls. Default is High (deeper thinking, accuracy over speed).
+VALID_CLAUDE_EFFORT = {"off", "low", "medium", "high", "max"}
+DEFAULT_CLAUDE_EFFORT = (os.getenv("CLAUDE_EFFORT", "high") or "high").strip().lower()
+if DEFAULT_CLAUDE_EFFORT not in VALID_CLAUDE_EFFORT:
+    DEFAULT_CLAUDE_EFFORT = "high"
+
+
+def _resolve_claude_effort(effort: Optional[str]) -> str:
+    value = (effort or DEFAULT_CLAUDE_EFFORT).strip().lower()
+    if value not in VALID_CLAUDE_EFFORT:
+        return DEFAULT_CLAUDE_EFFORT
+    return value
+
+
+def _extract_claude_json(response: Any) -> Dict[str, Any]:
+    """
+    Parse the JSON object from a Claude structured-output response.
+
+    With ``output_config.format`` = json_schema, the structured result is returned
+    as a text block (and that approach is compatible with extended thinking, unlike
+    forced tool_choice). Any leading thinking block is skipped. A tool_use block is
+    still honored if one is present, so this also handles legacy tool-use responses.
+    """
+    content = getattr(response, "content", None)
+    if not content:
+        raise ValueError("Claude returned empty content")
+    text_parts = []
+    for block in content:
+        btype = getattr(block, "type", None)
+        if btype == "tool_use":
+            return block.input
+        if btype == "text":
+            text_parts.append(getattr(block, "text", "") or "")
+    raw = "\n".join(p for p in text_parts if p).strip()
+    if not raw:
+        block_types = [getattr(b, "type", "?") for b in content]
+        raise ValueError(f"Claude returned no text/tool_use block (got blocks: {block_types})")
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z0-9]*\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw).strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        start, end = raw.find("{"), raw.rfind("}")
+        if start != -1 and end > start:
+            return json.loads(raw[start:end + 1])
+        raise
+
+
+# Extended thinking tokens count against ``max_tokens``, so when thinking is on we
+# add headroom on top of the answer budget, scaled by effort, capped at the model's
+# 128K output limit. Without this, deep thinking (especially at high/max) can
+# consume the whole budget and leave no room for the structured answer.
+_CLAUDE_THINKING_HEADROOM = {"low": 8000, "medium": 16000, "high": 32000, "max": 48000}
+_CLAUDE_MAX_OUTPUT_TOKENS = 120000
+
+
+def call_claude_structured(
+    *,
+    api_key: str,
+    model: str,
+    system: str,
+    user_prompt: str,
+    schema: Dict[str, Any],
+    max_tokens: int = 8192,
+    effort: Optional[str] = None,
+    timeout: float = 120.0,
+):
+    """
+    Run a Claude structured-output call using ``output_config.format`` (json_schema).
+
+    This is Anthropic's recommended structured-output method and, unlike forced
+    ``tool_choice``, it is compatible with extended thinking. ``effort`` ('off' |
+    'low' | 'medium' | 'high' | 'max') controls thinking depth, mirroring the
+    levels claude.ai shows for Opus 4.8; 'off' disables thinking. The call streams
+    so long thinking passes don't trip request timeouts.
+
+    Returns ``(data, resolved_model, effort_used)`` where ``effort_used`` is the
+    empty string when thinking is off.
+    """
+    resolved_effort = _resolve_claude_effort(effort)
+    client = Anthropic(api_key=api_key)
+    output_config: Dict[str, Any] = {
+        "format": {"type": "json_schema", "schema": schema}
+    }
+    effective_max_tokens = max_tokens
+    create_kwargs: Dict[str, Any] = {
+        "model": model,
+        "system": system,
+        "messages": [{"role": "user", "content": user_prompt}],
+        "output_config": output_config,
+        "timeout": timeout,
+    }
+    if resolved_effort == "off":
+        create_kwargs["thinking"] = {"type": "disabled"}
+    else:
+        create_kwargs["thinking"] = {"type": "adaptive"}
+        output_config["effort"] = resolved_effort
+        headroom = _CLAUDE_THINKING_HEADROOM.get(resolved_effort, 16000)
+        effective_max_tokens = min(max_tokens + headroom, _CLAUDE_MAX_OUTPUT_TOKENS)
+    create_kwargs["max_tokens"] = effective_max_tokens
+
+    # Stream and assemble the final message (avoids request-timeout on long thinking
+    # / large structured outputs, per Anthropic guidance for high max_tokens).
+    with client.messages.stream(**create_kwargs) as stream:
+        response = stream.get_final_message()
+
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        raise ValueError(
+            "Claude hit the output token limit before finishing the structured answer. "
+            "Try a lower Claude thinking effort in AI Settings."
+        )
+    data = _extract_claude_json(response)
+    resolved_model = getattr(response, "model", model)
+    return data, resolved_model, ("" if resolved_effort == "off" else resolved_effort)
+
+
 def _safe_score(value: Any, default: int = 0) -> int:
     """Normalize score-like values to int in [0, 100]."""
     try:
@@ -1546,8 +1666,8 @@ def analyze_job_with_openai(
         }
 
 
-def analyze_job_with_claude(job_description: str, model: str = None, api_key: str = None) -> Dict[str, Any]:
-    """Analyze job description using Claude Sonnet 4.5"""
+def analyze_job_with_claude(job_description: str, model: str = None, api_key: str = None, effort: str = None) -> Dict[str, Any]:
+    """Analyze job description using Claude (structured output + extended thinking)."""
     requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
     logger.step(f"Job analysis with Claude ({requested_model})", step_num=1)
     started_at = _now_iso()
@@ -1576,30 +1696,24 @@ def analyze_job_with_claude(job_description: str, model: str = None, api_key: st
     logger.info(f"Job description length: {len(job_description)} characters")
 
     try:
-        claude_client = Anthropic(api_key=api_key)
         # Build the exact prompt that will be sent
         user_prompt = JOB_ANALYSIS_PROMPT.format(job_description=job_description)
 
-        logger.info(f"Calling Claude API ({requested_model}) with tool-use...")
+        logger.info(f"Calling Claude API ({requested_model}) with structured output + thinking...")
 
-        tool = claude_tool("job_analysis_output", "Structured job analysis output", JOB_ANALYSIS_SCHEMA)
-        response = claude_client.messages.create(
+        result, resolved_model, effort_used = call_claude_structured(
+            api_key=api_key,
             model=requested_model,
-            max_tokens=4096,
             system="You are an expert job requirement analyst.",
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ],
-            tools=[tool],
-            tool_choice={"type": "tool", "name": "job_analysis_output"}
+            user_prompt=user_prompt,
+            schema=JOB_ANALYSIS_SCHEMA,
+            max_tokens=4096,
+            effort=effort,
+            timeout=180.0,
         )
-
-        # Extract tool use result (pre-parsed dict, no JSON decode needed)
-        result = _extract_claude_tool_input(response)
 
         finished_at = _now_iso()
         duration_ms = int((time.time() - start_ts) * 1000)
-        resolved_model = getattr(response, "model", requested_model)
         logger.success(f"Job analysis complete using {resolved_model} in {duration_ms / 1000:.2f}s")
 
         return {
@@ -1613,7 +1727,7 @@ def analyze_job_with_claude(job_description: str, model: str = None, api_key: st
                 requested_model=requested_model,
                 resolved_model=resolved_model,
                 api_name="messages.create",
-                reasoning_effort="",
+                reasoning_effort=effort_used,
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -1767,9 +1881,10 @@ def score_profile_with_claude(
     profile_content: str,
     job_description: str = "",
     model: str = None,
-    api_key: str = None
+    api_key: str = None,
+    effort: str = None
 ) -> Dict[str, Any]:
-    """Score profile fit using Claude Sonnet 4.5"""
+    """Score profile fit using Claude (structured output + extended thinking)."""
     requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
     logger.step(f"Profile scoring with Claude ({requested_model})", step_num=1)
     started_at = _now_iso()
@@ -1798,7 +1913,6 @@ def score_profile_with_claude(
     logger.info(f"Profile content length: {len(profile_content)} characters")
 
     try:
-        claude_client = Anthropic(api_key=api_key)
         # Build the exact prompt that will be sent
         user_prompt = SCORING_PROMPT.format(
             job_description=job_description or "(not provided)",
@@ -1806,27 +1920,22 @@ def score_profile_with_claude(
             profile_content=profile_content
         )
 
-        logger.info(f"Calling Claude API ({requested_model}) with tool-use...")
+        logger.info(f"Calling Claude API ({requested_model}) with structured output + thinking...")
 
-        tool = claude_tool("scoring_output", "Structured CV scoring output", SCORING_SCHEMA)
-        response = claude_client.messages.create(
+        result, resolved_model, effort_used = call_claude_structured(
+            api_key=api_key,
             model=requested_model,
-            max_tokens=4096,
             system="You are an expert recruiter and ATS specialist.",
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ],
-            tools=[tool],
-            tool_choice={"type": "tool", "name": "scoring_output"}
+            user_prompt=user_prompt,
+            schema=SCORING_SCHEMA,
+            max_tokens=4096,
+            effort=effort,
+            timeout=180.0,
         )
-
-        # Extract tool use result (pre-parsed dict, no JSON decode needed)
-        result = _extract_claude_tool_input(response)
         result = _normalize_scores_payload(result)
 
         finished_at = _now_iso()
         duration_ms = int((time.time() - start_ts) * 1000)
-        resolved_model = getattr(response, "model", requested_model)
         fit_score = result.get('fit_score', 'N/A')
         ats_score = result.get('ats_score', 'N/A')
         verdict = result.get('verdict', 'N/A')
@@ -1843,7 +1952,7 @@ def score_profile_with_claude(
                 requested_model=requested_model,
                 resolved_model=resolved_model,
                 api_name="messages.create",
-                reasoning_effort="",
+                reasoning_effort=effort_used,
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms
@@ -2002,9 +2111,10 @@ def recommend_nodes_with_claude(
     profile_nodes: List[Dict],
     job_description: str = "",
     model: str = None,
-    api_key: str = None
+    api_key: str = None,
+    effort: str = None
 ) -> Dict[str, Any]:
-    """Recommend which nodes to include using Claude Sonnet 4.5"""
+    """Recommend which nodes to include using Claude (structured output + thinking)."""
     requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
     logger.step(f"Node selection with Claude ({requested_model}) - {len(profile_nodes)} nodes", step_num=1)
     started_at = _now_iso()
@@ -2031,7 +2141,6 @@ def recommend_nodes_with_claude(
         }
 
     try:
-        claude_client = Anthropic(api_key=api_key)
         prompt_content = NODE_SELECTION_PROMPT.format(
             job_description=job_description or "(not provided)",
             job_requirements=json.dumps(job_requirements, indent=2),
@@ -2039,30 +2148,24 @@ def recommend_nodes_with_claude(
         )
         prompt_length = len(prompt_content)
         logger.info(f"Prompt size: {prompt_length} chars ({prompt_length/1000:.1f}K) | Nodes: {len(profile_nodes)}")
-        logger.info(f"Calling Claude API ({requested_model}) with tool-use...")
+        logger.info(f"Calling Claude API ({requested_model}) with structured output + thinking...")
 
-        tool = claude_tool("node_selection_output", "Structured node selection output", NODE_SELECTION_SCHEMA)
-        response = claude_client.messages.create(
+        result, resolved_model, effort_used = call_claude_structured(
+            api_key=api_key,
             model=requested_model,
-            max_tokens=16384,  # Increased from 8192 to handle larger responses with many nodes
             system="You are an expert CV tailoring specialist.",
-            messages=[
-                {"role": "user", "content": prompt_content}
-            ],
-            tools=[tool],
-            tool_choice={"type": "tool", "name": "node_selection_output"},
-            timeout=180.0  # 180 second timeout (3 minutes) - Claude needs more time
+            user_prompt=prompt_content,
+            schema=NODE_SELECTION_SCHEMA,
+            max_tokens=16384,  # large responses with many nodes
+            effort=effort,
+            timeout=180.0,  # Claude needs more time for thinking + many nodes
         )
-
-        # Extract tool use result (pre-parsed dict, no JSON decode needed)
-        result = _extract_claude_tool_input(response)
 
         request_duration = time.time() - start_ts
         normalized_result = _normalize_recommendations_payload(result)
         selected_count = len(normalized_result.get('selected_nodes', []))
         logger.success(f"Node selection complete: {selected_count} nodes recommended in {request_duration:.2f}s")
         finished_at = _now_iso()
-        resolved_model = getattr(response, "model", requested_model)
 
         return {
             "success": True,
@@ -2075,7 +2178,7 @@ def recommend_nodes_with_claude(
                 requested_model=requested_model,
                 resolved_model=resolved_model,
                 api_name="messages.create",
-                reasoning_effort="",
+                reasoning_effort=effort_used,
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=int(request_duration * 1000)
@@ -2317,11 +2420,13 @@ def propose_skill_weave(
     model: str = None,
     reasoning_effort: str = None,
     api_key: str = None,
+    claude_effort: str = None,
 ) -> Dict[str, Any]:
     """
     Ask clarifying questions (if facts are missing) or propose how to weave a new
     skill across the profile. Uses the user-selected provider ('openai'|'claude')
-    with the shared SKILL_WEAVE_SCHEMA structured output.
+    with the shared SKILL_WEAVE_SCHEMA structured output. ``claude_effort`` sets the
+    Claude thinking depth; ``reasoning_effort`` is the OpenAI reasoning effort.
     """
     provider = (provider or "openai").strip().lower()
     user_prompt = _build_skill_weave_prompt(skills, profile_outline, answers)
@@ -2338,21 +2443,18 @@ def propose_skill_weave(
         if provider == "claude":
             requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
             logger.step(f"Skill weave with Claude ({requested_model})", step_num=1)
-            claude_client = Anthropic(api_key=api_key)
-            tool = claude_tool("skill_weave_output", "Structured skill weave proposal", SKILL_WEAVE_SCHEMA)
-            response = claude_client.messages.create(
+            data, resolved_model, effort_used = call_claude_structured(
+                api_key=api_key,
                 model=requested_model,
-                max_tokens=8192,
                 system=SKILL_WEAVE_SYSTEM,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": "skill_weave_output"},
+                user_prompt=user_prompt,
+                schema=SKILL_WEAVE_SCHEMA,
+                max_tokens=8192,
+                effort=claude_effort,
                 timeout=180.0,
             )
-            data = _extract_claude_tool_input(response)
-            resolved_model = getattr(response, "model", requested_model)
             api_name = "messages.create"
-            reasoning_used = ""
+            reasoning_used = effort_used
         else:
             requested_model = model or DEFAULT_OPENAI_MODEL
             resolved_reasoning = _resolve_reasoning_effort(reasoning_effort)
@@ -2480,6 +2582,7 @@ def refine_full_cv(
     model: str = None,
     reasoning_effort: str = None,
     api_key: str = None,
+    claude_effort: str = None,
 ) -> Dict[str, Any]:
     """
     One holistic pass over the whole selected CV: dedup across sections, merge,
@@ -2514,21 +2617,18 @@ def refine_full_cv(
         if provider == "claude":
             requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
             logger.step(f"Refine-all with Claude ({requested_model})", step_num=1)
-            client = Anthropic(api_key=api_key)
-            tool = claude_tool("refine_all_output", "Holistic tailored CV refinement", REFINE_ALL_SCHEMA)
-            response = client.messages.create(
+            data, resolved_model, effort_used = call_claude_structured(
+                api_key=api_key,
                 model=requested_model,
-                max_tokens=16384,
                 system=REFINE_ALL_SYSTEM,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": "refine_all_output"},
+                user_prompt=user_prompt,
+                schema=REFINE_ALL_SCHEMA,
+                max_tokens=16384,
+                effort=claude_effort,
                 timeout=240.0,
             )
-            data = _extract_claude_tool_input(response)
-            resolved_model = getattr(response, "model", requested_model)
             api_name = "messages.create"
-            reasoning_used = ""
+            reasoning_used = effort_used
         else:
             requested_model = model or DEFAULT_OPENAI_MODEL
             resolved_reasoning = _resolve_reasoning_effort(reasoning_effort)
@@ -2635,6 +2735,7 @@ def generate_cover_letter(
     model: str = None,
     reasoning_effort: str = None,
     api_key: str = None,
+    claude_effort: str = None,
 ) -> Dict[str, Any]:
     """
     Generate a short, human-voice cover letter from the job description and the
@@ -2669,21 +2770,18 @@ def generate_cover_letter(
         if provider == "claude":
             requested_model = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
             logger.step(f"Cover letter with Claude ({requested_model})", step_num=1)
-            client = Anthropic(api_key=api_key)
-            tool = claude_tool("cover_letter_output", "Cover letter", COVER_LETTER_SCHEMA)
-            response = client.messages.create(
+            data, resolved_model, effort_used = call_claude_structured(
+                api_key=api_key,
                 model=requested_model,
-                max_tokens=4096,
                 system=COVER_LETTER_SYSTEM,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": "cover_letter_output"},
+                user_prompt=user_prompt,
+                schema=COVER_LETTER_SCHEMA,
+                max_tokens=4096,
+                effort=claude_effort,
                 timeout=120.0,
             )
-            data = _extract_claude_tool_input(response)
-            resolved_model = getattr(response, "model", requested_model)
             api_name = "messages.create"
-            reasoning_used = ""
+            reasoning_used = effort_used
         else:
             requested_model = model or DEFAULT_OPENAI_MODEL
             resolved_reasoning = _resolve_reasoning_effort(reasoning_effort)
@@ -2885,6 +2983,7 @@ def refine_section_content_with_openai(
     node_type: str = "section",
     node_title: str = "",
     reasoning_effort: str = None,
+    claude_effort: str = None,
     api_key: str = None,
     model: str = None,
     provider: str = "openai",
@@ -3154,19 +3253,17 @@ Remember: Return ONLY the JSON object, no other text."""
 
     try:
         if provider_norm == "claude":
-            claude_client = Anthropic(api_key=api_key)
-            tool = claude_tool("refine_section_output", "Refined section content", REFINE_SECTION_SCHEMA)
-            response = claude_client.messages.create(
+            data, claude_model_resolved, _effort_used = call_claude_structured(
+                api_key=api_key,
                 model=model_to_use,
-                max_tokens=8192,
                 system=refine_system,
-                messages=[{"role": "user", "content": refinement_prompt}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": "refine_section_output"},
+                user_prompt=refinement_prompt,
+                schema=REFINE_SECTION_SCHEMA,
+                max_tokens=8192,
+                effort=claude_effort,
                 timeout=120.0,
             )
-            data = _extract_claude_tool_input(response)
-            result = {"success": True, "data": data, "actual_model": getattr(response, "model", model_to_use)}
+            result = {"success": True, "data": data, "actual_model": claude_model_resolved}
         else:
             # Pass reasoning_effort directly (including "none") - wrapper will handle it
             result = call_openai_for_json(

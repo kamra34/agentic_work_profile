@@ -40,6 +40,7 @@ class User(Base):
     openai_model = Column(String, default='gpt-5.5')
     openai_reasoning_effort = Column(String, default='medium')  # none, low, medium, high
     claude_model = Column(String, default='claude-opus-4-8')
+    claude_effort = Column(String, default='high')  # off, low, medium, high, max (Claude thinking depth)
     openai_api_key_encrypted = Column(Text, nullable=True)
     anthropic_api_key_encrypted = Column(Text, nullable=True)
     humanity_deep_mode_enabled = Column(Boolean, default=True)

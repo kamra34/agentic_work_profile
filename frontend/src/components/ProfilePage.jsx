@@ -9,6 +9,7 @@ const buildAISettingsPayload = (settings, openaiKey, anthropicKey, clearFlags) =
     openai_model: settings.openai_model,
     openai_reasoning_effort: settings.openai_reasoning_effort,
     claude_model: settings.claude_model,
+    claude_effort: settings.claude_effort,
     humanity_deep_mode_enabled: settings.humanity_deep_mode_enabled,
     humanity_llm_model: settings.humanity_llm_model,
     humanity_llm_reasoning_effort: settings.humanity_llm_reasoning_effort
@@ -35,6 +36,7 @@ function ProfilePage() {
     openai_model: 'gpt-5.5',
     openai_reasoning_effort: 'medium',
     claude_model: 'claude-opus-4-8',
+    claude_effort: 'high',
     openai_api_key_configured: false,
     anthropic_api_key_configured: false,
     humanity_deep_mode_enabled: true,
@@ -870,7 +872,7 @@ function ProfilePage() {
                   </select>
                 </div>
 
-                <div className="ai-setting-field ai-setting-field-wide">
+                <div className="ai-setting-field">
                   <label className="ai-setting-label">Claude Model</label>
                   <p className="ai-setting-help">Used for parallel Claude analysis, scoring, and node recommendations.</p>
                   <select
@@ -879,6 +881,22 @@ function ProfilePage() {
                     onChange={(e) => handleAISettingChange('claude_model', e.target.value)}
                   >
                     {buildModelOptions('claude', aiSettings.claude_model)}
+                  </select>
+                </div>
+
+                <div className="ai-setting-field">
+                  <label className="ai-setting-label">Claude Thinking Effort</label>
+                  <p className="ai-setting-help">Extended thinking depth for Claude (the same low/medium/high/max levels claude.ai shows). Higher is more thorough but slower.</p>
+                  <select
+                    className="field-input field-select ai-setting-select"
+                    value={aiSettings.claude_effort}
+                    onChange={(e) => handleAISettingChange('claude_effort', e.target.value)}
+                  >
+                    <option value="off">off (no thinking)</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="max">max</option>
                   </select>
                 </div>
               </div>

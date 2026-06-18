@@ -1118,6 +1118,9 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # decide which model the pipeline uses when a user hasn't picked one. gpt-4o was
 # deprecated by OpenAI in 2026-02, so the defaults below are the current flagships.
 VALID_REASONING_EFFORT = {"none", "low", "medium", "high"}
+# Claude "thinking" levels (claude.ai shows low/medium/high/max for Opus 4.8);
+# "off" disables extended thinking. Maps to output_config.effort on Claude calls.
+VALID_CLAUDE_EFFORT = {"off", "low", "medium", "high", "max"}
 # Deprecated model ids that existing users should be migrated off of.
 DEPRECATED_OPENAI_MODELS = {"gpt-4o", "gpt-4o-mini", "gpt-5.1"}
 DEPRECATED_CLAUDE_MODELS = {"claude-sonnet-4-20250514"}
@@ -1129,6 +1132,9 @@ if DEFAULT_OPENAI_REASONING not in VALID_REASONING_EFFORT:
     DEFAULT_OPENAI_REASONING = "medium"
 
 DEFAULT_CLAUDE_MODEL = os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
+DEFAULT_CLAUDE_EFFORT = os.getenv("CLAUDE_EFFORT", "high").strip().lower()
+if DEFAULT_CLAUDE_EFFORT not in VALID_CLAUDE_EFFORT:
+    DEFAULT_CLAUDE_EFFORT = "high"
 DEFAULT_HUMANITY_DEEP_MODE_ENABLED = os.getenv("HUMANITY_DEEP_MODE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 DEFAULT_HUMANITY_LLM_MODEL = os.getenv("HUMANITY_LLM_MODEL", "gpt-5.5")
 
@@ -1165,6 +1171,13 @@ def _normalize_claude_model(model: Optional[str]) -> str:
     if value and value.startswith("claude-") and value not in DEPRECATED_CLAUDE_MODELS:
         return value
     return DEFAULT_CLAUDE_MODEL
+
+
+def _normalize_claude_effort(effort: Optional[str]) -> str:
+    value = (effort or "").strip().lower()
+    if value in VALID_CLAUDE_EFFORT:
+        return value
+    return DEFAULT_CLAUDE_EFFORT
 
 
 def _normalize_bool(value: Any, default: bool) -> bool:
@@ -1287,6 +1300,7 @@ def get_user_ai_settings(user: User) -> Dict[str, Any]:
         "openai_model": _normalize_openai_model(getattr(user, "openai_model", None)),
         "openai_reasoning_effort": _normalize_reasoning_effort(getattr(user, "openai_reasoning_effort", None)),
         "claude_model": _normalize_claude_model(getattr(user, "claude_model", None)),
+        "claude_effort": _normalize_claude_effort(getattr(user, "claude_effort", None)),
         "openai_api_key_configured": bool(getattr(user, "openai_api_key_encrypted", None)),
         "anthropic_api_key_configured": bool(getattr(user, "anthropic_api_key_encrypted", None)),
         "humanity_deep_mode_enabled": _normalize_bool(
@@ -1364,6 +1378,7 @@ def _ensure_user_ai_settings_columns():
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_model VARCHAR(50)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_reasoning_effort VARCHAR(20)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS claude_model VARCHAR(80)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS claude_effort VARCHAR(20)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_api_key_encrypted TEXT"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS anthropic_api_key_encrypted TEXT"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS humanity_deep_mode_enabled BOOLEAN"))
@@ -1390,6 +1405,13 @@ def _ensure_user_ai_settings_columns():
                 "WHERE claude_model IS NULL OR TRIM(claude_model) = ''"
             ),
             {"model": DEFAULT_CLAUDE_MODEL},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET claude_effort = :effort "
+                "WHERE claude_effort IS NULL OR TRIM(claude_effort) = ''"
+            ),
+            {"effort": DEFAULT_CLAUDE_EFFORT},
         )
         conn.execute(
             text(
@@ -2000,6 +2022,8 @@ def update_user_ai_settings_endpoint(
         current_user.openai_reasoning_effort = _normalize_reasoning_effort(updates.get("openai_reasoning_effort"))
     if "claude_model" in updates:
         current_user.claude_model = _normalize_claude_model(updates.get("claude_model"))
+    if "claude_effort" in updates:
+        current_user.claude_effort = _normalize_claude_effort(updates.get("claude_effort"))
     if "humanity_deep_mode_enabled" in updates:
         current_user.humanity_deep_mode_enabled = _normalize_bool(
             updates.get("humanity_deep_mode_enabled"),
@@ -2939,6 +2963,7 @@ async def skill_weave_propose(
         answers=answers,
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
         reasoning_effort=ai_settings["openai_reasoning_effort"],
+        claude_effort=ai_settings["claude_effort"],
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
     )
     if not result.get("success"):
@@ -3278,7 +3303,8 @@ async def analyze_job_description(
             ai_tailor_service.analyze_job_with_claude,
             job_description,
             ai_settings["claude_model"],
-            ai_settings["anthropic_api_key"]
+            ai_settings["anthropic_api_key"],
+            ai_settings["claude_effort"]
         )
 
         # Wait for both to complete
@@ -3388,7 +3414,8 @@ async def score_profile_fit(
             profile_text,
             job_description,
             ai_settings["claude_model"],
-            ai_settings["anthropic_api_key"]
+            ai_settings["anthropic_api_key"],
+            ai_settings["claude_effort"]
         )
 
         # Wait for both to complete
@@ -3566,7 +3593,8 @@ async def recommend_node_selection(
             nodes_list,
             job_description,
             ai_settings["claude_model"],
-            ai_settings["anthropic_api_key"]
+            ai_settings["anthropic_api_key"],
+            ai_settings["claude_effort"]
         )
 
         # Wait for OpenAI result
@@ -4514,7 +4542,8 @@ async def recalculate_ats_scores(
             formatted_cv,
             job_description,
             ai_settings["claude_model"],
-            ai_settings["anthropic_api_key"]
+            ai_settings["anthropic_api_key"],
+            ai_settings["claude_effort"]
         )
 
         openai_result, claude_result = await asyncio.gather(openai_future, claude_future)
@@ -4793,6 +4822,7 @@ async def refine_all(
         instructions=instructions,
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
         reasoning_effort=ai_settings["openai_reasoning_effort"],
+        claude_effort=ai_settings["claude_effort"],
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
     )
     if not result.get("success"):
@@ -4856,6 +4886,7 @@ async def cover_letter_endpoint(
         hiring_manager=request_data.get('hiring_manager', '') or '',
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
         reasoning_effort=ai_settings["openai_reasoning_effort"],
+        claude_effort=ai_settings["claude_effort"],
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
     )
     if not result.get("success"):
@@ -5049,6 +5080,7 @@ async def refine_section(
         node_type=node_type,
         node_title=node_title,
         reasoning_effort=reasoning_effort,
+        claude_effort=ai_settings["claude_effort"],
         provider=provider,
         api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
         model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],

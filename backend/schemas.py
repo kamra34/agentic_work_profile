@@ -111,6 +111,7 @@ class UserAISettings(BaseModel):
     openai_model: str = "gpt-5.5"
     openai_reasoning_effort: str = "medium"
     claude_model: str = "claude-opus-4-8"
+    claude_effort: str = "high"
     openai_api_key_configured: bool = False
     anthropic_api_key_configured: bool = False
     humanity_deep_mode_enabled: bool = True
@@ -124,6 +125,7 @@ class UserAISettingsUpdate(BaseModel):
     openai_model: Optional[str] = None
     openai_reasoning_effort: Optional[str] = None
     claude_model: Optional[str] = None
+    claude_effort: Optional[str] = None
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     clear_openai_api_key: Optional[bool] = None
