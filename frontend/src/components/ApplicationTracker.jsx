@@ -1574,7 +1574,7 @@ function TableView({ applications, onSelectApp, onDownloadPDF, onDeleteApp, getA
                   {/* AI Analysis Icons - only show for non-preparing stages */}
                   {app.status !== 'preparing' && (app.initial_fit_scores || app.final_fit_scores) ? (
                     <div className="ai-analysis-icons">
-                      {/* Check if GPT-5.1 analysis exists in either initial or final scores */}
+                      {/* Check if OpenAI analysis exists in either initial or final scores */}
                       {((app.initial_fit_scores?.openai) || (app.final_fit_scores?.openai)) && (
                         <button
                           className="btn-ai-analysis"
@@ -1582,7 +1582,7 @@ function TableView({ applications, onSelectApp, onDownloadPDF, onDeleteApp, getA
                             e.stopPropagation();
                             onShowAIAnalysis({ app, provider: 'openai' });
                           }}
-                          title="View GPT-5.1 Analysis"
+                          title="View OpenAI Analysis"
                         >
                           🟢
                         </button>
@@ -1936,7 +1936,7 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                 <div className="score-card-detail-body">
                   <div className="score-comparison-modern">
                     <div className="score-item-modern">
-                      <span>🟢 GPT-5.1:</span>
+                      <span>🟢 OpenAI:</span>
                       <strong>{fitScoreOpenAI}%</strong>
                     </div>
                     <div className="score-item-modern">
@@ -1952,7 +1952,7 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                 <div className="score-card-detail-body">
                   <div className="score-comparison-modern">
                     <div className="score-item-modern">
-                      <span>🟢 GPT-5.1:</span>
+                      <span>🟢 OpenAI:</span>
                       <strong>{atsScoreOpenAI}%</strong>
                     </div>
                     <div className="score-item-modern">
@@ -1972,7 +1972,7 @@ function ApplicationDetailModal({ app, onClose, onUpdateStatus, onDeleteApp, onR
                   📊 Detailed Analysis
                 </h4>
                 <div className="ai-analysis-providers">
-                  {/* GPT-5.1 Analysis */}
+                  {/* OpenAI Analysis */}
                   {((app.initial_fit_scores?.openai) || (app.final_fit_scores?.openai)) && (
                     <AIAnalysisExpandable
                       app={app}
@@ -2345,7 +2345,7 @@ function AIAnalysisExpandable({ app, provider, isExpanded, onToggle }) {
   const recommendations = analysis.recommendations || [];
 
   const providerIcon = provider === 'openai' ? '🟢' : '🔵';
-  const providerName = provider === 'openai' ? 'GPT-5.1' : 'Claude';
+  const providerName = provider === 'openai' ? 'OpenAI' : 'Claude';
 
   return (
     <div className="ai-analysis-expandable-item">

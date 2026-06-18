@@ -162,8 +162,8 @@ function AIEditor({ entry, onClose, onApply }) {
                 disabled={loading}
               >
                 <span className="model-icon">🤖</span>
-                <span className="model-name">GPT-5.1</span>
-                <span className="model-desc">Latest GPT-5.1 model</span>
+                <span className="model-name">OpenAI</span>
+                <span className="model-desc">Latest OpenAI model</span>
               </button>
               <button
                 onClick={() => handleModelSelect('claude')}
@@ -171,7 +171,7 @@ function AIEditor({ entry, onClose, onApply }) {
                 disabled={loading}
               >
                 <span className="model-icon">🧠</span>
-                <span className="model-name">Claude 3.5 Sonnet</span>
+                <span className="model-name">Claude</span>
                 <span className="model-desc">Anthropic's latest</span>
               </button>
             </div>
@@ -179,7 +179,7 @@ function AIEditor({ entry, onClose, onApply }) {
         ) : (
           <div className="ai-editor-content">
             <div className="model-badge">
-              {modelType === 'openai' ? '🤖 OpenAI GPT-5.1' : '🧠 Claude'} | {entry.title}
+              {modelType === 'openai' ? '🤖 OpenAI' : '🧠 Claude'} | {entry.title}
             </div>
 
             {loading && !critique && (

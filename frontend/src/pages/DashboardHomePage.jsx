@@ -9,7 +9,7 @@ function DashboardHomePage() {
       <div className="welcome-section">
         <h1 className="welcome-title">Welcome to Your Agentic CV Builder</h1>
         <p className="welcome-subtitle">
-          An intelligent AI-powered platform that transforms how you create CVs. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (OpenAI GPT-5.1 + Claude Sonnet 4.5) analyze jobs and intelligently select the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
+          An intelligent AI-powered platform that transforms how you create CVs. Build your complete professional profile once with unlimited hierarchical structure, then let dual-AI models (OpenAI + Claude) analyze jobs and intelligently select the best-matching content for each application - no AI-generated content, just smart selection from YOUR experiences.
         </p>
       </div>
 
@@ -45,7 +45,7 @@ function DashboardHomePage() {
             <div className="step-icon">✨</div>
             <div className="step-content">
               <h3>Tailor CV</h3>
-              <p>Paste a job description and watch dual-AI magic: OpenAI GPT-5.1 and Claude analyze requirements, calculate your Profile Fit score and ATS compatibility, provide expert recruiter verdict on whether to apply, and intelligently SELECT (never generate) the best items from your Profile Pool optimized for this specific role. AI works in the background so you can continue and return when ready.</p>
+              <p>Paste a job description and watch dual-AI magic: OpenAI and Claude analyze requirements, calculate your Profile Fit score and ATS compatibility, provide expert recruiter verdict on whether to apply, and intelligently SELECT (never generate) the best items from your Profile Pool optimized for this specific role. AI works in the background so you can continue and return when ready.</p>
               <button className="step-btn" onClick={() => navigate('/dashboard/tailor')}>
                 Tailor with AI →
               </button>
@@ -84,7 +84,7 @@ function DashboardHomePage() {
           <div className="feature-card">
             <div className="feature-icon">🎯</div>
             <h4>Dual-AI Intelligence</h4>
-            <p>Get unbiased recommendations from both OpenAI GPT-5.1 and Claude Sonnet 4.5. Items selected by both models = strongest matches.</p>
+            <p>Get unbiased recommendations from both OpenAI and Claude. Items selected by both models = strongest matches.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon">⚡</div>
@@ -108,7 +108,7 @@ function DashboardHomePage() {
         <div className="stat-card">
           <div className="stat-number">2</div>
           <div className="stat-label">AI Models</div>
-          <div className="stat-description">OpenAI GPT-5.1 + Claude</div>
+          <div className="stat-description">OpenAI + Claude</div>
         </div>
         <div className="stat-card">
           <div className="stat-number">∞</div>

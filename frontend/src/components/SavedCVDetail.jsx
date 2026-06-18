@@ -2943,7 +2943,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   {aiRecs.openai?.include && (
                     <div
                       className="confidence-bar openai-bar"
-                      title={`OpenAI GPT-5.1: ${(aiRecs.openai.confidence * 100).toFixed(0)}% - ${aiRecs.openai.reason}`}
+                      title={`OpenAI: ${(aiRecs.openai.confidence * 100).toFixed(0)}% - ${aiRecs.openai.reason}`}
                     >
                       <div
                         className="confidence-fill"
@@ -3018,8 +3018,8 @@ function SavedCVDetail({ cvId, onBack }) {
                     e.stopPropagation();
                     handleRefineSection(node);
                   }}
-                  title="GPT-5.1 Thinking Mode: Comprehensively refine this entire section by merging redundant items, tightening wording, and optimizing for the job description"
-                  data-refine-label="GPT-5.1 SECTION"
+                  title="OpenAI Thinking Mode: Comprehensively refine this entire section by merging redundant items, tightening wording, and optimizing for the job description"
+                  data-refine-label="OpenAI SECTION"
                 >
                   <svg className="ai-icon-section" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
@@ -3035,8 +3035,8 @@ function SavedCVDetail({ cvId, onBack }) {
                     e.stopPropagation();
                     handleRefineSection(node);
                   }}
-                  title="GPT-5.1 Thinking Mode: Precisely refine this entry by tightening wording and optimizing for the job description"
-                  data-refine-label="GPT-5.1 ENTRY"
+                  title="OpenAI Thinking Mode: Precisely refine this entry by tightening wording and optimizing for the job description"
+                  data-refine-label="OpenAI ENTRY"
                 >
                   <svg className="ai-icon-entry" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M12 2L13.5 7.5L19 9L13.5 10.5L12 16L10.5 10.5L5 9L10.5 7.5L12 2Z" fill="currentColor"/>
@@ -3593,7 +3593,7 @@ function SavedCVDetail({ cvId, onBack }) {
             onClick={openAutoRefineModal}
             className="btn-auto-refine-modern"
             disabled={autoRefining || autoSaveStatus === 'saving'}
-            title="Automatically refine all sections using GPT-5.1 Thinking Mode"
+            title="Automatically refine all sections using OpenAI Thinking Mode"
           >
             {autoRefining ? (
               <>
@@ -3606,7 +3606,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/>
                   <circle cx="12" cy="12" r="3" fill="white" opacity="0.9"/>
                 </svg>
-                <span>Auto-Refine All (GPT-5.1)</span>
+                <span>Auto-Refine All (OpenAI)</span>
               </>
             )}
           </button>
@@ -4051,7 +4051,7 @@ function SavedCVDetail({ cvId, onBack }) {
               {cvData.recommendations?.openai?.recommendations?.selected_nodes && (
                 <div className="ai-model-chip openai">
                   <span className="model-icon">🤖</span>
-                  <span className="model-name">GPT-5.1</span>
+                  <span className="model-name">OpenAI</span>
                   <span className="model-color-indicator"></span>
                 </div>
               )}
@@ -4109,7 +4109,7 @@ function SavedCVDetail({ cvId, onBack }) {
                 onClick={() => setPreviewTab('openai')}
               >
                 <span className="tab-icon">🤖</span>
-                GPT-5.1 Analysis
+                OpenAI Analysis
               </button>
               <button
                 className={`preview-tab ${previewTab === 'claude' ? 'active' : ''}`}
@@ -4216,7 +4216,7 @@ function SavedCVDetail({ cvId, onBack }) {
               <h2>✨ AI Refinement: {refinementModal.section?.title || (refinementModal.nodeType === 'entry' ? 'Entry' : 'Section')}</h2>
               <div className="gpt-badge">
                 <span className="gpt-icon">🧠</span>
-                <span className="gpt-text">GPT-5.1 Thinking</span>
+                <span className="gpt-text">OpenAI Thinking</span>
               </div>
             </div>
             <button className="sidepanel-close" onClick={closeRefinementModal}>×</button>
@@ -4230,7 +4230,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   <strong>AI Reasoning Mode</strong>
                 </label>
                 <div className="reasoning-help-text">
-                  Control how deeply GPT-5.1 thinks before responding
+                  Control how deeply OpenAI thinks before responding
                 </div>
                 <select
                   id="reasoning-effort"
@@ -4480,7 +4480,7 @@ function SavedCVDetail({ cvId, onBack }) {
                     <span className="refining-status">
                       <span className="refining-spinner"></span>
                       <span className="refining-text">
-                        GPT-5.1 {reasoningEffort === 'none' ? '' : 'Thinking'}<br/>
+                        OpenAI {reasoningEffort === 'none' ? '' : 'Thinking'}<br/>
                         <small style={{fontSize: '0.85em', opacity: 0.9}}>
                           Reasoning: {reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1)}
                         </small>
@@ -4904,7 +4904,7 @@ function SavedCVDetail({ cvId, onBack }) {
 
             <div className="modal-body">
               <p className="modal-description">
-                Automatically refine all selected sections in your CV using GPT-5.1 with human-writing guardrails. Configure mode and targets below.
+                Automatically refine all selected sections in your CV using OpenAI with human-writing guardrails. Configure mode and targets below.
               </p>
 
               {/* Reasoning Effort Selector */}
@@ -4914,7 +4914,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   <strong>AI Reasoning Mode</strong>
                 </label>
                 <div className="reasoning-help-text">
-                  Control how deeply GPT-5.1 thinks before responding
+                  Control how deeply OpenAI thinks before responding
                 </div>
                 <select
                   id="auto-refine-reasoning-effort"

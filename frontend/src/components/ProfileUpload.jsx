@@ -1,14 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './ProfileUpload.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function ProfileUpload({ onUploadSuccess }) {
   const [file, setFile] = useState(null);
-  const [model, setModel] = useState('gpt-5.1');
+  const [model, setModel] = useState('gpt-5.5');
+  const [openaiModels, setOpenaiModels] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Load the OpenAI models available to the user's key (no hardcoded list).
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_URL}/api/ai/available-models`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const openai = data.openai || {};
+        setOpenaiModels(openai.models || []);
+        if (openai.default) setModel(openai.default);
+      } catch (err) {
+        console.error('Error loading models:', err);
+      }
+    };
+    loadModels();
+  }, []);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -103,12 +124,16 @@ function ProfileUpload({ onUploadSuccess }) {
               onChange={(e) => setModel(e.target.value)}
               className="select-input"
             >
-              <option value="gpt-5.1">GPT-5.1 (Recommended)</option>
-              <option value="gpt-5.1-mini">GPT-5.1 Mini</option>
-              <option value="gpt-5.1-turbo">GPT-5.1 Turbo</option>
+              {openaiModels.length > 0 ? (
+                openaiModels.map((m) => (
+                  <option key={m.id} value={m.id}>{m.id}</option>
+                ))
+              ) : (
+                <option value={model}>{model}</option>
+              )}
             </select>
             <small className="helper-text">
-              GPT-5.1 provides the best accuracy for CV parsing
+              The latest models give the best accuracy for CV parsing.
             </small>
           </div>
 
