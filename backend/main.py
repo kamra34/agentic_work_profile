@@ -4916,10 +4916,18 @@ async def refine_section(
 
     # Get node title for summary detection
     node_title = target_node.get('title', '')
+    provider = str(request_data.get('provider', 'openai')).strip().lower()
+    if provider not in ('openai', 'claude'):
+        provider = 'openai'
     ai_settings = get_user_ai_runtime_settings(current_user)
-    _ensure_required_provider_keys(ai_settings, require_openai=True)
+    _ensure_required_provider_keys(
+        ai_settings,
+        require_openai=(provider == 'openai'),
+        require_claude=(provider == 'claude'),
+    )
 
-    # Call AI service with full CV context, node type, title, and reasoning effort
+    # Call AI service with full CV context, node type, title, and reasoning effort.
+    # The humanity LLM critic always runs on OpenAI (when a key + deep mode exist).
     result = refine_section_content_with_openai(
         section_content=node_content,
         full_cv_content=full_cv_content,
@@ -4928,12 +4936,13 @@ async def refine_section(
         node_type=node_type,
         node_title=node_title,
         reasoning_effort=reasoning_effort,
-        api_key=ai_settings["openai_api_key"],
-        model=ai_settings["openai_model"],
+        provider=provider,
+        api_key=ai_settings["anthropic_api_key"] if provider == "claude" else ai_settings["openai_api_key"],
+        model=ai_settings["claude_model"] if provider == "claude" else ai_settings["openai_model"],
         rewrite_mode=rewrite_mode,
         human_strict=human_strict,
         target_pages=target_pages,
-        humanity_llm_enabled=ai_settings["humanity_deep_mode_enabled"],
+        humanity_llm_enabled=ai_settings["humanity_deep_mode_enabled"] and bool(ai_settings["openai_api_key"]),
         humanity_llm_model=ai_settings["humanity_llm_model"],
         humanity_llm_reasoning_effort=ai_settings["humanity_llm_reasoning_effort"],
         humanity_llm_api_key=ai_settings["openai_api_key"]
@@ -4941,7 +4950,7 @@ async def refine_section(
     if not result.get("success"):
         raise HTTPException(
             status_code=400,
-            detail=_format_provider_runtime_error("OpenAI", result.get("error"))
+            detail=_format_provider_runtime_error("Claude" if provider == "claude" else "OpenAI", result.get("error"))
         )
 
     # Integrity guardrail: enforce "polish, never invent". Flags numbers/metrics

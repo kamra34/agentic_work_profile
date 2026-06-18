@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from openai_wrapper import call_openai_for_json
 from logger_config import get_logger
 from profile_render import render_profile_outline, compute_included_ids
-from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, SKILL_WEAVE_SCHEMA, REFINE_ALL_SCHEMA, claude_tool
+from ai_schemas import JOB_ANALYSIS_SCHEMA, SCORING_SCHEMA, NODE_SELECTION_SCHEMA, SKILL_WEAVE_SCHEMA, REFINE_ALL_SCHEMA, REFINE_SECTION_SCHEMA, claude_tool
 from refinement_guards import audit_refinement
 
 
@@ -2734,6 +2734,7 @@ def refine_section_content_with_openai(
     reasoning_effort: str = None,
     api_key: str = None,
     model: str = None,
+    provider: str = "openai",
     rewrite_mode: str = "minimal",
     human_strict: bool = True,
     target_pages: int = None,
@@ -2743,7 +2744,11 @@ def refine_section_content_with_openai(
     humanity_llm_api_key: str = None
 ) -> Dict[str, Any]:
     """
-    Refine a section or entry's content using OpenAI GPT-5.1.
+    Refine a single section/entry using the chosen provider (openai|claude).
+
+    The model sees the whole CV for context (so it tailors this section
+    coherently and avoids repeating points covered elsewhere) but only rewrites
+    the target section.
 
     Args:
         section_content: Markdown content of the specific section/entry to refine
@@ -2762,12 +2767,16 @@ def refine_section_content_with_openai(
     Returns:
         Dict with refined_content, changes_summary, stats, and prompt_sent
     """
-    model_to_use = model or DEFAULT_OPENAI_MODEL
+    provider_norm = (provider or "openai").strip().lower()
+    if provider_norm == "claude":
+        model_to_use = model or os.getenv("CLAUDE_MODEL_VERSION", "claude-opus-4-8")
+    else:
+        model_to_use = model or DEFAULT_OPENAI_MODEL
 
     if not api_key:
         return {
             "success": False,
-            "error": "OpenAI API key missing. Add your key in AI Settings.",
+            "error": f"{'Claude' if provider_norm == 'claude' else 'OpenAI'} API key missing. Add your key in AI Settings.",
             "model": model_to_use
         }
 
@@ -2981,34 +2990,57 @@ Remember: Return ONLY the JSON object, no other text."""
     if reasoning_effort:
         logger.info(f"Reasoning effort: {reasoning_effort}")
 
+    # Shared system prompt: human voice, no AI dashes, holistic (context) awareness.
+    refine_system = (
+        "You are a senior hiring manager and CV editor. You write like a real person: "
+        "plain language, short sentences, first person where natural. You never use "
+        "em-dashes or double hyphens, and you avoid cliche AI words. You can see the whole "
+        "CV for context: keep this section consistent with the rest and do not repeat points "
+        "already covered well elsewhere. Use only facts already present. Respond with valid JSON."
+    )
+
     try:
-        # Pass reasoning_effort directly (including "none") - wrapper will handle it
-        result = call_openai_for_json(
-            system_prompt="You are a senior hiring manager and CV editor. Always respond with valid JSON.",
-            user_prompt=refinement_prompt,
-            model=model_to_use,
-            reasoning_effort=reasoning_effort,  # Can be none, low, medium, high, or None
-            api_key=api_key,
-            timeout=120  # 2 minute timeout for refinement
-        )
+        if provider_norm == "claude":
+            claude_client = Anthropic(api_key=api_key)
+            tool = claude_tool("refine_section_output", "Refined section content", REFINE_SECTION_SCHEMA)
+            response = claude_client.messages.create(
+                model=model_to_use,
+                max_tokens=8192,
+                system=refine_system,
+                messages=[{"role": "user", "content": refinement_prompt}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "refine_section_output"},
+                timeout=120.0,
+            )
+            data = _extract_claude_tool_input(response)
+            result = {"success": True, "data": data, "actual_model": getattr(response, "model", model_to_use)}
+        else:
+            # Pass reasoning_effort directly (including "none") - wrapper will handle it
+            result = call_openai_for_json(
+                system_prompt=refine_system,
+                user_prompt=refinement_prompt,
+                model=model_to_use,
+                reasoning_effort=reasoning_effort,  # Can be none, low, medium, high, or None
+                api_key=api_key,
+                timeout=120,  # 2 minute timeout for refinement
+                schema=REFINE_SECTION_SCHEMA,
+                schema_name="refine_section",
+            )
+            if not result["success"]:
+                logger.error(f"Refinement failed: {result['error']}")
+                return {
+                    "success": False,
+                    "error": result["error"],
+                    "model": model_to_use,
+                    "prompt_sent": refinement_prompt
+                }
+            data = result["data"]
 
-        if not result["success"]:
-            logger.error(f"Refinement failed: {result['error']}")
-            return {
-                "success": False,
-                "error": result["error"],
-                "model": model_to_use,
-                "prompt_sent": refinement_prompt
-            }
-
-        # Extract and sanitize the data
-        data = result["data"]
-
-        # Sanitize Unicode for PDF compatibility
+        # Sanitize Unicode for PDF, then strip AI dashes so no em-dash / "--" survives.
         if data.get("refined_content"):
-            data["refined_content"] = sanitize_unicode_for_pdf(data["refined_content"])
+            data["refined_content"] = strip_ai_dashes(sanitize_unicode_for_pdf(data["refined_content"]))
         if data.get("changes_summary"):
-            data["changes_summary"] = sanitize_unicode_for_pdf(data["changes_summary"])
+            data["changes_summary"] = strip_ai_dashes(sanitize_unicode_for_pdf(data["changes_summary"]))
 
         # Log the results
         stats = data.get("stats", {})

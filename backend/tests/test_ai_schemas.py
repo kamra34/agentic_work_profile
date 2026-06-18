@@ -9,6 +9,7 @@ from ai_schemas import (
     NODE_SELECTION_SCHEMA,
     SKILL_WEAVE_SCHEMA,
     REFINE_ALL_SCHEMA,
+    REFINE_SECTION_SCHEMA,
     claude_tool
 )
 
@@ -191,6 +192,11 @@ class TestOpenAIStrictMode:
     def test_refine_all_strict_mode(self):
         """REFINE_ALL_SCHEMA must meet strict-mode requirements."""
         issues = self._check_strict_mode(REFINE_ALL_SCHEMA, "REFINE_ALL_SCHEMA")
+        assert not issues, f"Strict-mode issues: {issues}"
+
+    def test_refine_section_strict_mode(self):
+        """REFINE_SECTION_SCHEMA must meet strict-mode requirements."""
+        issues = self._check_strict_mode(REFINE_SECTION_SCHEMA, "REFINE_SECTION_SCHEMA")
         assert not issues, f"Strict-mode issues: {issues}"
 
 

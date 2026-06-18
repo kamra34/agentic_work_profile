@@ -298,3 +298,38 @@ REFINE_ALL_SCHEMA = {
         "changes_summary": {"type": "string"}
     }
 }
+
+
+# ============================================================================
+# Refine-Section Schema (single section/entry refine, both providers)
+# ============================================================================
+
+REFINE_SECTION_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["refined_content", "changes_summary", "stats"],
+    "properties": {
+        "refined_content": {"type": "string"},
+        "changes_summary": {"type": "string"},
+        "stats": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "original_character_count_estimate",
+                "refined_character_count_estimate",
+                "characters_reduced_estimate",
+                "original_bullet_count_estimate",
+                "refined_bullet_count_estimate",
+                "bullets_removed_or_merged_estimate"
+            ],
+            "properties": {
+                "original_character_count_estimate": {"type": "integer"},
+                "refined_character_count_estimate": {"type": "integer"},
+                "characters_reduced_estimate": {"type": "integer"},
+                "original_bullet_count_estimate": {"type": "integer"},
+                "refined_bullet_count_estimate": {"type": "integer"},
+                "bullets_removed_or_merged_estimate": {"type": "integer"}
+            }
+        }
+    }
+}

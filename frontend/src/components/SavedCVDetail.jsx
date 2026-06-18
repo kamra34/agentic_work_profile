@@ -74,6 +74,7 @@ function SavedCVDetail({ cvId, onBack }) {
   const [refinementResult, setRefinementResult] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState('low'); // none, low, medium, high (default: low)
+  const [refineProvider, setRefineProvider] = useState('openai'); // openai | claude (single-section refine)
   const [rewriteMode, setRewriteMode] = useState('minimal'); // minimal | standard
   const [humanStrictMode, setHumanStrictMode] = useState(true);
   const [targetPages, setTargetPages] = useState('auto'); // auto | 1 | 2
@@ -1046,6 +1047,7 @@ function SavedCVDetail({ cvId, onBack }) {
           node_id: refinementModal.sectionId,
           node_type: refinementModal.nodeType,
           user_instructions: userInstructions || null,
+          provider: refineProvider,
           reasoning_effort: reasoningEffort,  // Send "none", "low", "medium", or "high" directly
           rewrite_mode: rewriteMode,
           human_strict: humanStrictMode,
@@ -4300,28 +4302,45 @@ function SavedCVDetail({ cvId, onBack }) {
             <div className="sidepanel-title-group">
               <h2>✨ AI Refinement: {refinementModal.section?.title || (refinementModal.nodeType === 'entry' ? 'Entry' : 'Section')}</h2>
               <div className="gpt-badge">
-                <span className="gpt-icon">🧠</span>
-                <span className="gpt-text">OpenAI Thinking</span>
+                <span className="gpt-icon">{refineProvider === 'claude' ? '🧠' : '🤖'}</span>
+                <span className="gpt-text">{refineProvider === 'claude' ? 'Claude' : 'OpenAI'}</span>
               </div>
             </div>
             <button className="sidepanel-close" onClick={closeRefinementModal}>×</button>
           </div>
 
           <div className="sidepanel-body">
-              {/* Reasoning Effort Selector */}
+              {/* Model picker */}
+              <div className="reasoning-effort-selector">
+                <label><strong>Model</strong></label>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+                  <button type="button" disabled={refining} onClick={() => setRefineProvider('openai')}
+                    style={{ flex: 1, padding: '9px', borderRadius: 8, cursor: 'pointer', fontWeight: 600,
+                      border: refineProvider === 'openai' ? '2px solid #10a37f' : '1px solid #d1d5db',
+                      background: refineProvider === 'openai' ? '#ecfdf5' : '#fff' }}>🤖 OpenAI</button>
+                  <button type="button" disabled={refining} onClick={() => setRefineProvider('claude')}
+                    style={{ flex: 1, padding: '9px', borderRadius: 8, cursor: 'pointer', fontWeight: 600,
+                      border: refineProvider === 'claude' ? '2px solid #d97757' : '1px solid #d1d5db',
+                      background: refineProvider === 'claude' ? '#fff3ed' : '#fff' }}>🧠 Claude</button>
+                </div>
+              </div>
+
+              {/* Reasoning Effort Selector (OpenAI only) */}
               <div className="reasoning-effort-selector">
                 <label htmlFor="reasoning-effort">
                   <span className="reasoning-label-icon">🧠</span>
                   <strong>AI Reasoning Mode</strong>
                 </label>
                 <div className="reasoning-help-text">
-                  Control how deeply OpenAI thinks before responding
+                  {refineProvider === 'claude'
+                    ? 'Not used for Claude (Claude does not take a reasoning-effort setting).'
+                    : 'Control how deeply OpenAI thinks before responding'}
                 </div>
                 <select
                   id="reasoning-effort"
                   value={reasoningEffort}
                   onChange={(e) => setReasoningEffort(e.target.value)}
-                  disabled={refining}
+                  disabled={refining || refineProvider === 'claude'}
                   className="reasoning-effort-dropdown"
                 >
                   <option value="none">⚡ None - Fastest (No reasoning)</option>
