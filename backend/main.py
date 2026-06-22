@@ -1203,6 +1203,30 @@ def _effective_claude_effort(request_data: Dict[str, Any], ai_settings: Dict[str
     return _normalize_claude_effort(raw)
 
 
+# The job-analysis / scoring / node-selection pipeline runs OpenAI AND Claude in
+# parallel and BLOCKS the wizard until both return. Claude at high/max can think for
+# minutes, which pushes the request past the platform's ~5 min proxy timeout (client
+# sees a 499). These analytical steps don't need deep thinking, so we cap their Claude
+# effort. The per-run refine / skill-weave / cover-letter flows (single provider,
+# review-gated) still honor the user's full choice, including max.
+_CLAUDE_EFFORT_ORDER = ["off", "low", "medium", "high", "max"]
+PIPELINE_CLAUDE_EFFORT_CAP = os.getenv("PIPELINE_CLAUDE_EFFORT_CAP", "medium").strip().lower()
+if PIPELINE_CLAUDE_EFFORT_CAP not in VALID_CLAUDE_EFFORT:
+    PIPELINE_CLAUDE_EFFORT_CAP = "medium"
+
+
+def _pipeline_claude_effort(ai_settings: Dict[str, Any]) -> str:
+    """Claude effort for the blocking dual-model pipeline, clamped to the cap so it
+    can't run away to a proxy timeout."""
+    eff = _normalize_claude_effort(ai_settings.get("claude_effort"))
+    try:
+        if _CLAUDE_EFFORT_ORDER.index(eff) > _CLAUDE_EFFORT_ORDER.index(PIPELINE_CLAUDE_EFFORT_CAP):
+            return PIPELINE_CLAUDE_EFFORT_CAP
+    except ValueError:
+        pass
+    return eff
+
+
 def _normalize_bool(value: Any, default: bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -3329,7 +3353,7 @@ async def analyze_job_description(
             job_description,
             ai_settings["claude_model"],
             ai_settings["anthropic_api_key"],
-            ai_settings["claude_effort"]
+            _pipeline_claude_effort(ai_settings)
         )
 
         # Wait for both to complete
@@ -3440,7 +3464,7 @@ async def score_profile_fit(
             job_description,
             ai_settings["claude_model"],
             ai_settings["anthropic_api_key"],
-            ai_settings["claude_effort"]
+            _pipeline_claude_effort(ai_settings)
         )
 
         # Wait for both to complete
@@ -3619,7 +3643,7 @@ async def recommend_node_selection(
             job_description,
             ai_settings["claude_model"],
             ai_settings["anthropic_api_key"],
-            ai_settings["claude_effort"]
+            _pipeline_claude_effort(ai_settings)
         )
 
         # Wait for OpenAI result
@@ -4568,7 +4592,7 @@ async def recalculate_ats_scores(
             job_description,
             ai_settings["claude_model"],
             ai_settings["anthropic_api_key"],
-            ai_settings["claude_effort"]
+            _pipeline_claude_effort(ai_settings)
         )
 
         openai_result, claude_result = await asyncio.gather(openai_future, claude_future)
