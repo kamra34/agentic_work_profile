@@ -7,6 +7,17 @@ import './refinement-status.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+// Small "OUTDATED" pill shown on score cards when the CV changed since last scoring.
+function StaleTag() {
+  return (
+    <span style={{
+      marginLeft: 8, fontSize: 10, fontWeight: 800, letterSpacing: 0.3,
+      color: '#92400e', background: '#fde68a', padding: '2px 7px',
+      borderRadius: 999, verticalAlign: 'middle', whiteSpace: 'nowrap',
+    }}>OUTDATED</span>
+  );
+}
+
 // Self-contained styles for the holistic Auto-Refine review/loading modals
 // (so they box cleanly regardless of the global modal CSS).
 const SW = {
@@ -171,6 +182,10 @@ function SavedCVDetail({ cvId, onBack }) {
   const [coverLoading, setCoverLoading] = useState(false);
   const [coverCopied, setCoverCopied] = useState(false);
   const [humanityReport, setHumanityReport] = useState(null);
+  // True when the CV content changed since the last scoring -> the shown scores /
+  // humanity are outdated and the user should re-run scoring manually (we never
+  // auto-trigger it).
+  const [scoresStale, setScoresStale] = useState(false);
   const [checkingHumanity, setCheckingHumanity] = useState(false);
   const [showHumanityDetails, setShowHumanityDetails] = useState(false);
   const [updateStatus, setUpdateStatus] = useState({
@@ -293,21 +308,17 @@ function SavedCVDetail({ cvId, onBack }) {
     fetchUserInstructionTemplates();
   }, []);
 
+  // When the CV content/selection changes, mark the existing scores + humanity as
+  // outdated so the user knows to re-run scoring. We do NOT auto-trigger scoring or
+  // the humanity check anymore (that was slow and surprising); the user runs it from
+  // the "Update Scores" card when ready.
   useEffect(() => {
     if (!cvData?.content_snapshot?.nodes) return;
     if (skipAutoHumanityCheckRef.current) {
       skipAutoHumanityCheckRef.current = false;
       return;
     }
-
-    const timer = setTimeout(() => {
-      const snapshot = buildCurrentSnapshot();
-      if (snapshot) {
-        runHumanityCheck(snapshot);
-      }
-    }, 1200);
-
-    return () => clearTimeout(timer);
+    setScoresStale(true);
   }, [nodeSelections]);
 
   const fetchCVData = async () => {
@@ -1476,7 +1487,8 @@ function SavedCVDetail({ cvId, onBack }) {
 
       // Trigger autosave with the new selections to persist them
       triggerAutoSave(newSelections, true);
-      await runHumanityCheck(content_snapshot);
+      // Content changed -> mark scores/humanity outdated (no auto re-run).
+      setScoresStale(true);
 
       // Expand the parent node to show refined children
       setExpandedNodes(prev => {
@@ -1714,8 +1726,9 @@ function SavedCVDetail({ cvId, onBack }) {
       setShowRefineReview(false);
       setRefineProposal(null);
       setRefineApplying(false);
-      // Phase 2 (optional): re-score the polished CV with its own progress panel.
-      recalculateScores('all').catch(() => {});
+      // The content changed a lot. Do NOT auto-score; just flag the scores as
+      // outdated so the user can re-run scoring from the Update Scores card.
+      setScoresStale(true);
     } catch (e) {
       alert(`Apply failed: ${e.message}`);
       setRefineApplying(false);
@@ -1911,10 +1924,8 @@ function SavedCVDetail({ cvId, onBack }) {
       // After all sections, apply the final accumulated selections
       setNodeSelections(accumulatedSelections);
       triggerAutoSave(accumulatedSelections, true);
-      await runHumanityCheck({
-        ...(cvData?.content_snapshot || {}),
-        nodes: updateNodesWithSelections(cvData?.content_snapshot?.nodes || [], accumulatedSelections)
-      });
+      // Content changed -> mark scores/humanity outdated (no auto re-run).
+      setScoresStale(true);
 
       // Final summary
       log.push({
@@ -2549,6 +2560,8 @@ function SavedCVDetail({ cvId, onBack }) {
 
       setUpdateStepStatus('done', 'done', 'All requested updates completed.');
       completeUpdateStatus(true);
+      // Scores now reflect the current content again.
+      setScoresStale(false);
     } catch (err) {
       console.error('Error recalculating scores:', err);
       setUpdateStatus(prev => ({
@@ -2671,8 +2684,12 @@ function SavedCVDetail({ cvId, onBack }) {
         });
       };
       buildSelections(result.content_snapshot.nodes);
+      // Restoring returns to the original, already-scored state: skip the stale
+      // mark from the selection change and clear the outdated flag.
+      skipAutoHumanityCheckRef.current = true;
       setNodeSelections(restoredSelections);
-      await runHumanityCheck(result.content_snapshot);
+      setHumanityReport(result.humanity || null);
+      setScoresStale(false);
 
       alert('✅ CV restored to original state successfully!');
     } catch (err) {
@@ -4070,6 +4087,32 @@ function SavedCVDetail({ cvId, onBack }) {
 
       {/* Intelligent Metrics Dashboard */}
       <div className="metrics-dashboard">
+        {scoresStale && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+            margin: '0 0 16px', padding: '12px 16px', borderRadius: 10,
+            background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e',
+          }}>
+            <span style={{ fontSize: 20, lineHeight: 1 }}>⚠️</span>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Scores are out of date</div>
+              <div style={{ fontSize: 12.5, opacity: 0.9 }}>
+                The CV changed since the last evaluation. The AI Fit, ATS and Humanity values
+                below no longer match the current content. Re-run scoring when you're ready.
+              </div>
+            </div>
+            <button
+              onClick={() => recalculateScores('all')}
+              disabled={recalculating || checkingHumanity || restoring}
+              style={{
+                padding: '9px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                fontWeight: 700, fontSize: 13, color: '#fff',
+                background: recalculating ? '#d1d5db' : '#d97706', whiteSpace: 'nowrap',
+              }}>
+              {recalculating ? 'Updating…' : '↻ Update Scores Now'}
+            </button>
+          </div>
+        )}
         <div className="metrics-grid">
           {/* Live Content Quality - Prominent Card */}
           <div className="metric-card live-metric">
@@ -4110,9 +4153,9 @@ function SavedCVDetail({ cvId, onBack }) {
             <div className="metric-subtitle">Updates as you edit • AI-weighted scoring</div>
           </div>
 
-          <div className="metric-card">
+          <div className="metric-card" style={scoresStale ? { opacity: 0.55 } : undefined}>
             <div className="metric-header">
-              <div className="metric-title">Humanity Guard</div>
+              <div className="metric-title">Humanity Guard{scoresStale && <StaleTag />}</div>
               <span className="metric-icon">🧠</span>
             </div>
             <div className="metric-body">
@@ -4236,9 +4279,9 @@ function SavedCVDetail({ cvId, onBack }) {
           </div>
 
           {/* AI Profile Fit Scores */}
-          <div className="metric-card">
+          <div className="metric-card" style={scoresStale ? { opacity: 0.55 } : undefined}>
             <div className="metric-header">
-              <div className="metric-title">AI Profile Fit</div>
+              <div className="metric-title">AI Profile Fit{scoresStale && <StaleTag />}</div>
               <span className="metric-icon">🎯</span>
             </div>
             <div className="metric-body">
@@ -4281,9 +4324,9 @@ function SavedCVDetail({ cvId, onBack }) {
           </div>
 
           {/* AI ATS Scores */}
-          <div className="metric-card">
+          <div className="metric-card" style={scoresStale ? { opacity: 0.55 } : undefined}>
             <div className="metric-header">
-              <div className="metric-title">AI ATS Compatibility</div>
+              <div className="metric-title">AI ATS Compatibility{scoresStale && <StaleTag />}</div>
               <span className="metric-icon">⚡</span>
             </div>
             <div className="metric-body">
@@ -4346,6 +4389,7 @@ function SavedCVDetail({ cvId, onBack }) {
                   onClick={() => recalculateScores('all')}
                   className="btn-reevaluate-full"
                   disabled={recalculating || checkingHumanity || restoring}
+                  style={scoresStale && !recalculating ? { boxShadow: '0 0 0 3px #fcd34d' } : undefined}
                 >
                   {recalculating ? (
                     <>
